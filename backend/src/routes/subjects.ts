@@ -1,6 +1,8 @@
 import type { Env } from '../lib/env';
 import { jsonResponse } from '../lib/response';
 import { getOrCreateUser, requireAdmin } from '../lib/auth';
+import { promoteClassesSchema } from '../lib/validation';
+import { currentAcademicYear, nextAcademicYear } from '../lib/academicYear';
 
 export async function getSubjects(request: Request, env: Env) {
   await getOrCreateUser(request, env);
@@ -115,6 +117,83 @@ export async function adminDeleteGradeClass(id: string, request: Request, env: E
     return jsonResponse({ error: 'Cannot delete class with assigned students' }, 409, env);
   await env.DB.prepare('DELETE FROM grade_classes WHERE id = ?').bind(Number(id)).run();
   return jsonResponse({ success: true });
+}
+
+/**
+ * POST /api/admin/grade-classes/promote — advance the selected classes into the
+ * new academic year. Admin picks which classes are "ready". Grades 10/11 move
+ * up one grade (10.1 -> 11.1); grade 12 classes graduate. Idempotency is the
+ * admin's responsibility — running twice promotes twice, so the UI should
+ * confirm. Reversible via the existing reassign endpoint.
+ */
+export async function adminPromoteClasses(request: Request, env: Env) {
+  const admin = await requireAdmin(request, env);
+  if (admin instanceof Response) return admin;
+
+  const parsed = promoteClassesSchema.safeParse(await request.json());
+  if (!parsed.success) {
+    return jsonResponse({ error: 'Invalid input', details: parsed.error.errors }, 400, env);
+  }
+  const { class_ids } = parsed.data;
+  const targetYear = parsed.data.new_academic_year || nextAcademicYear(currentAcademicYear());
+
+  const summary: Array<Record<string, unknown>> = [];
+  for (const classId of class_ids) {
+    const gc = (await env.DB.prepare('SELECT id, grade, class_name FROM grade_classes WHERE id = ?')
+      .bind(classId)
+      .first()) as any;
+    if (!gc) {
+      summary.push({ class_id: classId, error: 'not found' });
+      continue;
+    }
+
+    if (gc.grade >= 12) {
+      const res = await env.DB.prepare(
+        `UPDATE users SET graduated = 1, academic_year = ?, updated_at = datetime('now') WHERE grade_class_id = ? AND graduated = 0`,
+      )
+        .bind(targetYear, gc.id)
+        .run();
+      summary.push({
+        class: gc.class_name,
+        action: 'graduated',
+        students_affected: res.meta?.changes ?? 0,
+      });
+    } else {
+      const suffix = gc.class_name.includes('.') ? gc.class_name.split('.')[1] : gc.class_name;
+      const nextClassName = `${gc.grade + 1}.${suffix}`;
+      const target = (await env.DB.prepare(
+        'SELECT id FROM grade_classes WHERE class_name = ? AND grade = ? AND is_active = 1 LIMIT 1',
+      )
+        .bind(nextClassName, gc.grade + 1)
+        .first()) as any;
+      if (!target) {
+        summary.push({ class: gc.class_name, error: `target class ${nextClassName} not found` });
+        continue;
+      }
+      const res = await env.DB.prepare(
+        `UPDATE users SET grade = ?, class = ?, grade_class_id = ?, academic_year = ?, updated_at = datetime('now') WHERE grade_class_id = ? AND graduated = 0`,
+      )
+        .bind(gc.grade + 1, nextClassName, target.id, targetYear, gc.id)
+        .run();
+      summary.push({
+        class: gc.class_name,
+        action: 'promoted',
+        promoted_to: nextClassName,
+        students_affected: res.meta?.changes ?? 0,
+      });
+    }
+  }
+
+  try {
+    await env.DB.prepare(
+      `INSERT INTO admin_activity_log (admin_id, admin_email, action_type, target_type, details, created_at)
+       VALUES (?, ?, 'promote_classes', 'grade_classes', ?, datetime('now'))`,
+    )
+      .bind(admin.id, admin.email, JSON.stringify({ targetYear, summary }))
+      .run();
+  } catch (e) {}
+
+  return jsonResponse({ success: true, academic_year: targetYear, summary }, 200, env);
 }
 
 export async function adminReassignUserClass(request: Request, env: Env) {

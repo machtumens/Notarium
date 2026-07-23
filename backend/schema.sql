@@ -6,7 +6,16 @@ CREATE TABLE IF NOT EXISTS users (
   email TEXT,
   password_hash TEXT,
   description TEXT,
-  class TEXT CHECK(class IS NULL OR class IN ('10.1', '10.2', '10.3')),
+  -- Free-form class label (e.g. '10.1'..'12.3'); the canonical class registry
+  -- is the grade_classes table. No hardcoded grade-10 CHECK — grades 10-12 exist.
+  class TEXT,
+  grade INTEGER,
+  grade_class_id INTEGER,
+  academic_year TEXT,
+  graduated INTEGER NOT NULL DEFAULT 0 CHECK(graduated IN (0, 1)),
+  totp_secret TEXT,
+  totp_enabled INTEGER NOT NULL DEFAULT 0 CHECK(totp_enabled IN (0, 1)),
+  totp_backup_codes TEXT,
   role TEXT NOT NULL DEFAULT 'student' CHECK(role IN ('student', 'admin')),
   notes_uploaded INTEGER NOT NULL DEFAULT 0,
   total_likes INTEGER NOT NULL DEFAULT 0,
@@ -177,3 +186,54 @@ CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 CREATE INDEX IF NOT EXISTS idx_notes_active ON notes(deleted_at) WHERE deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_quiz_attempts_user_time ON quiz_attempts(user_id, answered_at);
 CREATE INDEX IF NOT EXISTS idx_study_items_user_due ON study_items(user_id, due_at);
+
+-- Class registry: grades 10-12, each with sections (10.1..12.3). Admin manages
+-- these; students pick one at signup. academic_year dates the cohort.
+CREATE TABLE IF NOT EXISTS grade_classes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  grade INTEGER NOT NULL CHECK(grade IN (10, 11, 12)),
+  class_name TEXT NOT NULL,
+  semester TEXT NOT NULL DEFAULT '',
+  academic_year TEXT,
+  is_active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(grade, class_name, semester)
+) STRICT;
+
+CREATE INDEX IF NOT EXISTS idx_users_grade_class_id ON users(grade_class_id);
+
+-- Google OAuth: provider registry, encrypted token storage, and PKCE state.
+CREATE TABLE IF NOT EXISTS oauth_providers (
+  id INTEGER PRIMARY KEY,
+  name TEXT UNIQUE NOT NULL,
+  client_id TEXT NOT NULL,
+  enabled INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE TABLE IF NOT EXISTS oauth_tokens (
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  provider TEXT NOT NULL,
+  access_token_enc TEXT NOT NULL,
+  refresh_token_enc TEXT,
+  scope TEXT NOT NULL,
+  expires_at INTEGER NOT NULL,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  UNIQUE(user_id, provider)
+);
+
+CREATE INDEX IF NOT EXISTS idx_oauth_tokens_user ON oauth_tokens(user_id);
+
+CREATE TABLE IF NOT EXISTS oauth_states (
+  state TEXT PRIMARY KEY,
+  user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+  redirect_to TEXT,
+  pkce_verifier TEXT NOT NULL,
+  intent TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_oauth_states_expires ON oauth_states(expires_at);

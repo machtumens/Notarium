@@ -22,6 +22,7 @@ import {
   adminUpdateGradeClass,
   adminDeleteGradeClass,
   adminReassignUserClass,
+  adminPromoteClasses,
 } from './routes/subjects';
 import {
   getNotesBySubject,
@@ -43,6 +44,14 @@ import {
   getAIResponse,
 } from './routes/chat';
 import { signupEndpoint, loginEndpoint, meEndpoint } from './routes/auth';
+import {
+  setup2fa,
+  enable2fa,
+  disable2fa,
+  verify2fa,
+  forgotPassword,
+  setPassword,
+} from './routes/twofa';
 import {
   logAdminActivity,
   getAdminActivityLogs,
@@ -144,6 +153,31 @@ export default {
           return jsonResponse({ error: 'Database not available' }, 503);
         }
         return await meEndpoint(request, env);
+      }
+
+      if (path === '/api/auth/2fa/setup' && request.method === 'POST') {
+        if (!env.DB) return jsonResponse({ error: 'Database not available' }, 503);
+        return await setup2fa(request, env);
+      }
+      if (path === '/api/auth/2fa/enable' && request.method === 'POST') {
+        if (!env.DB) return jsonResponse({ error: 'Database not available' }, 503);
+        return await enable2fa(request, env);
+      }
+      if (path === '/api/auth/2fa/disable' && request.method === 'POST') {
+        if (!env.DB) return jsonResponse({ error: 'Database not available' }, 503);
+        return await disable2fa(request, env);
+      }
+      if (path === '/api/auth/2fa/verify' && request.method === 'POST') {
+        if (!env.DB) return jsonResponse({ error: 'Database not available' }, 503);
+        return await verify2fa(request, env);
+      }
+      if (path === '/api/auth/forgot-password' && request.method === 'POST') {
+        if (!env.DB) return jsonResponse({ error: 'Database not available' }, 503);
+        return await forgotPassword(request, env);
+      }
+      if (path === '/api/auth/set-password' && request.method === 'POST') {
+        if (!env.DB) return jsonResponse({ error: 'Database not available' }, 503);
+        return await setPassword(request, env);
       }
 
       if (path === '/api/auth/admin-login' && request.method === 'POST') {
@@ -797,6 +831,9 @@ Tags:`,
       }
       if (path === '/api/admin/grade-classes/reassign' && request.method === 'POST') {
         return await adminReassignUserClass(request, env);
+      }
+      if (path === '/api/admin/grade-classes/promote' && request.method === 'POST') {
+        return await adminPromoteClasses(request, env);
       }
       if (path.match(/^\/api\/admin\/grade-classes\/\d+$/) && request.method === 'PUT') {
         const id = path.split('/').pop()!;

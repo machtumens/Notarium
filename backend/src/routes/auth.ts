@@ -3,6 +3,8 @@ import { jsonResponse } from '../lib/response';
 import { hashPassword, verifyPassword, createToken, verifyToken } from '../lib/auth';
 import { checkRateLimit, validateRequestSize } from '../lib/ratelimit';
 import { signupSchema, loginSchema } from '../lib/validation';
+import { createMfaChallenge } from '../lib/totp';
+import { currentAcademicYear } from '../lib/academicYear';
 
 export async function signupEndpoint(request: Request, env: Env) {
   try {
@@ -33,7 +35,8 @@ export async function signupEndpoint(request: Request, env: Env) {
       );
     }
 
-    const { name, email, password, class: userClass } = validation.data;
+    const { name, email, password, class: userClass, academic_year } = validation.data;
+    const academicYear = academic_year || currentAcademicYear();
 
     if (!email.toLowerCase().endsWith('@sekolahkristencalvin.org')) {
       return jsonResponse(
@@ -70,12 +73,12 @@ export async function signupEndpoint(request: Request, env: Env) {
 
     const user = await env.DB.prepare(
       `
-      INSERT INTO users (display_name, email, password_hash, class, grade, grade_class_id, role, notes_uploaded, total_likes, total_admin_upvotes, diamonds, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, 'student', 0, 0, 0, 0, datetime('now'))
-      RETURNING id, email, display_name, class, grade, role, notes_uploaded, total_likes, total_admin_upvotes, diamonds, description, photo_url
+      INSERT INTO users (display_name, email, password_hash, class, grade, grade_class_id, academic_year, role, notes_uploaded, total_likes, total_admin_upvotes, diamonds, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'student', 0, 0, 0, 0, datetime('now'))
+      RETURNING id, email, display_name, class, grade, academic_year, role, notes_uploaded, total_likes, total_admin_upvotes, diamonds, description, photo_url
     `,
     )
-      .bind(name, email, hashedPassword, userClass || null, gradeValue, gradeClassId)
+      .bind(name, email, hashedPassword, userClass || null, gradeValue, gradeClassId, academicYear)
       .first();
 
     if (!user) {
@@ -104,6 +107,7 @@ export async function signupEndpoint(request: Request, env: Env) {
           name: (user as any).display_name,
           class: (user as any).class,
           grade: (user as any).grade || null,
+          academic_year: (user as any).academic_year || null,
           role: (user as any).role,
           notes_count: (user as any).notes_uploaded || 0,
           total_likes: (user as any).total_likes || 0,
@@ -180,7 +184,8 @@ export async function loginEndpoint(request: Request, env: Env) {
           photo_url,
           suspended,
           suspension_end_date,
-          suspension_reason
+          suspension_reason,
+          totp_enabled
         FROM users WHERE email = ?
       `,
       )
@@ -309,6 +314,14 @@ export async function loginEndpoint(request: Request, env: Env) {
         );
       }
     }
+    // Password passed. If 2FA is on, stop here and issue a short-lived
+    // challenge instead of a session token — the client completes login via
+    // POST /api/auth/2fa/verify.
+    if ((user as any).totp_enabled === 1) {
+      const challenge = await createMfaChallenge((user as any).id, env);
+      return jsonResponse({ requires_2fa: true, challenge }, 200, env);
+    }
+
     const token = await createToken(
       {
         id: (user as any).id,

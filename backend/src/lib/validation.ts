@@ -5,6 +5,18 @@ export const signupSchema = z.object({
   email: z.string().email().max(255),
   password: z.string().min(8).max(128),
   class: z.string().max(50).optional(),
+  academic_year: z
+    .string()
+    .regex(/^\d{4}\/\d{4}$/, 'Expected format YYYY/YYYY')
+    .optional(),
+});
+
+export const promoteClassesSchema = z.object({
+  class_ids: z.array(z.number().int().positive()).min(1),
+  new_academic_year: z
+    .string()
+    .regex(/^\d{4}\/\d{4}$/, 'Expected format YYYY/YYYY')
+    .optional(),
 });
 
 export const loginSchema = z.object({

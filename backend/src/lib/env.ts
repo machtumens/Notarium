@@ -23,6 +23,9 @@ export interface User {
   class?: string;
   grade?: number;
   grade_class_id?: number;
+  academic_year?: string;
+  graduated?: number;
+  totp_enabled?: number;
   role: string;
   notes_uploaded?: number;
   total_likes?: number;
