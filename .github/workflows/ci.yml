@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install root deps
+        run: npm ci
+
+      - name: Install backend deps
+        run: npm ci
+        working-directory: backend
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Backend lint
+        run: npm run lint
+        working-directory: backend
+
+      - name: Backend test
+        run: npm test
+        working-directory: backend
+
+      - name: Backend dry-run deploy
+        run: npx wrangler deploy --dry-run
+        working-directory: backend

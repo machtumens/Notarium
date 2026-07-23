@@ -1,0 +1,45 @@
+name = "notarium-backend"
+main = "src/index.ts"
+compatibility_date = "2025-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Production environment variables (top-level deployment)
+[vars]
+ENVIRONMENT = "production"
+FRONTEND_URL = "https://notarium-site.vercel.app"
+# fill in before deploying; GOOGLE_CLIENT_SECRET must be set via: wrangler secret put GOOGLE_CLIENT_SECRET
+GOOGLE_CLIENT_ID = ""
+
+[[d1_databases]]
+binding = "DB"
+database_name = "notarium-db"
+database_id = "17779d22-7479-479c-8de7-dfe102916ba3"
+
+[[kv_namespaces]]
+binding = "RATE_LIMIT"
+id = "5d033dba4be2443e98c4782d44e0b777"
+
+[env.development]
+vars = { ENVIRONMENT = "development", FRONTEND_URL = "http://localhost:5173" }
+
+[[env.development.d1_databases]]
+binding = "DB"
+database_name = "notarium-db-local"
+database_id = "local-dev"
+
+[[env.development.kv_namespaces]]
+binding = "RATE_LIMIT"
+id = "5d033dba4be2443e98c4782d44e0b777"
+preview_id = "ad6509290e94483f9467a11eb2fff1b8"
+
+[env.production]
+vars = { ENVIRONMENT = "production", FRONTEND_URL = "https://notarium-site.vercel.app" }
+
+[[env.production.d1_databases]]
+binding = "DB"
+database_name = "notarium-db"
+database_id = "17779d22-7479-479c-8de7-dfe102916ba3"
+
+[[env.production.kv_namespaces]]
+binding = "RATE_LIMIT"
+id = "5d033dba4be2443e98c4782d44e0b777"

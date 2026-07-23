@@ -1,0 +1,25 @@
+name = "notarium-backend"
+main = "src/index.ts"
+compatibility_date = "2025-10-31"
+compatibility_flags = ["nodejs_compat"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "notarium-db"
+database_id = "17779d22-7479-479c-8de7-dfe102916ba3"
+
+[env.development]
+vars = { ENVIRONMENT = "development" }
+
+[[env.development.d1_databases]]
+binding = "DB"
+database_name = "notarium-db-local"
+database_id = "local-dev"
+
+[env.production]
+vars = { ENVIRONMENT = "production" }
+
+[[env.production.d1_databases]]
+binding = "DB"
+database_name = "notarium-db"
+database_id = "17779d22-7479-479c-8de7-dfe102916ba3"

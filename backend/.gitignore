@@ -1,0 +1,4 @@
+.vercel
+.wrangler
+node_modules
+.dev.vars

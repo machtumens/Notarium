@@ -1,0 +1,13 @@
+notarium/
+backend/
+.git/
+.github/
+.wrangler/
+src_old_backup/
+backend-simple/
+node_modules/
+.env
+.env.local
+*.md
+*.pdf
+*.json.backup
