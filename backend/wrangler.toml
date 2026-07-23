@@ -7,8 +7,8 @@ compatibility_flags = ["nodejs_compat"]
 [vars]
 ENVIRONMENT = "production"
 FRONTEND_URL = "https://notarium-site.vercel.app"
-# fill in before deploying; GOOGLE_CLIENT_SECRET must be set via: wrangler secret put GOOGLE_CLIENT_SECRET
-GOOGLE_CLIENT_ID = ""
+# GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET are provided via `wrangler secret put`
+# (not declared here — declaring an empty var would clobber the secret on deploy).
 
 [[d1_databases]]
 binding = "DB"

@@ -1,13 +1,6 @@
 import { Canvas } from '@react-three/fiber';
 import { ShaderPlane } from './background-paper-shaders';
 
-/**
- * Deferred WebGL background scene for the Subjects page.
- *
- * Extracted into its own module so it can be loaded via React.lazy — this keeps
- * the Three.js / @react-three/fiber bundle out of the initial render path so the
- * subject cards paint first and the shader scene streams in afterward.
- */
 export default function SubjectsShaderScene() {
   return (
     <Canvas

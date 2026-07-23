@@ -1,4 +1,3 @@
-// debug/info are silenced in production builds
 const isProd = import.meta.env.PROD;
 
 export const logger = {

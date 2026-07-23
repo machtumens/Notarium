@@ -1,6 +1,3 @@
-/**
- * Zod request schemas shared across route handlers.
- */
 import { z } from 'zod';
 
 export const signupSchema = z.object({

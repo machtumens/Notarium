@@ -1,7 +1,3 @@
-/**
- * D1 schema bootstrap, subject-count sync, and mock subject data.
- * The full authoritative schema also lives in ../../schema.sql; migrations are in ../../migrations/.
- */
 import type { Env } from './env';
 
 export async function initializeDatabase(env: Env) {
@@ -251,7 +247,6 @@ export async function initializeDatabase(env: Env) {
       await syncNoteCounts(env);
     } catch (e) {}
 
-    // grade_classes: admin-managed class list per semester
     await env.DB.prepare(
       `
       CREATE TABLE IF NOT EXISTS grade_classes (
@@ -267,7 +262,6 @@ export async function initializeDatabase(env: Env) {
     `,
     ).run();
 
-    // notifications: admin-to-user messages
     await env.DB.prepare(
       `
       CREATE TABLE IF NOT EXISTS notifications (
@@ -285,7 +279,6 @@ export async function initializeDatabase(env: Env) {
     `,
     ).run();
 
-    // notification_reads: per-user read state
     await env.DB.prepare(
       `
       CREATE TABLE IF NOT EXISTS notification_reads (
@@ -298,7 +291,6 @@ export async function initializeDatabase(env: Env) {
     `,
     ).run();
 
-    // Add new columns to users (idempotent)
     try {
       await env.DB.prepare(`ALTER TABLE users ADD COLUMN grade INTEGER`).run();
     } catch (e) {}
@@ -337,12 +329,10 @@ export async function initializeDatabase(env: Env) {
       await env.DB.prepare(`ALTER TABLE users ADD COLUMN last_seen_at TEXT`).run();
     } catch (e) {}
 
-    // Add author_grade to notes
     try {
       await env.DB.prepare(`ALTER TABLE notes ADD COLUMN author_grade INTEGER`).run();
     } catch (e) {}
 
-    // Seed default grade classes (INSERT OR IGNORE is idempotent)
     const defaultClasses = [
       { grade: 10, class_name: '10.1' },
       { grade: 10, class_name: '10.2' },
@@ -364,7 +354,6 @@ export async function initializeDatabase(env: Env) {
       } catch (e) {}
     }
 
-    // Backfill users.grade from class string (idempotent)
     try {
       await env.DB.prepare(
         `
@@ -374,7 +363,6 @@ export async function initializeDatabase(env: Env) {
       ).run();
     } catch (e) {}
 
-    // Backfill users.grade_class_id
     try {
       await env.DB.prepare(
         `
@@ -386,7 +374,6 @@ export async function initializeDatabase(env: Env) {
       ).run();
     } catch (e) {}
 
-    // Backfill notes.author_grade from author's grade
     try {
       await env.DB.prepare(
         `
@@ -398,10 +385,6 @@ export async function initializeDatabase(env: Env) {
       ).run();
     } catch (e) {}
 
-    // ── Study features (learning-science): quiz attempts, spaced-repetition,
-    //    learning points, streaks, confidence ratings ──
-
-    // (19) persisted quiz attempts + (23) confidence ratings
     await env.DB.prepare(
       `
       CREATE TABLE IF NOT EXISTS quiz_attempts (
@@ -425,7 +408,6 @@ export async function initializeDatabase(env: Env) {
       ).run();
     } catch (e) {}
 
-    // (20) spaced-repetition review queue (SM-2 state per question)
     await env.DB.prepare(
       `
       CREATE TABLE IF NOT EXISTS study_items (
@@ -453,7 +435,6 @@ export async function initializeDatabase(env: Env) {
       ).run();
     } catch (e) {}
 
-    // (21) retrieval-based learning points + (22) study streaks — guarded ALTERs
     try {
       await env.DB.prepare(`ALTER TABLE users ADD COLUMN current_streak INTEGER DEFAULT 0`).run();
     } catch (e) {}
@@ -471,7 +452,6 @@ export async function initializeDatabase(env: Env) {
   }
 }
 
-// Sync note counts in subjects table with actual note data
 export async function syncNoteCounts(env: Env) {
   try {
     const { results } = await env.DB.prepare(
@@ -496,7 +476,6 @@ export async function syncNoteCounts(env: Env) {
   } catch (error: any) {}
 }
 
-// Mock data for development/demo
 export const MOCK_SUBJECTS = [
   { id: 1, name: 'Filsafat', icon: '🧠', note_count: 0 },
   { id: 2, name: 'Fisika', icon: '⚛️', note_count: 0 },

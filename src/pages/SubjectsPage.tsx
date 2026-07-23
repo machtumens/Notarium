@@ -6,13 +6,8 @@ import LoadingSpinner from '../components/LoadingSpinner';
 import { darkTheme, cardStyle } from '../theme';
 import { ArrowRight } from 'lucide-react';
 
-// Defer the Three.js WebGL background so the subject cards render first.
-// The shader scene (and the three / @react-three/fiber bundle it pulls in)
-// loads asynchronously after the initial paint.
 const SubjectsShaderScene = lazy(() => import('../components/ui/SubjectsShaderScene'));
 
-// Static gradient fallback shown while the WebGL scene loads. Approximates the
-// deferred shader background so there is no visual pop-in on the initial render.
 const shaderFallbackBackground =
   'radial-gradient(circle at 30% 30%, rgba(99, 102, 241, 0.35) 0%, transparent 55%),' +
   'radial-gradient(circle at 75% 65%, rgba(236, 72, 153, 0.3) 0%, transparent 55%),' +

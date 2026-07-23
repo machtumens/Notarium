@@ -19,7 +19,6 @@ export default function ProfileStats({ onClose, onEditProfile }: ProfileStatsPro
   const [savingName, setSavingName] = useState(false);
   const [photoError, setPhotoError] = useState('');
 
-  // Study stats (retrieval-based learning: streaks + learning points + due reviews)
   const [studyStats, setStudyStats] = useState<{
     current_streak: number;
     longest_streak: number;
@@ -82,7 +81,6 @@ export default function ProfileStats({ onClose, onEditProfile }: ProfileStatsPro
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      // Check file size (max 2MB)
       if (file.size > 2 * 1024 * 1024) {
         setPhotoError('Image too large. Please choose an image smaller than 2MB.');
         return;

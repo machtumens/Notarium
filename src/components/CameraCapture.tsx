@@ -22,12 +22,11 @@ export default function CameraCapture({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
-  const [crop, setCrop] = useState({ x: 10, y: 10, width: 80, height: 80 }); // percentage-based crop
+  const [crop, setCrop] = useState({ x: 10, y: 10, width: 80, height: 80 });
   const [isDragging, setIsDragging] = useState<'tl' | 'tr' | 'bl' | 'br' | null>(null);
   const previewContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    // Ensure video element is mounted before starting camera
     const timer = setTimeout(() => {
       // eslint-disable-next-line react-hooks/immutability -- startCamera is a stable component function referenced by the mount effect; behavior-preserving
       startCamera();
@@ -58,7 +57,6 @@ export default function CameraCapture({
         if (!track.enabled) track.enabled = true;
       });
 
-      // IMPORTANT: Set srcObject BEFORE defining event handlers
       video.srcObject = stream;
 
       let canPlayFired = false;
@@ -101,7 +99,6 @@ export default function CameraCapture({
     try {
       const video = videoRef.current;
 
-      // Check if video is actually playing before capture
       if (video.paused) {
         logger.warn('capture', 'Video paused before capture');
         setError('Waiting for camera stream to play...');
@@ -143,17 +140,14 @@ export default function CameraCapture({
           return;
         }
 
-        // Calculate crop dimensions in pixels
         const cropX = (crop.x / 100) * img.width;
         const cropY = (crop.y / 100) * img.height;
         const cropWidth = (crop.width / 100) * img.width;
         const cropHeight = (crop.height / 100) * img.height;
 
-        // Set canvas to crop dimensions
         canvas.width = cropWidth;
         canvas.height = cropHeight;
 
-        // Draw cropped portion
         ctx.drawImage(
           img,
           cropX,
@@ -191,8 +185,8 @@ export default function CameraCapture({
       try {
         const croppedImage = await applyCrop(preview);
         await onCapture(croppedImage);
-        setPreview(null); // Reset to camera view for another photo
-        setCrop({ x: 10, y: 10, width: 80, height: 80 }); // Reset crop
+        setPreview(null);
+        setCrop({ x: 10, y: 10, width: 80, height: 80 });
       } catch (error) {
         logger.error('camera', 'Failed to crop image:', error);
         setError('Failed to crop image');
@@ -202,7 +196,7 @@ export default function CameraCapture({
 
   const handleRetake = () => {
     setPreview(null);
-    setCrop({ x: 10, y: 10, width: 80, height: 80 }); // Reset crop
+    setCrop({ x: 10, y: 10, width: 80, height: 80 });
   };
 
   const handleMouseDown = (
@@ -221,7 +215,6 @@ export default function CameraCapture({
 
     const rect = previewContainerRef.current.getBoundingClientRect();
 
-    // Handle both mouse and touch events
     const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
     const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
 
@@ -254,7 +247,6 @@ export default function CameraCapture({
           break;
       }
 
-      // Ensure crop stays within bounds
       if (newCrop.x + newCrop.width > 100) newCrop.width = 100 - newCrop.x;
       if (newCrop.y + newCrop.height > 100) newCrop.height = 100 - newCrop.y;
 
@@ -286,7 +278,6 @@ export default function CameraCapture({
     onClose();
   };
 
-  // Detect mobile for responsive sizing
   const [isMobile, setIsMobile] = useState(false);
 
   useEffect(() => {
@@ -298,19 +289,15 @@ export default function CameraCapture({
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-  // Calculate appropriate image height based on screen size using A4 page aspect ratio (210mm x 297mm = ~0.707)
   const calculatePageDimensions = () => {
     const maxWidth = isMobile ? window.innerWidth * 0.9 : 600;
     const maxHeight = isMobile ? window.innerHeight * 0.6 : window.innerHeight * 0.7;
 
-    // A4 aspect ratio: width/height = 210/297 = 0.707
     const pageRatio = 210 / 297;
 
-    // Calculate dimensions while maintaining page aspect ratio
     let width = maxWidth;
     let height = width / pageRatio;
 
-    // If height exceeds max, recalculate based on height
     if (height > maxHeight) {
       height = maxHeight;
       width = height * pageRatio;

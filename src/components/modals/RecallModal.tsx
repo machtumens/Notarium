@@ -24,7 +24,6 @@ interface RecallResult {
   missed_points: string[];
 }
 
-// Score color thresholds (0-100)
 const SCORE_GOOD = 75;
 const SCORE_OK = 50;
 

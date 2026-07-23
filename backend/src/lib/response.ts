@@ -1,6 +1,3 @@
-/**
- * CORS origin resolution, security headers, and the shared JSON response helper.
- */
 import type { Env } from './env';
 
 export function getAllowedOrigin(env: Env, requestOrigin?: string | null): string {
@@ -10,7 +7,6 @@ export function getAllowedOrigin(env: Env, requestOrigin?: string | null): strin
     : [];
   const all = [primary, ...extras];
   if (requestOrigin && all.includes(requestOrigin)) return requestOrigin;
-  // also allow any vercel preview deploy for this project
   if (requestOrigin && /^https:\/\/notariumm[a-z0-9-]*\.vercel\.app$/.test(requestOrigin))
     return requestOrigin;
   return primary;
@@ -34,7 +30,6 @@ export const SECURITY_HEADERS = {
   'Permissions-Policy': 'geolocation=(), microphone=(), camera=()',
 };
 
-// Ready-made Cache-Control values for opt-in HTTP caching on jsonResponse.
 export const PUBLIC_CACHE = 'public, max-age=30, stale-while-revalidate=300';
 export const PRIVATE_CACHE = 'private, max-age=60';
 

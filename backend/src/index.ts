@@ -1,9 +1,3 @@
-/**
- * Notarium Backend API — thin router.
- * Delegates per-domain handlers to modules under src/routes/ and src/lib/.
- * Handles notes management, user data, chat sessions, and authentication with AI integration.
- */
-// Note: Using Gemini/DeepSeek REST APIs instead of SDKs for Cloudflare Workers compatibility.
 import type { Env } from './lib/env';
 import { getAllowedOrigin, jsonResponse } from './lib/response';
 import { hashPassword, verifyPassword, createToken, verifyToken, requireAdmin } from './lib/auth';
@@ -82,7 +76,6 @@ import {
   getStudyStats,
 } from './routes/study';
 
-// Main request handler
 let dbInitialized = false;
 
 export default {
@@ -90,7 +83,6 @@ export default {
     const requestOrigin = request.headers.get('Origin');
     const corsOrigin = getAllowedOrigin(env, requestOrigin);
 
-    // Handle CORS preflight FIRST - before any other logic
     if (request.method === 'OPTIONS') {
       return new Response(null, {
         status: 204,
@@ -107,7 +99,6 @@ export default {
 
     const response = await this._handle(request, env);
 
-    // stamp correct CORS origin on every response
     const newHeaders = new Headers(response.headers);
     newHeaders.set('Access-Control-Allow-Origin', corsOrigin);
     newHeaders.set('Access-Control-Allow-Credentials', 'true');
@@ -119,7 +110,6 @@ export default {
   },
 
   async _handle(request: Request, env: Env): Promise<Response> {
-    // Initialize database on first request if available
     if (env.DB && !dbInitialized) {
       try {
         await initializeDatabase(env);
@@ -130,7 +120,6 @@ export default {
     const url = new URL(request.url);
     const path = url.pathname;
 
-    // Test endpoint to verify worker is responding
     if (path === '/test') {
       return jsonResponse({ message: 'Worker is running', timestamp: new Date().toISOString() });
     }
@@ -162,7 +151,6 @@ export default {
           return jsonResponse({ error: 'Database not available' }, 503);
         }
         try {
-          // rate-limit admin login attempts
           const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
           const allowed = await checkRateLimit(ip, 'admin-login', env);
           if (!allowed) {
@@ -286,24 +274,21 @@ export default {
             values.push(body.description || null);
           }
 
-          // Always update the timestamp
           updates.push('updated_at = ?');
           values.push(new Date().toISOString());
 
           if (updates.length === 1) {
-            // Only updated_at, no real changes
             return jsonResponse({ success: true, updated: false });
           }
 
           try {
-            values.push(userId); // Add userId for WHERE clause
+            values.push(userId);
             const sql = `UPDATE users SET ${updates.join(', ')} WHERE id = ?`;
 
             const result = await env.DB.prepare(sql)
               .bind(...values)
               .run();
 
-            // Verify the update by reading it back
             const updated = (await env.DB.prepare(
               `
               SELECT id, display_name, photo_url, email, class, description FROM users WHERE id = ?
@@ -321,7 +306,6 @@ export default {
         }
       }
 
-      // Batched password migration endpoint (processes 5 users per request to avoid timeout)
       if (path === '/api/admin/migrate-passwords' && request.method === 'POST') {
         try {
           const body = (await request.json()) as any;
@@ -331,7 +315,6 @@ export default {
             return jsonResponse({ error: 'Unauthorized' }, 401, env);
           }
 
-          // Get unmigrated users (those without bcrypt hashes)
           const users = await env.DB.prepare(
             `
             SELECT id, password_hash FROM users
@@ -350,7 +333,6 @@ export default {
             const plainPassword = (user as any).password_hash;
 
             try {
-              // Hash the plain text password
               const hashed = await hashPassword(plainPassword);
               await env.DB.prepare('UPDATE users SET password_hash = ? WHERE id = ?')
                 .bind(hashed, userId)
@@ -361,7 +343,6 @@ export default {
             }
           }
 
-          // Check how many users are left
           const remaining = await env.DB.prepare(
             `
             SELECT COUNT(*) as count FROM users
@@ -386,7 +367,6 @@ export default {
         }
       }
 
-      // Admin password reset — requires valid admin JWT
       if (path === '/api/auth/admin-reset-password' && request.method === 'POST') {
         if (!env.DB) {
           return jsonResponse({ error: 'Database not available' }, 503);
@@ -402,7 +382,6 @@ export default {
             return jsonResponse({ error: 'Email and new password are required' }, 400);
           }
 
-          // Find user by email
           const user = (await env.DB.prepare(
             `
             SELECT id, email FROM users WHERE email = ?
@@ -415,10 +394,8 @@ export default {
             return jsonResponse({ error: 'User not found' }, 404);
           }
 
-          // Hash the new password with bcrypt
           const hashedPassword = await hashPassword(newPassword);
 
-          // Update password in database
           await env.DB.prepare(
             `
             UPDATE users SET password_hash = ?, updated_at = datetime('now') WHERE id = ?
@@ -433,7 +410,6 @@ export default {
         }
       }
 
-      // Change password (for logged-in users)
       if (path === '/api/auth/change-password' && request.method === 'POST') {
         if (!env.DB) {
           return jsonResponse({ error: 'Database not available' }, 503);
@@ -446,7 +422,6 @@ export default {
             return jsonResponse({ error: 'Unauthorized - No token provided' }, 401, env);
           }
 
-          // Verify JWT token
           const decoded = await verifyToken(token, env);
           if (!decoded || !decoded.id) {
             return jsonResponse({ error: 'Invalid or expired token' }, 401, env);
@@ -461,7 +436,6 @@ export default {
             return jsonResponse({ error: 'Current password and new password are required' }, 400);
           }
 
-          // Get user from database
           const user = (await env.DB.prepare(
             `
             SELECT id, email, password_hash FROM users WHERE id = ?
@@ -474,16 +448,13 @@ export default {
             return jsonResponse({ error: 'User not found' }, 404);
           }
 
-          // Verify current password with bcrypt
           const isPasswordValid = await verifyPassword(currentPassword, user.password_hash);
           if (!isPasswordValid) {
             return jsonResponse({ error: 'Current password is incorrect' }, 401, env);
           }
 
-          // Hash the new password with bcrypt
           const hashedNewPassword = await hashPassword(newPassword);
 
-          // Update password in database
           await env.DB.prepare(
             `
             UPDATE users SET password_hash = ?, updated_at = datetime('now') WHERE id = ?
@@ -513,7 +484,6 @@ export default {
         return await updateUserClass(request, env);
       }
 
-      // Emergency admin password fix endpoint
       if (path === '/api/admin/emergency-password-fix' && request.method === 'POST') {
         if (!env.DB) {
           return jsonResponse({ error: 'Database not available' }, 503);
@@ -530,7 +500,6 @@ export default {
             return jsonResponse({ error: 'Email and new password are required' }, 400);
           }
 
-          // Find user by email
           const user = (await env.DB.prepare(
             `
             SELECT id, email, display_name FROM users WHERE email = ?
@@ -613,7 +582,6 @@ export default {
         return await userDeleteNote(noteId, request, env);
       }
 
-      // Leaderboard
       if (path === '/api/leaderboard' && request.method === 'GET') {
         return await getLeaderboard(env);
       }
@@ -646,7 +614,6 @@ export default {
       }
       if (path === '/api/gemini/quick-summary' && request.method === 'POST') {
         if (!env.GEMINI_API_KEY) {
-          // Fallback when no API key
           const body = (await request.json()) as any;
           const summary = `${body.title || 'Study material'}: ${body.content?.substring(0, 80) || 'No content available'}...`;
           return jsonResponse({ success: true, summary });
@@ -713,7 +680,6 @@ Tags:`,
 
           return jsonResponse({ success: true, tags: tags.length > 0 ? tags : ['study', 'notes'] });
         } catch (error: any) {
-          // Fallback tags on error
           return jsonResponse({ success: true, tags: ['study', 'notes', 'learning'] });
         }
       }
@@ -819,12 +785,10 @@ Tags:`,
         return await getUsageStatistics(request, env);
       }
 
-      // Grade classes — public
       if (path === '/api/grade-classes' && request.method === 'GET') {
         return await getPublicGradeClasses(env);
       }
 
-      // Grade classes — admin CRUD
       if (path === '/api/admin/grade-classes' && request.method === 'GET') {
         return await adminGetGradeClasses(request, env);
       }
@@ -843,7 +807,6 @@ Tags:`,
         return await adminDeleteGradeClass(id, request, env);
       }
 
-      // Notifications — admin
       if (path === '/api/admin/notifications' && request.method === 'POST') {
         return await adminCreateNotification(request, env);
       }
@@ -855,7 +818,6 @@ Tags:`,
         return await adminDeleteNotification(id, request, env);
       }
 
-      // Notifications — user
       if (path === '/api/notifications' && request.method === 'GET') {
         return await getUserNotifications(request, env);
       }
@@ -870,8 +832,6 @@ Tags:`,
         return await markNotificationRead(notifId, request, env);
       }
 
-      // Study features (learning-science): quiz attempts, spaced-repetition,
-      // learning points, streaks, confidence ratings, free-recall grading.
       if (path === '/api/quiz/attempt' && request.method === 'POST') {
         if (!env.DB) return jsonResponse({ error: 'Database not available' }, 503);
         return await logQuizAttempt(request, env);
@@ -894,7 +854,6 @@ Tags:`,
         return await getStudyStats(request, env);
       }
 
-      // M08 OAuth routes: /auth/google/start, /auth/google/callback, /auth/google/disconnect
       const oauthResponse = await handleOAuthRoutes(path, url, request, env);
       if (oauthResponse) return oauthResponse;
 

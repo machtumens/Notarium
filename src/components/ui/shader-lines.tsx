@@ -39,7 +39,6 @@ export function ShaderAnimation() {
   });
 
   useEffect(() => {
-    // Load Three.js dynamically
     const script = document.createElement('script');
     script.src = 'https://cdnjs.cloudflare.com/ajax/libs/three.js/89/three.min.js';
     script.onload = () => {
@@ -51,7 +50,6 @@ export function ShaderAnimation() {
     document.head.appendChild(script);
 
     return () => {
-      // Cleanup
       if (sceneRef.current.animationId) {
         cancelAnimationFrame(sceneRef.current.animationId);
       }
@@ -68,33 +66,26 @@ export function ShaderAnimation() {
     const THREE = window.THREE;
     const container = containerRef.current;
 
-    // Clear any existing content
     container.innerHTML = '';
 
-    // Initialize camera
     const camera = new THREE.Camera();
     camera.position.z = 1;
 
-    // Initialize scene
     const scene = new THREE.Scene();
 
-    // Create geometry
     const geometry = new THREE.PlaneBufferGeometry(2, 2);
 
-    // Define uniforms
     const uniforms = {
       time: { type: 'f', value: 1.0 },
       resolution: { type: 'v2', value: new THREE.Vector2() },
     };
 
-    // Vertex shader
     const vertexShader = `
       void main() {
         gl_Position = vec4( position, 1.0 );
       }
     `;
 
-    // Optimized fragment shader (reduced loop iterations for better performance)
     const fragmentShader = `
       #define TWO_PI 6.2831853072
       #define PI 3.14159265359
@@ -139,31 +130,26 @@ export function ShaderAnimation() {
       }
     `;
 
-    // Create material
     const material = new THREE.ShaderMaterial({
       uniforms: uniforms,
       vertexShader: vertexShader,
       fragmentShader: fragmentShader,
     });
 
-    // Create mesh and add to scene
     const mesh = new THREE.Mesh(geometry, material);
     scene.add(mesh);
 
-    // Initialize renderer with performance optimizations
     const renderer = new THREE.WebGLRenderer({
       antialias: false, // Disable antialiasing for better performance
       alpha: true,
       powerPreference: 'low-power', // Use low-power mode
     });
-    // Limit pixel ratio to improve performance on high-DPI displays
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     renderer.domElement.style.width = '100%';
     renderer.domElement.style.height = '100%';
     renderer.domElement.style.display = 'block';
     container.appendChild(renderer.domElement);
 
-    // Store references
     sceneRef.current = {
       camera,
       scene,
@@ -172,7 +158,6 @@ export function ShaderAnimation() {
       animationId: null,
     };
 
-    // Initial size setup
     const setSize = () => {
       const width = window.innerWidth;
       const height = window.innerHeight;
@@ -183,7 +168,6 @@ export function ShaderAnimation() {
 
     setSize();
 
-    // Handle resize with throttling
     let resizeTimeout: NodeJS.Timeout;
     const onWindowResize = () => {
       clearTimeout(resizeTimeout);
@@ -194,9 +178,8 @@ export function ShaderAnimation() {
 
     window.addEventListener('resize', onWindowResize, false);
 
-    // Animation loop with frame rate throttling for better performance
     let lastFrameTime = 0;
-    const targetFPS = 30; // Throttle to 30fps instead of 60fps
+    const targetFPS = 30;
     const frameInterval = 1000 / targetFPS;
 
     const animate = (currentTime: number) => {
@@ -204,7 +187,6 @@ export function ShaderAnimation() {
 
       const deltaTime = currentTime - lastFrameTime;
 
-      // Only render if enough time has passed (throttle to 30fps)
       if (deltaTime >= frameInterval) {
         lastFrameTime = currentTime - (deltaTime % frameInterval);
         uniforms.time.value += 0.05;

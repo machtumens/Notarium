@@ -10,7 +10,6 @@ import {
   revokeToken,
 } from '../services/google-oauth';
 
-// Subset of index.ts Env relevant to these routes
 export interface OAuthEnv {
   DB: D1Database;
   RATE_LIMIT: KVNamespace;
@@ -21,8 +20,6 @@ export interface OAuthEnv {
   OAUTH_TOKEN_AES_KEY?: string;
   FRONTEND_URL?: string;
 }
-
-// ─── Scopes ──────────────────────────────────────────────────────────────────
 
 const SIGNUP_SCOPES = ['openid', 'email', 'profile'];
 const CLASSROOM_SCOPES = [
@@ -45,8 +42,6 @@ const INTENT_SCOPES: Record<string, string[]> = {
 
 const GOOGLE_ISSUERS = new Set(['https://accounts.google.com', 'accounts.google.com']);
 
-// One-time-code exchange (FIX #6): opaque code -> { jwt, exp } stored in the
-// RATE_LIMIT KV, single-use, short-lived.
 const EXCHANGE_TTL_SECONDS = 60;
 const EXCHANGE_KV_PREFIX = 'oauth_exchange:';
 
@@ -54,30 +49,18 @@ function exchangeKvKey(code: string): string {
   return `${EXCHANGE_KV_PREFIX}${code}`;
 }
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
 function feBase(env: OAuthEnv): string {
   return (env.FRONTEND_URL ?? 'https://notarium-site.vercel.app').replace(/\/$/, '');
 }
 
-/**
- * Guard against open redirects. Accepts ONLY:
- *  - a same-origin relative path (starts with a single '/', not '//')
- *  - an absolute URL whose origin exactly equals feBase(env)
- * Anything else (protocol-relative, foreign origin, javascript:, malformed)
- * falls back to the default frontend URL.
- */
 function sanitizeRedirect(candidate: string | null | undefined, env: OAuthEnv): string {
   const fallback = feBase(env);
   if (!candidate) return fallback;
 
-  // Same-origin relative path: single leading slash, not protocol-relative ('//'),
-  // and no backslash (browsers normalize '/\evil.com' to 'https://evil.com/').
   if (candidate.startsWith('/') && !candidate.startsWith('//') && !candidate.includes('\\')) {
     return candidate;
   }
 
-  // Absolute URL: origin must exactly match the configured frontend origin.
   try {
     const parsed = new URL(candidate);
     if (parsed.origin === new URL(fallback).origin) {
@@ -143,15 +126,8 @@ async function issueJwt(
     .sign(secret);
 }
 
-// Cached remote JWK set for Google's OAuth signing keys. createRemoteJWKSet
-// returns a function that fetches + caches the keys, so we build it once.
 const GOOGLE_JWKS = createRemoteJWKSet(new URL('https://www.googleapis.com/oauth2/v3/certs'));
 
-/**
- * Cryptographically verify a Google id_token: checks the RS256 signature
- * against Google's published JWKS and asserts issuer + audience. Returns the
- * verified payload, or throws when the token is forged/invalid/expired.
- */
 async function verifyIdToken(idToken: string, env: OAuthEnv): Promise<JWTPayload> {
   if (!env.GOOGLE_CLIENT_ID) {
     throw new Error('GOOGLE_CLIENT_ID not configured');
@@ -163,12 +139,9 @@ async function verifyIdToken(idToken: string, env: OAuthEnv): Promise<JWTPayload
   return payload;
 }
 
-// ─── Route handlers ───────────────────────────────────────────────────────────
-
 async function handleStart(url: URL, request: Request, env: OAuthEnv): Promise<Response> {
   const intent = url.searchParams.get('intent') ?? '';
   const rawRedirectTo = url.searchParams.get('redirect_to');
-  // Validate before storing: only same-origin/relative destinations survive.
   const redirectTo = rawRedirectTo ? sanitizeRedirect(rawRedirectTo, env) : undefined;
 
   if (!INTENT_SCOPES[intent]) {
@@ -251,7 +224,6 @@ async function handleCallback(url: URL, _request: Request, env: OAuthEnv): Promi
     return errorRedirect(env, 'state_expired');
   }
 
-  // Single-use: delete before any further processing
   await env.DB.prepare(`DELETE FROM oauth_states WHERE state = ?`).bind(state).run();
 
   let tokens;
@@ -284,7 +256,6 @@ async function handleCallback(url: URL, _request: Request, env: OAuthEnv): Promi
     return errorRedirect(env, 'id_token_invalid');
   }
 
-  // Validate aud and iss
   if (idPayload.aud !== env.GOOGLE_CLIENT_ID) {
     console.error('[oauth] id_token aud mismatch');
     return errorRedirect(env, 'id_token_aud_mismatch');
@@ -304,7 +275,6 @@ async function handleCallback(url: URL, _request: Request, env: OAuthEnv): Promi
   const { intent } = stateRow;
 
   if (intent === 'signup') {
-    // Find or create user by email
     let user = (await env.DB.prepare(`SELECT id, email, role FROM users WHERE email = ?`)
       .bind(email)
       .first()) as { id: number; email: string; role: string } | null;
@@ -328,10 +298,6 @@ async function handleCallback(url: URL, _request: Request, env: OAuthEnv): Promi
 
     const jwt = await issueJwt({ id: user.id, email: user.email, role: user.role }, env);
 
-    // One-time-code exchange: never put the JWT in the redirect URL (it would
-    // leak into browser history / server logs / Referer). Instead store the JWT
-    // under a random opaque code in KV (single-use, 60s TTL) and redirect with
-    // the code. The frontend exchanges it via POST /auth/google/exchange.
     const oneTimeCode = `${crypto.randomUUID()}${crypto.randomUUID()}`.replace(/-/g, '');
     await env.RATE_LIMIT.put(
       exchangeKvKey(oneTimeCode),
@@ -339,11 +305,9 @@ async function handleCallback(url: URL, _request: Request, env: OAuthEnv): Promi
       { expirationTtl: EXCHANGE_TTL_SECONDS },
     );
 
-    // signup flow always lands on the frontend auth callback route.
     return Response.redirect(`${feBase(env)}/auth/callback?code=${oneTimeCode}`, 302);
   }
 
-  // classroom | docs: require existing user from state
   if (!stateRow.user_id) {
     console.error('[oauth] no user_id in state for intent:', intent);
     return errorRedirect(env, 'auth_required');
@@ -381,7 +345,6 @@ async function handleCallback(url: URL, _request: Request, env: OAuthEnv): Promi
     )
     .run();
 
-  // Re-validate at use time (defense-in-depth against a tampered stored value).
   const dest = stateRow.redirect_to
     ? sanitizeRedirect(stateRow.redirect_to, env)
     : `${feBase(env)}/settings?google=ok`;
@@ -415,7 +378,6 @@ async function handleDisconnect(request: Request, env: OAuthEnv): Promise<Respon
         : await decryptToken(aesKey, row.access_token_enc);
       await revokeToken(tokenToRevoke);
     } catch (err: unknown) {
-      // Log but don't block — still delete the local row
       console.error('[oauth] revoke failed:', err instanceof Error ? err.message : err);
     }
   }
@@ -460,7 +422,6 @@ async function handleExchange(request: Request, env: OAuthEnv): Promise<Response
     return jsonErr('Invalid or expired code', 400);
   }
 
-  // Single-use: delete immediately so a replayed code cannot be reused.
   await env.RATE_LIMIT.delete(kvKey);
 
   let parsed: { jwt?: unknown; exp?: unknown };
@@ -484,11 +445,6 @@ async function handleExchange(request: Request, env: OAuthEnv): Promise<Response
   });
 }
 
-// ─── Public mount point ───────────────────────────────────────────────────────
-
-/**
- * Call from index.ts _handle(). Returns a Response when path matches, null otherwise.
- */
 export async function handleOAuthRoutes(
   path: string,
   url: URL,

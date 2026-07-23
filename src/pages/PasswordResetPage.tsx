@@ -57,7 +57,6 @@ export default function PasswordResetPage() {
         },
       });
 
-      // Success - redirect to login with autofilled password
       navigate('/login', {
         state: {
           email,

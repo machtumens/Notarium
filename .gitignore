@@ -55,3 +55,4 @@ temp/
 SETUP_INTERNAL.md
 SETUP.md
 README_INTERNAL.md
+.env*

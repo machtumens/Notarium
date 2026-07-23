@@ -18,16 +18,11 @@ interface Question {
   id?: number;
   question: string;
   options: string[];
-  // The generator may return either camelCase or snake_case; support both.
   correctAnswer?: number;
   correct_answer?: number;
   explanation?: string;
 }
 
-// Per-question interaction stages for retrieval practice:
-// 'answer'     -> user picks an option
-// 'confidence' -> user rates how sure they are (metacognitive calibration, FEATURE #23)
-// 'reveal'     -> correct/incorrect shown + explanation (elaborative feedback, FEATURE #25)
 type Stage = 'answer' | 'confidence' | 'reveal';
 
 const CONFIDENCE_OPTIONS = [
@@ -36,7 +31,6 @@ const CONFIDENCE_OPTIONS = [
   { value: 3, label: 'Confident' },
 ];
 
-// Normalize the correct-answer index across possible field names.
 const getCorrectIndex = (q?: Question): number | undefined => q?.correctAnswer ?? q?.correct_answer;
 
 export default function QuizModal({ noteId, onClose }: QuizModalProps) {
@@ -74,8 +68,6 @@ export default function QuizModal({ noteId, onClose }: QuizModalProps) {
     }
   };
 
-  // FEATURE #23 — capture the selected option, then advance to the confidence step
-  // BEFORE revealing correctness.
   const handleAnswer = (optionIndex: number) => {
     if (stage !== 'answer') return;
     const newAnswers = [...answers];
@@ -84,7 +76,6 @@ export default function QuizModal({ noteId, onClose }: QuizModalProps) {
     setStage('confidence');
   };
 
-  // FEATURE #23 + #19 — record confidence, reveal the result, and persist the attempt.
   const handleConfidence = (confidence: number) => {
     const newConfidences = [...confidences];
     newConfidences[currentQuestion] = confidence;
@@ -94,7 +85,6 @@ export default function QuizModal({ noteId, onClose }: QuizModalProps) {
     logAttempt(currentQuestion, confidence);
   };
 
-  // FEATURE #19 — persist quiz attempts (retrieval practice). Fire-and-forget.
   const logAttempt = (idx: number, confidence: number) => {
     const q: Question | undefined = quiz?.questions?.[idx];
     if (!q) return;
@@ -269,7 +259,6 @@ export default function QuizModal({ noteId, onClose }: QuizModalProps) {
   const isRevealed = stage === 'reveal';
   const isCorrect = isRevealed && selected === correctIndex;
 
-  // Option-button color depending on the current stage.
   const optionBackground = (idx: number): string => {
     if (isRevealed) {
       if (idx === correctIndex) return 'rgba(134, 239, 172, 0.15)';

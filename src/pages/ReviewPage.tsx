@@ -117,8 +117,6 @@ export default function ReviewPage() {
     }
   };
 
-  // ---- Render helpers ----
-
   const pageTitle = (
     <div
       style={{
@@ -328,7 +326,6 @@ export default function ReviewPage() {
     );
   }
 
-  // Active review card
   return (
     <div>
       {pageTitle}

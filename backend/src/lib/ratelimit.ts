@@ -1,6 +1,3 @@
-/**
- * KV-backed rate limiting plus request-size and AI-input guards.
- */
 import type { Env } from './env';
 import { MAX_REQUEST_SIZE, RATE_LIMIT_WINDOW, RATE_LIMIT_MAX_ATTEMPTS } from './env';
 
@@ -15,7 +12,7 @@ export async function checkRateLimit(ip: string, endpoint: string, env: Env): Pr
     const recentAttempts = attempts.filter((timestamp) => timestamp > windowStart);
 
     if (recentAttempts.length >= RATE_LIMIT_MAX_ATTEMPTS) {
-      return false; // Rate limit exceeded
+      return false;
     }
     recentAttempts.push(now);
     await env.RATE_LIMIT.put(key, JSON.stringify(recentAttempts), {
@@ -27,15 +24,14 @@ export async function checkRateLimit(ip: string, endpoint: string, env: Env): Pr
   }
 }
 
-// Prompt injection sanitization for AI inputs
 export function sanitizeAIInput(input: string): string {
   if (!input) return '';
   let sanitized = input
     .replace(/system\s*:/gi, '')
     .replace(/assistant\s*:/gi, '')
     .replace(/user\s*:/gi, '')
-    .replace(/<\|.*?\|>/g, '') // Remove special tokens
-    .replace(/\[INST\]|\[\/INST\]/g, '') // Remove instruction markers
+    .replace(/<\|.*?\|>/g, '')
+    .replace(/\[INST\]|\[\/INST\]/g, '')
     .trim();
   if (sanitized.length > 10000) {
     sanitized = sanitized.substring(0, 10000);
@@ -44,7 +40,6 @@ export function sanitizeAIInput(input: string): string {
   return sanitized;
 }
 
-// Request size validation
 export function validateRequestSize(request: Request): boolean {
   const contentLength = request.headers.get('content-length');
   if (contentLength && parseInt(contentLength) > MAX_REQUEST_SIZE) {

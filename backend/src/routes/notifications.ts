@@ -1,6 +1,3 @@
-/**
- * Notifications: admin create/list/delete + user list/unread-count/mark-read.
- */
 import type { Env } from '../lib/env';
 import { jsonResponse } from '../lib/response';
 import { getOrCreateUser, requireAdmin } from '../lib/auth';

@@ -1,7 +1,3 @@
-/**
- * Shared environment bindings, domain types, and cross-cutting constants.
- */
-
 export interface Env {
   DB: D1Database;
   RATE_LIMIT: KVNamespace;
@@ -35,8 +31,8 @@ export interface User {
   updated_at?: string;
 }
 
-export const MAX_REQUEST_SIZE = 10 * 1024 * 1024; // 10MB
-export const RATE_LIMIT_WINDOW = 900; // 15 minutes in seconds
+export const MAX_REQUEST_SIZE = 10 * 1024 * 1024;
+export const RATE_LIMIT_WINDOW = 900;
 export const RATE_LIMIT_MAX_ATTEMPTS = 5;
 export const JWT_EXPIRATION = '24h';
 export const REFRESH_TOKEN_EXPIRATION = '7d';

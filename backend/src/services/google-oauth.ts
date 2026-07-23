@@ -3,10 +3,9 @@ export type GoogleTokens = {
   refreshToken?: string;
   idToken?: string;
   scope: string;
-  expiresAt: number; // unix seconds
+  expiresAt: number;
 };
 
-// base64url: RFC 4648 §5 — no padding, + → -, / → _
 function toBase64Url(buf: ArrayBuffer): string {
   return btoa(String.fromCharCode(...new Uint8Array(buf)))
     .replace(/\+/g, '-')
@@ -110,7 +109,6 @@ export async function revokeToken(token: string): Promise<void> {
     `https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(token)}`,
     { method: 'POST' },
   );
-  // 200 = revoked, 400 = already revoked — both acceptable
   if (!res.ok && res.status !== 400) {
     const text = await res.text();
     throw new Error(`Google revoke failed ${res.status}: ${text}`);
@@ -122,7 +120,6 @@ export async function importAesKey(base64Key: string): Promise<CryptoKey> {
   return crypto.subtle.importKey('raw', raw, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
 }
 
-// ciphertext wire format: base64( 12-byte IV || encrypted bytes )
 export async function encryptToken(key: CryptoKey, plaintext: string): Promise<string> {
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const ct = await crypto.subtle.encrypt(

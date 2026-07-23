@@ -30,7 +30,7 @@ export default function ChatPage() {
   const [sending, setSending] = useState(false);
   const [uploadedDocuments, setUploadedDocuments] = useState<UploadedDocument[]>([]);
   const [keyConcepts, setKeyConcepts] = useState<string[]>([]);
-  const [sidebarOpen, setSidebarOpen] = useState(false); // Start with sidebar closed
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -78,7 +78,6 @@ export default function ChatPage() {
     try {
       let currentSession = selectedSession;
 
-      // Auto-create a new chat session if none exists
       if (!currentSession) {
         const data = await api.chat.createSession('General', 'AI Chat');
         currentSession = data.session;
@@ -86,10 +85,8 @@ export default function ChatPage() {
         setSelectedSession(currentSession);
       }
 
-      // Add user message
       setMessages((prev) => [...prev, { role: 'user', content: message }]);
 
-      // Get AI response
       const response = await api.request(`/api/chat/sessions/${currentSession.id}/ai-response`, {
         method: 'POST',
         body: { message, subject: currentSession.subject },
@@ -146,7 +143,6 @@ export default function ChatPage() {
           position: 'absolute',
           inset: 0,
           zIndex: 0,
-          // Shift animation to the right to center it with the main content area
           transform: isMobile
             ? sidebarOpen
               ? 'translateX(0px)'
@@ -155,7 +151,6 @@ export default function ChatPage() {
               ? 'translateX(170px)'
               : 'translateX(40px)',
           transition: 'transform 0.3s ease',
-          // Dim animation when sidebar is open on mobile
           opacity: isMobile && sidebarOpen ? 0.3 : 1,
         }}
       >
@@ -311,7 +306,6 @@ export default function ChatPage() {
           height: `calc(100vh - ${isMobile ? '84px' : '96px'})`,
           transition: 'margin-left 0.3s ease',
           zIndex: 10,
-          // Hide main content when sidebar is open on mobile
           opacity: isMobile && sidebarOpen ? 0 : 1,
           pointerEvents: isMobile && sidebarOpen ? 'none' : 'auto',
         }}

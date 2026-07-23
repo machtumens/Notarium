@@ -824,7 +824,6 @@ export default function AdminPage() {
     try {
       setActionLoading(userId);
       const response = await api.admin.suspendUser(userId, days, reason);
-      // Reload data to get updated suspension info
       await loadData();
     } catch (error) {
       console.error('Failed to suspend user:', error);
@@ -838,7 +837,6 @@ export default function AdminPage() {
     try {
       setActionLoading(userId);
       const response = await api.admin.warnUser(userId, message);
-      // Reload data to get updated warning info
       await loadData();
     } catch (error) {
       console.error('Failed to warn user:', error);
@@ -855,7 +853,6 @@ export default function AdminPage() {
     try {
       setActionLoading(userId);
       const response = await api.admin.unsuspendUser(userId);
-      // Reload data to get updated suspension info
       await loadData();
     } catch (error) {
       console.error('Failed to unsuspend user:', error);

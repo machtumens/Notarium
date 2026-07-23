@@ -1,16 +1,11 @@
-/**
- * Email/password auth endpoints: signup, login (incl. admin-via-form), and /me.
- */
 import type { Env } from '../lib/env';
 import { jsonResponse } from '../lib/response';
 import { hashPassword, verifyPassword, createToken, verifyToken } from '../lib/auth';
 import { checkRateLimit, validateRequestSize } from '../lib/ratelimit';
 import { signupSchema, loginSchema } from '../lib/validation';
 
-// Sign up endpoint
 export async function signupEndpoint(request: Request, env: Env) {
   try {
-    // Check request size
     if (!validateRequestSize(request)) {
       return jsonResponse({ error: 'Request too large' }, 413, env);
     }
@@ -26,7 +21,6 @@ export async function signupEndpoint(request: Request, env: Env) {
 
     const body = (await request.json()) as any;
 
-    // Input validation with zod
     const validation = signupSchema.safeParse(body);
     if (!validation.success) {
       return jsonResponse(
@@ -41,7 +35,6 @@ export async function signupEndpoint(request: Request, env: Env) {
 
     const { name, email, password, class: userClass } = validation.data;
 
-    // Restrict to school domain
     if (!email.toLowerCase().endsWith('@sekolahkristencalvin.org')) {
       return jsonResponse(
         { error: 'Only @sekolahkristencalvin.org email addresses are allowed' },
@@ -50,7 +43,6 @@ export async function signupEndpoint(request: Request, env: Env) {
       );
     }
 
-    // Validate class against grade_classes table
     let gradeValue: number | null = null;
     let gradeClassId: number | null = null;
     if (userClass) {
@@ -66,7 +58,6 @@ export async function signupEndpoint(request: Request, env: Env) {
       gradeClassId = gradeClass.id;
     }
 
-    // Check if user already exists
     const existing = await env.DB.prepare('SELECT id FROM users WHERE email = ?')
       .bind(email)
       .first();
@@ -75,10 +66,8 @@ export async function signupEndpoint(request: Request, env: Env) {
       return jsonResponse({ error: 'Email already registered' }, 409, env);
     }
 
-    // Hash password with bcrypt
     const hashedPassword = await hashPassword(password);
 
-    // Create new user
     const user = await env.DB.prepare(
       `
       INSERT INTO users (display_name, email, password_hash, class, grade, grade_class_id, role, notes_uploaded, total_likes, total_admin_upvotes, diamonds, created_at)
@@ -101,7 +90,6 @@ export async function signupEndpoint(request: Request, env: Env) {
       env,
     );
 
-    // Calculate points (1 point per note upload, 1 point per like, 1 point per admin like)
     const points =
       ((user as any).notes_uploaded || 0) +
       ((user as any).total_likes || 0) +
@@ -137,10 +125,8 @@ export async function signupEndpoint(request: Request, env: Env) {
   }
 }
 
-// Login endpoint
 export async function loginEndpoint(request: Request, env: Env) {
   try {
-    // Check request size
     if (!validateRequestSize(request)) {
       return jsonResponse({ error: 'Request too large' }, 413, env);
     }
@@ -160,7 +146,6 @@ export async function loginEndpoint(request: Request, env: Env) {
       return jsonResponse({ error: 'Invalid request body format' }, 400, env);
     }
 
-    // Input validation with zod
     const validation = loginSchema.safeParse(body);
     if (!validation.success) {
       return jsonResponse(
@@ -175,10 +160,8 @@ export async function loginEndpoint(request: Request, env: Env) {
 
     const { email, password } = validation.data;
 
-    // Query user from database
     let user;
     try {
-      // Try to query with all columns first
       user = await env.DB.prepare(
         `
         SELECT
@@ -204,7 +187,6 @@ export async function loginEndpoint(request: Request, env: Env) {
         .bind(email)
         .first();
     } catch (dbError: any) {
-      // Fallback: try without diamonds column
       try {
         user = await env.DB.prepare(
           `
@@ -229,7 +211,6 @@ export async function loginEndpoint(request: Request, env: Env) {
           .bind(email)
           .first();
 
-        // Add diamonds with default value
         if (user) {
           (user as any).diamonds = 0;
         }
@@ -241,12 +222,10 @@ export async function loginEndpoint(request: Request, env: Env) {
       }
     }
 
-    // Admin login via regular form: @notariumadmin.com email + ADMIN_PASSWORD
     if (email.endsWith('@notariumadmin.com')) {
       if (password !== env.ADMIN_PASSWORD) {
         return jsonResponse({ error: 'Invalid email or password' }, 401, env);
       }
-      // Upsert the admin user record
       let adminUser = (await env.DB.prepare(`SELECT * FROM users WHERE email = ?`)
         .bind(email)
         .first()) as any;
@@ -293,20 +272,17 @@ export async function loginEndpoint(request: Request, env: Env) {
       return jsonResponse({ error: 'Invalid email or password' }, 401);
     }
 
-    // Verify password with bcrypt
     const isPasswordValid = await verifyPassword(password, (user as any).password_hash);
     if (!isPasswordValid) {
       return jsonResponse({ error: 'Invalid email or password' }, 401, env);
     }
 
-    // Check if user is suspended
     if ((user as any).suspended === 1) {
       const now = new Date();
       const suspensionEndDate = (user as any).suspension_end_date
         ? new Date((user as any).suspension_end_date)
         : null;
 
-      // If suspension has expired, clear it
       if (suspensionEndDate && now > suspensionEndDate) {
         await env.DB.prepare(
           'UPDATE users SET suspended = 0, suspension_end_date = NULL, suspension_reason = NULL, updated_at = datetime("now") WHERE id = ?',
@@ -317,7 +293,6 @@ export async function loginEndpoint(request: Request, env: Env) {
         (user as any).suspension_end_date = null;
         (user as any).suspension_reason = null;
       } else {
-        // Suspension is still active
         const daysRemaining = suspensionEndDate
           ? Math.ceil((suspensionEndDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
           : 0;
@@ -343,7 +318,6 @@ export async function loginEndpoint(request: Request, env: Env) {
       env,
     );
 
-    // Calculate points (1 point per note upload, 1 point per like, 1 point per admin like)
     const points =
       ((user as any).notes_uploaded || 0) +
       ((user as any).total_likes || 0) +
@@ -377,7 +351,6 @@ export async function loginEndpoint(request: Request, env: Env) {
   }
 }
 
-// Get current user endpoint
 export async function meEndpoint(request: Request, env: Env) {
   try {
     const auth = request.headers.get('Authorization');
@@ -427,7 +400,6 @@ export async function meEndpoint(request: Request, env: Env) {
           .bind(userId)
           .first()) as any;
       } catch (e) {
-        // Fallback without diamonds column
         userData = (await env.DB.prepare(
           `
           SELECT
@@ -463,14 +435,12 @@ export async function meEndpoint(request: Request, env: Env) {
         return jsonResponse({ error: 'User not found' }, 404);
       }
 
-      // Check if user is suspended and if suspension has expired
       if (userData.suspended === 1) {
         const now = new Date();
         const suspensionEndDate = userData.suspension_end_date
           ? new Date(userData.suspension_end_date)
           : null;
 
-        // If suspension has expired, clear it
         if (suspensionEndDate && now > suspensionEndDate) {
           await env.DB.prepare(
             'UPDATE users SET suspended = 0, suspension_end_date = NULL, suspension_reason = NULL, updated_at = datetime("now") WHERE id = ?',
@@ -483,12 +453,10 @@ export async function meEndpoint(request: Request, env: Env) {
         }
       }
 
-      // Handle warning tracking and auto-dismissal
       if (userData.warning === 1 && userData.warning_message) {
         const now = new Date();
         let shouldClearWarning = false;
 
-        // Set first viewed timestamp if not set
         if (!userData.warning_first_viewed) {
           await env.DB.prepare(
             `
@@ -502,20 +470,17 @@ export async function meEndpoint(request: Request, env: Env) {
           userData.warning_view_count = 1;
           userData.warning_first_viewed = now.toISOString();
         } else {
-          // Check if 24 hours have passed
           const firstViewed = new Date(userData.warning_first_viewed);
           const hoursPassed = (now.getTime() - firstViewed.getTime()) / (1000 * 60 * 60);
 
           if (hoursPassed >= 24) {
             shouldClearWarning = true;
           } else {
-            // Increment view count
             const newViewCount = (userData.warning_view_count || 0) + 1;
 
             if (newViewCount >= 5) {
               shouldClearWarning = true;
             } else {
-              // Update view count
               await env.DB.prepare(
                 `
                 UPDATE users
@@ -530,7 +495,6 @@ export async function meEndpoint(request: Request, env: Env) {
           }
         }
 
-        // Clear warning if conditions are met
         if (shouldClearWarning) {
           await env.DB.prepare(
             `
@@ -548,7 +512,6 @@ export async function meEndpoint(request: Request, env: Env) {
         }
       }
 
-      // Map database fields to frontend interface
       const user = {
         id: userData.id,
         email: userData.email,

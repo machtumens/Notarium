@@ -1,4 +1,3 @@
-// Theme type definition
 export interface Theme {
   name: string;
   displayName: string;
@@ -39,7 +38,6 @@ export interface Theme {
   };
 }
 
-// Default theme with nature background
 const defaultTheme: Theme = {
   name: 'default',
   displayName: 'Notarium',
@@ -79,17 +77,14 @@ const defaultTheme: Theme = {
   },
 };
 
-// Export single theme
 export const themes: Record<string, Theme> = {
   default: defaultTheme,
 };
 
-// Always use the default theme
 export const getCurrentTheme = (): Theme => {
   return themes.default;
 };
 
-// Export default theme
 export const darkTheme = themes.default;
 
 export const darkThemeStyles = `

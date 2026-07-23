@@ -27,15 +27,12 @@ export default function LeaderboardPage({ isLoading, setIsLoading }: Leaderboard
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [activeTab, setActiveTab] = useState<LeaderboardTab>('contributors');
 
-  // Contribution score (notes + likes + admin upvotes) — the existing dimension
   const getContributionPoints = (entry: LeaderboardEntry): number =>
     Math.max(0, entry.points || entry.score || entry.total_likes || 0);
 
-  // Retrieval-based learning points — older users may have 0/null, treat as 0
   const getLearningPoints = (entry: LeaderboardEntry): number =>
     Math.max(0, entry.learning_points || 0);
 
-  // Ranked list depends on the active dimension. Copy before sort (no mutation).
   const rankedLeaderboard = [...leaderboard].sort((a, b) =>
     activeTab === 'learners'
       ? getLearningPoints(b) - getLearningPoints(a)

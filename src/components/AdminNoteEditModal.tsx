@@ -50,7 +50,6 @@ export default function AdminNoteEditModal({
       setDescription(note.description || '');
       setContent(note.content || note.extracted_text || note.summary || '');
 
-      // Handle tags - could be string or array
       if (note.tags) {
         if (typeof note.tags === 'string') {
           try {

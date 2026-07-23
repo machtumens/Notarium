@@ -4,8 +4,6 @@ import { motion } from 'framer-motion';
 import api from '../lib/api';
 import type { GradeClass } from '../types';
 
-// Lazy-load the Three.js-backed shader background so ~160KB of THREE stays out of
-// the critical bundle for this unauthenticated page.
 const ShaderAnimation = lazy(() =>
   import('@/components/ui/shader-animation').then((m) => ({ default: m.ShaderAnimation })),
 );

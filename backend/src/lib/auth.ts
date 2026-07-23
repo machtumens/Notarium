@@ -1,6 +1,3 @@
-/**
- * Password hashing, JWT sign/verify, token extraction, and user resolution helpers.
- */
 import bcrypt from 'bcryptjs';
 import { SignJWT, jwtVerify } from 'jose';
 import type { Env, User } from './env';
@@ -71,12 +68,6 @@ export async function getUserFromToken(
   return await verifyToken(token, env);
 }
 
-// privilege model:
-// - students may only edit/delete their own notes and their own profile
-// - admins may edit/delete any content and manage users
-// - all admin routes must go through requireAdmin()
-
-// returns the decoded token payload or a 401/403 Response (caller must check with instanceof Response)
 export async function requireAdmin(
   request: Request,
   env: Env,
@@ -90,8 +81,6 @@ export async function requireAdmin(
   return decoded;
 }
 
-// Explicit column list for user resolution — excludes password_hash and other
-// heavy/sensitive columns that the app never reads off the resolved user object.
 const USER_COLUMNS =
   'id, encrypted_yw_id, display_name, email, photo_url, description, class, ' +
   'grade_class_id, role, notes_uploaded, total_likes, total_admin_upvotes, ' +
@@ -100,11 +89,9 @@ const USER_COLUMNS =
   'last_seen_at, created_at, updated_at';
 
 export async function getOrCreateUser(request: Request, env: Env): Promise<User> {
-  // Try to get user ID from Bearer token first
   const userIdFromToken = await getUserIdFromToken(request, env);
 
   if (userIdFromToken) {
-    // Get user from database using ID
     const user = await env.DB.prepare(`SELECT ${USER_COLUMNS} FROM users WHERE id = ?`)
       .bind(userIdFromToken)
       .first();
@@ -114,14 +101,12 @@ export async function getOrCreateUser(request: Request, env: Env): Promise<User>
     }
   }
 
-  // Fallback to old header-based method
   const userId = request.headers.get('X-Encrypted-Yw-ID');
 
   if (!userId) {
     throw new Error('User ID not found');
   }
 
-  // Check if user exists
   const { results } = await env.DB.prepare(
     `SELECT ${USER_COLUMNS} FROM users WHERE encrypted_yw_id = ?`,
   )
@@ -132,7 +117,6 @@ export async function getOrCreateUser(request: Request, env: Env): Promise<User>
     return results[0] as unknown as User;
   }
 
-  // Create new user (with default class for students who upload notes)
   const insertResult = await env.DB.prepare(
     'INSERT INTO users (encrypted_yw_id, role, class) VALUES (?, ?, ?) RETURNING *',
   )

@@ -68,7 +68,6 @@ export default function MyNotesPage() {
     loadMyNotes();
   }, [activeTab]);
 
-  // Handle responsive design
   useEffect(() => {
     const handleResize = () => {
       setIsMobile(window.innerWidth < 640);
@@ -149,7 +148,6 @@ export default function MyNotesPage() {
         },
       });
 
-      // Update local state
       setNotes(
         notes.map((note) =>
           note.id === editingNote.id
@@ -177,7 +175,6 @@ export default function MyNotesPage() {
         method: 'DELETE',
       });
 
-      // Remove from local state
       setNotes(notes.filter((note) => note.id !== noteId));
     } catch (err) {
       logger.error('my-notes', 'Failed to delete note', err);
@@ -185,7 +182,6 @@ export default function MyNotesPage() {
     }
   };
 
-  // Group notes by subject
   const notesBySubject: NotesBySubject = notes.reduce((acc, note) => {
     const subject = note.subject_name || note.subject || 'Other';
     if (!acc[subject]) {

@@ -1,7 +1,3 @@
-// ============================================
-// Core User Types
-// ============================================
-
 export interface User {
   id: number;
   email: string;
@@ -23,10 +19,6 @@ export interface User {
   warning?: number;
   warning_message?: string;
 }
-
-// ============================================
-// Authentication Types
-// ============================================
 
 export interface LoginCredentials {
   email?: string;
@@ -54,10 +46,6 @@ export interface ProfileUpdateData {
   description?: string;
   photo_url?: string;
 }
-
-// ============================================
-// Note Types
-// ============================================
 
 export interface Note {
   id: number;
@@ -92,10 +80,6 @@ export interface CreateNoteData {
   extracted_text?: string;
 }
 
-// ============================================
-// Subject Types
-// ============================================
-
 export interface Subject {
   id: number;
   name: string;
@@ -103,10 +87,6 @@ export interface Subject {
   icon?: string;
   color?: string;
 }
-
-// ============================================
-// Quiz Types
-// ============================================
 
 export interface QuizQuestion {
   question: string;
@@ -125,10 +105,6 @@ export interface QuizGenerationRequest {
   title: string;
 }
 
-// ============================================
-// Study Plan Types
-// ============================================
-
 export interface StudyPlan {
   plan: string;
   subject: string;
@@ -139,10 +115,6 @@ export interface StudyPlanRequest {
   subject: string;
   topic: string;
 }
-
-// ============================================
-// Concept Explanation Types
-// ============================================
 
 export interface ConceptExplanation {
   explanation: string;
@@ -155,10 +127,6 @@ export interface ConceptExplanationRequest {
   subject?: string;
 }
 
-// ============================================
-// Summary Types
-// ============================================
-
 export interface Summary {
   summary: string;
   noteId: number;
@@ -168,10 +136,6 @@ export interface SummaryRequest {
   content: string;
   title: string;
 }
-
-// ============================================
-// Chat Types
-// ============================================
 
 export interface ChatSession {
   id: number;
@@ -196,10 +160,6 @@ export interface ChatDocument {
   session_id?: number;
 }
 
-// ============================================
-// Leaderboard Types
-// ============================================
-
 export interface LeaderboardEntry {
   id?: number;
   name?: string;
@@ -211,10 +171,6 @@ export interface LeaderboardEntry {
   photo_url?: string;
   rank?: number;
 }
-
-// ============================================
-// API Response Types
-// ============================================
 
 export interface ApiResponse<T = unknown> {
   success: boolean;
@@ -264,10 +220,6 @@ export interface OCRResponse {
   success: boolean;
 }
 
-// ============================================
-// Grade Class Types
-// ============================================
-
 export interface GradeClass {
   id: number;
   grade: 10 | 11 | 12;
@@ -281,10 +233,6 @@ export interface GradeClassesResponse {
   grade_classes: GradeClass[];
   grouped: Record<number, GradeClass[]>;
 }
-
-// ============================================
-// Notification Types
-// ============================================
 
 export interface AppNotification {
   id: number;
@@ -309,10 +257,6 @@ export interface UnreadCountResponse {
   count: number;
 }
 
-// ============================================
-// Admin Types
-// ============================================
-
 export interface AdminUser extends User {
   created_at?: string;
   last_login?: string;
@@ -332,10 +276,6 @@ export interface WarnUserRequest {
   message: string;
 }
 
-// ============================================
-// Utility Types
-// ============================================
-
 export interface PaginationParams {
   page?: number;
   limit?: number;
@@ -351,10 +291,6 @@ export interface SortParams {
   sortBy: string;
   sortOrder: 'asc' | 'desc';
 }
-
-// ============================================
-// Error Types
-// ============================================
 
 export interface ApiError {
   message: string;
@@ -384,10 +320,6 @@ export function getErrorMessage(error: unknown): string {
   }
   return 'An unknown error occurred';
 }
-
-// ============================================
-// Request Options Types
-// ============================================
 
 export interface RequestOptions extends RequestInit {
   body?: unknown;

@@ -10,14 +10,12 @@ export const useTheme = () => {
       localStorage.setItem('notarium_theme', themeName);
       setCurrentTheme(newTheme);
 
-      // Apply background if theme has one
       if (newTheme.background) {
         // eslint-disable-next-line react-hooks/immutability -- intentional DOM side effect: apply theme background to document.body
         document.body.style.background = newTheme.background.image
           ? `url(${newTheme.background.image}) center/cover fixed`
           : newTheme.background.gradient || newTheme.colors.bgPrimary;
 
-        // Add overlay if specified
         if (newTheme.background.overlay && newTheme.background.image) {
           // eslint-disable-next-line react-hooks/immutability -- intentional DOM side effect: apply theme background overlay to document.body
           document.body.style.background = `
@@ -30,10 +28,8 @@ export const useTheme = () => {
         document.body.style.background = newTheme.colors.bgPrimary;
       }
 
-      // Force a re-render by updating CSS variables
       updateCSSVariables(newTheme);
 
-      // Trigger a custom event so other components can react
       window.dispatchEvent(new CustomEvent('themeChange', { detail: newTheme }));
     }
   };
@@ -50,7 +46,6 @@ export const useTheme = () => {
     root.style.setProperty('--accent-hover', theme.colors.accentHover);
   };
 
-  // Initialize theme on mount
   useEffect(() => {
     const theme = getCurrentTheme();
     // eslint-disable-next-line react-hooks/set-state-in-effect -- applies persisted theme (setState + DOM) on mount; behavior-preserving

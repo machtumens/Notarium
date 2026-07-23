@@ -1,10 +1,6 @@
-/**
- * Public leaderboard ranking (excludes admins).
- */
 import type { Env } from '../lib/env';
 import { jsonResponse, PUBLIC_CACHE } from '../lib/response';
 
-// Get leaderboard
 export async function getLeaderboard(env: Env) {
   const { results } = await env.DB.prepare(
     `

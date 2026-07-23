@@ -1,4 +1,3 @@
-// src/pages/AuthCallback.tsx
 import { useEffect } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 
@@ -12,8 +11,6 @@ export default function AuthCallback() {
         ? 'http://localhost:8787'
         : import.meta.env.VITE_API_URL || 'https://notarium-backend.notarium-backend.workers.dev';
 
-    // Back-compat: in-flight sessions may still arrive with ?token=<jwt> in the
-    // URL. Accept it so those sessions don't break, then store under the new key.
     const token = searchParams.get('token');
     if (token) {
       sessionStorage.setItem('notarium_token', token);
@@ -21,8 +18,6 @@ export default function AuthCallback() {
       return;
     }
 
-    // New flow: the backend redirects here with a one-time ?code=<opaque>.
-    // Exchange it for the JWT via POST /auth/google/exchange (single-use, 60s TTL).
     const code = searchParams.get('code');
     if (!code) {
       navigate('/login?error=1');

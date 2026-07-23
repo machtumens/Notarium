@@ -48,7 +48,7 @@ export function BeamsBackground({
   const animationFrameRef = useRef<number>(0);
   const isScrollingRef = useRef(false);
   const scrollTimeoutRef = useRef<number | null>(null);
-  const MINIMUM_BEAMS = 3; // Reduced to 3 for ultra-smooth scrolling
+  const MINIMUM_BEAMS = 3;
 
   const opacityMap = {
     subtle: 0.7,
@@ -64,7 +64,6 @@ export function BeamsBackground({
     if (!ctx) return;
 
     const updateCanvasSize = () => {
-      // Use very low resolution for ultra performance - 0.5x
       const dpr = 0.5;
       canvas.width = window.innerWidth * dpr;
       canvas.height = window.innerHeight * dpr;
@@ -72,7 +71,6 @@ export function BeamsBackground({
       canvas.style.height = `${window.innerHeight}px`;
       ctx.scale(dpr, dpr);
 
-      // Minimal beams
       const totalBeams = MINIMUM_BEAMS;
       beamsRef.current = Array.from({ length: totalBeams }, () =>
         createBeam(canvas.width, canvas.height),
@@ -82,13 +80,11 @@ export function BeamsBackground({
     updateCanvasSize();
     window.addEventListener('resize', updateCanvasSize);
 
-    // Detect scroll and pause animation for zero-lag scrolling
     const handleScroll = () => {
       isScrollingRef.current = true;
       if (scrollTimeoutRef.current) {
         window.clearTimeout(scrollTimeoutRef.current);
       }
-      // Resume animation 100ms after scrolling stops
       scrollTimeoutRef.current = window.setTimeout(() => {
         isScrollingRef.current = false;
       }, 100);
@@ -116,13 +112,11 @@ export function BeamsBackground({
       ctx.translate(beam.x, beam.y);
       ctx.rotate((beam.angle * Math.PI) / 180);
 
-      // Calculate pulsing opacity
       const pulsingOpacity =
         beam.opacity * (0.8 + Math.sin(beam.pulse) * 0.2) * opacityMap[intensity];
 
       const gradient = ctx.createLinearGradient(0, 0, 0, beam.length);
 
-      // Enhanced gradient with multiple color stops
       gradient.addColorStop(0, `hsla(${beam.hue}, 85%, 65%, 0)`);
       gradient.addColorStop(0.1, `hsla(${beam.hue}, 85%, 65%, ${pulsingOpacity * 0.5})`);
       gradient.addColorStop(0.4, `hsla(${beam.hue}, 85%, 65%, ${pulsingOpacity})`);
@@ -135,7 +129,6 @@ export function BeamsBackground({
       ctx.restore();
     }
 
-    // Throttle animation to 15fps for ultra-smooth scrolling
     let lastFrameTime = 0;
     const targetFPS = 15;
     const frameInterval = 1000 / targetFPS;
@@ -143,23 +136,19 @@ export function BeamsBackground({
     function animate(currentTime: number) {
       if (!canvas || !ctx) return;
 
-      // PAUSE animation completely during scroll for zero-lag scrolling
       if (!isScrollingRef.current) {
         const deltaTime = currentTime - lastFrameTime;
 
-        // Only render if enough time has passed
         if (deltaTime >= frameInterval) {
           lastFrameTime = currentTime - (deltaTime % frameInterval);
 
           ctx.clearRect(0, 0, canvas.width, canvas.height);
-          // Removed blur filter entirely - huge performance boost
 
           const totalBeams = beamsRef.current.length;
           beamsRef.current.forEach((beam, index) => {
             beam.y -= beam.speed;
             beam.pulse += beam.pulseSpeed;
 
-            // Reset beam when it goes off screen
             if (beam.y + beam.length < -100) {
               resetBeam(beam, index, totalBeams);
             }
@@ -198,7 +187,6 @@ export function BeamsBackground({
           filter: 'blur(20px)', // Increased blur to compensate for lower resolution
           pointerEvents: 'none',
           imageRendering: 'auto',
-          // Use GPU layer for better performance
           transform: 'translateZ(0)',
         }}
       />
@@ -214,9 +202,6 @@ export function BeamsBackground({
           repeat: Number.POSITIVE_INFINITY,
         }}
         style={{
-          // backdrop-filter removed: it forced a full-viewport GPU pixel
-          // readback every animated frame. The blurred canvas beneath already
-          // provides the diffusion, so the animated tint alone is enough.
           pointerEvents: 'none',
         }}
       />

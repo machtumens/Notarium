@@ -1,46 +1,28 @@
-/**
- * Learning-science study features:
- *  (19) persist quiz attempts, (20) spaced-repetition review queue (SM-2),
- *  (21) retrieval-based "learning points", (22) study streaks,
- *  (23) confidence ratings, (24) free-recall AI grading.
- *
- * All endpoints require auth via getUserFromToken and return jsonResponse.
- * SM-2 state is persisted per (user_id, question_hash) in study_items.
- */
 import type { Env } from '../lib/env';
 import { jsonResponse } from '../lib/response';
 import { getUserFromToken } from '../lib/auth';
 
-// Points awarded per correct retrieval (feature 21).
 const POINTS_CORRECT = 10;
-const POINTS_CONFIDENCE_BONUS = 5; // extra when confidence === 3
+const POINTS_CONFIDENCE_BONUS = 5;
 
-// ── Helpers ──────────────────────────────────────────────────────────────
-
-/** UTC date string YYYY-MM-DD. */
 function utcDate(d: Date = new Date()): string {
   return d.toISOString().slice(0, 10);
 }
 
-/** Stable non-crypto hash of question text for de-duplicating study items. */
 function hashQuestion(text: string): string {
   let h = 5381;
   const s = text.trim().toLowerCase();
   for (let i = 0; i < s.length; i++) {
-    h = ((h << 5) + h) ^ s.charCodeAt(i); // djb2 xor
+    h = ((h << 5) + h) ^ s.charCodeAt(i);
   }
   return (h >>> 0).toString(36);
 }
 
-/**
- * Map an answer + confidence (1-3) to an SM-2 quality score q (0-5).
- * correct: conf 3 -> 5, conf 2 -> 4, conf 1 (or none) -> 3; incorrect -> 2.
- */
 function toQuality(isCorrect: boolean, confidence?: number | null): number {
   if (!isCorrect) return 2;
   if (confidence === 3) return 5;
   if (confidence === 2) return 4;
-  return 3; // confidence 1 or unspecified
+  return 3;
 }
 
 interface Sm2State {
@@ -53,10 +35,9 @@ interface Sm2Result {
   ease_factor: number;
   interval_days: number;
   repetitions: number;
-  due_at: string; // ISO
+  due_at: string;
 }
 
-/** Standard SM-2 update. */
 function computeSm2(prev: Sm2State, quality: number): Sm2Result {
   const { interval_days: prevInterval } = prev;
   let { ease_factor: ease, repetitions } = prev;
@@ -86,10 +67,6 @@ function computeSm2(prev: Sm2State, quality: number): Sm2Result {
   };
 }
 
-/**
- * Update the user's study streak on any study activity.
- * Returns the resulting current_streak.
- */
 async function updateStreak(env: Env, userId: number): Promise<number> {
   const today = utcDate();
   const user = (await env.DB.prepare(
@@ -103,7 +80,6 @@ async function updateStreak(env: Env, userId: number): Promise<number> {
   const last = user?.last_study_date ?? null;
 
   if (last === today) {
-    // Already studied today — streak unchanged.
     return current;
   }
 
@@ -124,7 +100,6 @@ async function updateStreak(env: Env, userId: number): Promise<number> {
   return current;
 }
 
-/** Award retrieval-based learning points; returns the new total. */
 async function awardPoints(env: Env, userId: number, points: number): Promise<number> {
   await env.DB.prepare(`UPDATE users SET learning_points = learning_points + ? WHERE id = ?`)
     .bind(points, userId)
@@ -135,10 +110,6 @@ async function awardPoints(env: Env, userId: number, points: number): Promise<nu
   return row?.learning_points ?? 0;
 }
 
-/**
- * Upsert SM-2 state for a question into study_items, keyed by (user_id, question_hash).
- * Returns the computed due_at.
- */
 async function upsertStudyItem(
   env: Env,
   userId: number,
@@ -206,9 +177,6 @@ async function upsertStudyItem(
   return next.due_at;
 }
 
-// ── Endpoints ────────────────────────────────────────────────────────────
-
-/** POST /api/quiz/attempt */
 export async function logQuizAttempt(request: Request, env: Env) {
   try {
     const user = await getUserFromToken(request, env);
@@ -226,7 +194,6 @@ export async function logQuizAttempt(request: Request, env: Env) {
 
     const questionHash = hashQuestion(questionText);
 
-    // (19) persist the attempt
     await env.DB.prepare(
       `INSERT INTO quiz_attempts (user_id, note_id, question_text, question_hash, is_correct, confidence)
        VALUES (?, ?, ?, ?, ?, ?)`,
@@ -234,7 +201,6 @@ export async function logQuizAttempt(request: Request, env: Env) {
       .bind(user.id, noteId, questionText, questionHash, isCorrect ? 1 : 0, confidence)
       .run();
 
-    // (20) SM-2 upsert into the review queue
     const dueAt = await upsertStudyItem(
       env,
       user.id,
@@ -245,10 +211,8 @@ export async function logQuizAttempt(request: Request, env: Env) {
       confidence,
     );
 
-    // (22) streak update
     const currentStreak = await updateStreak(env, user.id);
 
-    // (21) retrieval-based points on correct answers
     let learningPoints: number;
     if (isCorrect) {
       const points = POINTS_CORRECT + (confidence === 3 ? POINTS_CONFIDENCE_BONUS : 0);
@@ -275,7 +239,6 @@ export async function logQuizAttempt(request: Request, env: Env) {
   }
 }
 
-/** GET /api/reviews/due */
 export async function getDueReviews(request: Request, env: Env) {
   try {
     const user = await getUserFromToken(request, env);
@@ -299,7 +262,6 @@ export async function getDueReviews(request: Request, env: Env) {
   }
 }
 
-/** POST /api/reviews/:itemId/grade */
 export async function gradeReview(itemId: string, request: Request, env: Env) {
   try {
     const user = await getUserFromToken(request, env);
@@ -319,7 +281,6 @@ export async function gradeReview(itemId: string, request: Request, env: Env) {
       return jsonResponse({ error: 'Review item not found' }, 404, env);
     }
 
-    // record the review as a quiz attempt too, for history/analytics
     await env.DB.prepare(
       `INSERT INTO quiz_attempts (user_id, note_id, question_text, question_hash, is_correct, confidence)
        VALUES (?, ?, ?, ?, ?, ?)`,
@@ -371,7 +332,6 @@ export async function gradeReview(itemId: string, request: Request, env: Env) {
   }
 }
 
-/** POST /api/recall/grade — AI-graded free recall (feature 24). */
 export async function gradeRecall(request: Request, env: Env) {
   try {
     const user = await getUserFromToken(request, env);
@@ -450,7 +410,6 @@ ${recallText.substring(0, 4000)}`,
   }
 }
 
-/** GET /api/study/stats */
 export async function getStudyStats(request: Request, env: Env) {
   try {
     const user = await getUserFromToken(request, env);

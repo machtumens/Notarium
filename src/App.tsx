@@ -21,7 +21,6 @@ import NotificationPanel from './components/NotificationPanel';
 import { Toaster } from 'sonner';
 import './index.css';
 
-// Lazy load pages for better initial load performance
 const Login = lazy(() => import('./pages/Login'));
 const AdminLogin = lazy(() => import('./pages/AdminLogin'));
 const Signup = lazy(() => import('./pages/Signup'));
@@ -63,7 +62,6 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const loadingTheme = getCurrentTheme();
 
   useEffect(() => {
-    // If no user but token exists, try to load user
     if (!user && !loading && api.isAuthenticated()) {
       refreshUser();
     }
@@ -91,7 +89,6 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
     return <Navigate to="/login" replace />;
   }
 
-  // Check if user is suspended
   if (user.suspended && user.suspension_end_date) {
     return <Navigate to="/suspended" replace />;
   }
@@ -125,7 +122,6 @@ function HomePage() {
   const [showNotifications, setShowNotifications] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
 
-  // Force rerender when theme changes
   useEffect(() => {
     const handleThemeChange = () => {
       forceUpdate({});
@@ -153,7 +149,6 @@ function HomePage() {
     }
   };
 
-  // Handle responsive design
   useEffect(() => {
     const handleResize = () => {
       setIsMobile(window.innerWidth < 640);
@@ -182,7 +177,6 @@ function HomePage() {
     loadSubjects();
   }, []);
 
-  // Poll unread notification count every 60 seconds
   useEffect(() => {
     if (!user) return;
     const fetchCount = () => {
@@ -339,12 +333,9 @@ function HomePage() {
                 onChange={(index) => {
                   if (index === null) return;
 
-                  // Indexes match position in the tabs array (the separator
-                  // occupies an index but is never clickable).
                   const pages = ['subjects', 'chat', 'leaderboard'];
                   const reviewIndex = 3;
                   const adminIndex = user?.role === 'admin' ? 4 : -1;
-                  // separator sits at index 4 (no admin) or 5 (admin)
                   const myNotesIndex = user?.role === 'admin' ? 6 : 5;
                   const logoutIndex = myNotesIndex + 1;
 

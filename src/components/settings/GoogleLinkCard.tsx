@@ -33,7 +33,6 @@ export default function GoogleLinkCard() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
 
-  // Handle ?google=ok|error on mount, then strip from URL
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const status = params.get('google');

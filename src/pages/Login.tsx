@@ -3,8 +3,6 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import api from '../lib/api';
 
-// Lazy-load the Three.js-backed shader background so ~160KB of THREE stays out of
-// the critical bundle for this unauthenticated page.
 const ShaderAnimation = lazy(() =>
   import('@/components/ui/shader-animation').then((m) => ({ default: m.ShaderAnimation })),
 );
@@ -23,7 +21,6 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const [titleNumber, setTitleNumber] = useState(0);
 
-  // Forgot Password Modal States
   const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [resetStep, setResetStep] = useState<'code' | 'reset'>('code');
   const [resetCode, setResetCode] = useState('');
@@ -51,7 +48,6 @@ export default function Login() {
     return () => clearTimeout(timeoutId);
   }, [titleNumber, titles]);
 
-  // Show error from OAuth redirect query params
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     if (params.get('error') === 'school_email_required') {
@@ -60,31 +56,25 @@ export default function Login() {
     }
   }, [location.search]);
 
-  // Auto-redirect if already authenticated or auto-login if token exists
   useEffect(() => {
     if (api.isAuthenticated()) {
       navigate('/', { replace: true });
       return;
     }
 
-    // Try to auto-login if token exists in sessionStorage
     const token = api.getToken();
     if (token) {
-      // Token exists, redirect to home - the app will validate the token
       navigate('/', { replace: true });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Load saved email from localStorage (email only — never persist passwords;
-  // native browser autofill covers password pre-fill safely).
   useEffect(() => {
     const savedEmail = localStorage.getItem('loginEmail');
     // eslint-disable-next-line react-hooks/set-state-in-effect -- hydrates email field from localStorage on mount; behavior-preserving
     if (savedEmail) setEmail(savedEmail);
   }, []);
 
-  // Handle autofill from password reset
   useEffect(() => {
     const state = location.state as { email?: string; password?: string; message?: string } | null;
     if (state?.email) {
@@ -105,7 +95,6 @@ export default function Login() {
     setIsLoading(true);
 
     try {
-      // Remember the email only for auto-fill on next visit (never the password).
       localStorage.setItem('loginEmail', email);
 
       const response = await api.auth.login({ email, password });
@@ -180,7 +169,6 @@ export default function Login() {
         },
       });
 
-      // Success - close modal and show success message
       handleCloseForgotPassword();
       setEmail(resetEmail);
       setPassword(newPassword);

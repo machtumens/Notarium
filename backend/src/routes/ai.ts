@@ -1,13 +1,7 @@
-/**
- * AI integrations: DeepSeek chat/summary/quiz/plan/explain + Google Cloud Vision OCR.
- * Uses REST APIs directly (not the @google/generative-ai SDK) for Workers compatibility.
- * API keys are read exclusively from env bindings — no hardcoded fallbacks.
- */
 import type { Env } from '../lib/env';
 import { jsonResponse } from '../lib/response';
 import { getUserFromToken } from '../lib/auth';
 
-// Get user's notes for context
 export async function getUserNotes(userId: number, subject?: string, env?: Env): Promise<any[]> {
   if (!env) return [];
 
@@ -32,7 +26,6 @@ export async function getUserNotes(userId: number, subject?: string, env?: Env):
   }
 }
 
-// Format notes for Gemini context - uses AI-cleaned extracted text as knowledge base
 export function formatNotesForContext(notes: any[]): string {
   if (notes.length === 0) {
     return '';
@@ -40,7 +33,6 @@ export function formatNotesForContext(notes: any[]): string {
 
   const notesSummary = notes
     .map((note, idx) => {
-      // Prioritize extracted_text (Gemini-cleaned OCR) for accurate content
       const content = note.extracted_text || note.description || note.title;
       return `[Note ${idx + 1}] ${note.title}\n${content?.substring(0, 1200) || '(No content)'}`;
     })
@@ -54,7 +46,6 @@ export function formatNotesForContext(notes: any[]): string {
 - Use the exact terminology and concepts from the user's study materials`;
 }
 
-// Chat with DeepSeek AI using note context - Automatically feeds AI-cleaned note content as knowledge base
 export async function chatWithGemini(
   sessionId: string,
   userMessage: string,
@@ -64,11 +55,9 @@ export async function chatWithGemini(
   env: Env,
 ) {
   try {
-    // Get user's notes for context - includes DeepSeek-cleaned extracted text from OCR
     const userNotes = await getUserNotes(userId, subject, env);
     const notesContext = formatNotesForContext(userNotes);
 
-    // Get chat history (reduced from 20 to 8 for faster responses)
     const { results: messages } = await env.DB.prepare(
       `
       SELECT role, content FROM chat_messages
@@ -82,13 +71,11 @@ export async function chatWithGemini(
 
     const reverseMessages = (messages || []).reverse();
 
-    // Build conversation history for DeepSeek
     const conversationHistory = reverseMessages.map((msg: any) => ({
       role: msg.role === 'user' ? 'user' : 'assistant',
       content: msg.content,
     }));
 
-    // Add system message at the beginning
     const allMessages = [
       {
         role: 'system',
@@ -109,7 +96,6 @@ CONTENT:
       ...conversationHistory,
     ];
 
-    // Send message with knowledge base context (invisible to user but feeds the AI)
     const contextualMessage = notesContext ? `${userMessage}${notesContext}` : userMessage;
 
     allMessages.push({
@@ -144,7 +130,6 @@ CONTENT:
 
     const aiResponse = data.choices[0].message.content.trim();
 
-    // Save AI response to database
     await env.DB.prepare(
       `
       INSERT INTO chat_messages (session_id, role, content)
@@ -160,7 +145,6 @@ CONTENT:
   }
 }
 
-// OCR using Google Cloud Vision API + Gemini 2.0 for text formatting
 export async function performOCR(imageBase64: string, mimeType: string, env: Env) {
   try {
     const apiKey = env.GOOGLE_CLOUD_VISION_API_KEY || env.GEMINI_API_KEY;
@@ -169,13 +153,11 @@ export async function performOCR(imageBase64: string, mimeType: string, env: Env
       throw new Error('OCR service not configured');
     }
 
-    // Remove data URI prefix if present
     let cleanBase64 = imageBase64;
     if (imageBase64.includes(',')) {
       cleanBase64 = imageBase64.split(',')[1];
     }
 
-    // Step 1: Extract raw text with Cloud Vision API
     const response = await fetch(`https://vision.googleapis.com/v1/images:annotate?key=${apiKey}`, {
       method: 'POST',
       headers: {
@@ -213,17 +195,16 @@ export async function performOCR(imageBase64: string, mimeType: string, env: Env
       } else if (result.responses[0].fullTextAnnotation) {
         rawText = result.responses[0].fullTextAnnotation.text;
       } else {
-        return ''; // No text found in image
+        return '';
       }
     } else {
       throw new Error('Invalid response from Cloud Vision API');
     }
 
-    // Step 2: Use DeepSeek to clean up and format the text
     try {
       const deepseekApiKey = env.DEEPSEEK_API_KEY;
       if (!deepseekApiKey) {
-        return rawText; // No DeepSeek key: return raw Vision text without formatting
+        return rawText;
       }
 
       const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
@@ -264,7 +245,6 @@ ${rawText}`,
   }
 }
 
-// Generate note summary - EXACTLY 2 sentences (Uses DeepSeek)
 export async function generateNoteSummary(content: string, title: string, env: Env) {
   try {
     const deepseekApiKey = env.DEEPSEEK_API_KEY;
@@ -306,7 +286,6 @@ IMPORTANT: Your response must be EXACTLY 2 sentences, no more, no less. Write th
 
     const summary = data.choices[0].message.content.trim();
 
-    // Ensure it's only 2 sentences by splitting and taking first 2
     const sentences = summary.match(/[^.!?]+[.!?]+/g) || [summary];
     const twoSentences = sentences.slice(0, 2).join(' ').trim();
 
@@ -316,7 +295,6 @@ IMPORTANT: Your response must be EXACTLY 2 sentences, no more, no less. Write th
   }
 }
 
-// Generate quiz from note
 export async function generateQuiz(content: string, title: string, env: Env) {
   try {
     const deepseekApiKey = env.DEEPSEEK_API_KEY;
@@ -378,7 +356,6 @@ ${content}`,
   }
 }
 
-// Generate study plan
 export async function generateStudyPlan(subject: string, topic: string, env: Env) {
   try {
     const deepseekApiKey = env.DEEPSEEK_API_KEY;
@@ -426,7 +403,6 @@ Format as a detailed markdown text with clear daily breakdowns. Write the entire
   }
 }
 
-// Explain concept
 export async function explainConcept(concept: string, subject: string, env: Env) {
   try {
     const deepseekApiKey = env.DEEPSEEK_API_KEY;
@@ -475,7 +451,6 @@ Make it engaging and suitable for high school students. Write the entire explana
   }
 }
 
-// OCR endpoint
 export async function performOCREndpoint(request: Request, env: Env) {
   try {
     const user = await getUserFromToken(request, env);
@@ -496,7 +471,6 @@ export async function performOCREndpoint(request: Request, env: Env) {
   }
 }
 
-// Generate note summary endpoint
 export async function generateNoteSummaryEndpoint(noteId: string, request: Request, env: Env) {
   try {
     const user = await getUserFromToken(request, env);
@@ -511,7 +485,6 @@ export async function generateNoteSummaryEndpoint(noteId: string, request: Reque
 
     const summary = await generateNoteSummary(content, title || 'Untitled', env);
 
-    // Update note with summary
     await env.DB.prepare('UPDATE notes SET summary = ?, updated_at = datetime("now") WHERE id = ?')
       .bind(summary, noteId)
       .run();
@@ -522,7 +495,6 @@ export async function generateNoteSummaryEndpoint(noteId: string, request: Reque
   }
 }
 
-// Generate quiz endpoint
 export async function generateQuizEndpoint(noteId: string, request: Request, env: Env) {
   try {
     const user = await getUserFromToken(request, env);
@@ -543,7 +515,6 @@ export async function generateQuizEndpoint(noteId: string, request: Request, env
   }
 }
 
-// Generate study plan endpoint
 export async function generateStudyPlanEndpoint(request: Request, env: Env) {
   try {
     const user = await getUserFromToken(request, env);
@@ -564,7 +535,6 @@ export async function generateStudyPlanEndpoint(request: Request, env: Env) {
   }
 }
 
-// Explain concept endpoint
 export async function explainConceptEndpoint(request: Request, env: Env) {
   try {
     const user = await getUserFromToken(request, env);

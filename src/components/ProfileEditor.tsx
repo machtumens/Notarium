@@ -31,7 +31,6 @@ export default function ProfileEditor({ onClose }: ProfileEditorProps) {
   const [photoPreview, setPhotoPreview] = useState<string | null>(user?.photo_url || null);
   const [photoBase64, setPhotoBase64] = useState<string | null>(null);
 
-  // Password change states
   const [showPasswordChange, setShowPasswordChange] = useState(false);
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -43,7 +42,6 @@ export default function ProfileEditor({ onClose }: ProfileEditorProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
 
-  // Load saved profile data from localStorage
   useEffect(() => {
     const savedProfile = localStorage.getItem('profileData');
     if (savedProfile) {
@@ -60,13 +58,11 @@ export default function ProfileEditor({ onClose }: ProfileEditorProps) {
   }, []);
 
   const processImageFile = (file: File) => {
-    // Check file size (max 2MB)
     if (file.size > 2 * 1024 * 1024) {
       setError('Image too large. Please choose an image smaller than 2MB.');
       return;
     }
 
-    // Check file type
     if (!file.type.startsWith('image/')) {
       setError('Please select a valid image file.');
       return;
@@ -112,7 +108,6 @@ export default function ProfileEditor({ onClose }: ProfileEditorProps) {
         updateData.photo_url = photoBase64;
       }
 
-      // Save profile data for auto-fill next time
       localStorage.setItem(
         'profileData',
         JSON.stringify({

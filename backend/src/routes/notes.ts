@@ -1,16 +1,11 @@
-/**
- * Student-facing note endpoints: browse by subject, search, create (multi-photo),
- * like, update/publish/delete own notes.
- */
 import type { Env } from '../lib/env';
 import { jsonResponse } from '../lib/response';
 import { getOrCreateUser } from '../lib/auth';
 
-// Get notes by subject
 export async function getNotesBySubject(subjectId: string, request: Request, env: Env) {
   const user = await getOrCreateUser(request, env);
   const url = new URL(request.url);
-  const filter = url.searchParams.get('filter'); // 'my_class' | 'my_grade' | null
+  const filter = url.searchParams.get('filter');
 
   let gradeCondition = '';
   let gradeParams: (string | number)[] = [];
@@ -70,7 +65,6 @@ export async function getNotesBySubject(subjectId: string, request: Request, env
   return jsonResponse({ notes: results });
 }
 
-// Search notes
 export async function searchNotes(query: string, request: Request, env: Env) {
   const user = await getOrCreateUser(request, env);
 
@@ -78,22 +72,18 @@ export async function searchNotes(query: string, request: Request, env: Env) {
     return jsonResponse({ notes: [] });
   }
 
-  // Smart search: Split query into words for better matching
   const searchWords = query
     .toLowerCase()
     .trim()
     .split(/\s+/)
     .filter((w: string) => w.length > 0);
 
-  // Build LIKE conditions for each word
   const buildLikeConditions = (field: string) => {
     return searchWords.map(() => `LOWER(${field}) LIKE ?`).join(' OR ');
   };
 
-  // Create parameters for binding (each word with wildcards)
   const wordParams = searchWords.map((word: string) => `%${word}%`);
 
-  // Smart search with relevance scoring
   const { results } = await env.DB.prepare(
     `
     SELECT
@@ -176,13 +166,11 @@ export async function searchNotes(query: string, request: Request, env: Env) {
   return jsonResponse({ notes: results });
 }
 
-// Create new note (with multi-photo support and auto-continuation)
 export async function createNote(request: Request, env: Env) {
   try {
     const user = await getOrCreateUser(request, env);
     const body = (await request.json()) as any;
 
-    // Validate required fields
     if (!body.subject_id) {
       return jsonResponse({ error: 'Subject ID is required' }, 400);
     }
@@ -191,7 +179,6 @@ export async function createNote(request: Request, env: Env) {
       return jsonResponse({ error: 'Title is required' }, 400);
     }
 
-    // Verify subject exists
     const subject = await env.DB.prepare('SELECT id FROM subjects WHERE id = ?')
       .bind(body.subject_id)
       .first();
@@ -199,12 +186,10 @@ export async function createNote(request: Request, env: Env) {
       return jsonResponse({ error: 'Invalid subject ID' }, 400);
     }
 
-    // Handle images - convert to array format
     let images: string[] = [];
     if (body.images && Array.isArray(body.images)) {
       images = body.images;
     } else if (body.image_path) {
-      // For backward compatibility, check if image_path is already a JSON array
       try {
         const parsed = JSON.parse(body.image_path);
         images = Array.isArray(parsed) ? parsed : [body.image_path];
@@ -213,21 +198,17 @@ export async function createNote(request: Request, env: Env) {
       }
     }
 
-    // Convert tags array to JSON string for storage
     const tagsJson = body.tags && Array.isArray(body.tags) ? JSON.stringify(body.tags) : '[]';
 
-    // Get user's class for the note
     const userData = (await env.DB.prepare('SELECT class FROM users WHERE id = ?')
       .bind(user.id)
       .first()) as any;
     const userClass = userData?.class || null;
 
-    // Determine note status (draft or published)
     const noteStatus = body.status === 'draft' ? 'draft' : 'published';
     const scheduledPublishAt = body.scheduled_publish_at || null;
     const visibility = body.visibility && body.visibility !== '' ? body.visibility : 'everyone';
 
-    // Split images into chunks of max 3 per note
     const MAX_IMAGES_PER_NOTE = 3;
     const imageChunks: string[][] = [];
     for (let i = 0; i < images.length; i += MAX_IMAGES_PER_NOTE) {
@@ -237,16 +218,13 @@ export async function createNote(request: Request, env: Env) {
     const createdNotes: any[] = [];
     let parentNoteId: number | null = null;
 
-    // Create notes for each chunk
     for (let chunkIndex = 0; chunkIndex < imageChunks.length; chunkIndex++) {
       const chunk = imageChunks[chunkIndex];
       const partNumber = chunkIndex + 1;
       const isFirstPart = chunkIndex === 0;
 
-      // Determine title for this part
       const noteTitle = isFirstPart ? body.title : `${body.title} (${partNumber})`;
 
-      // Determine extracted text for this part
       let extractedText = '';
       if (isFirstPart) {
         extractedText = body.extracted_text || '';
@@ -254,10 +232,8 @@ export async function createNote(request: Request, env: Env) {
         extractedText = `Continued from previous note...\n\n${body.extracted_text || ''}`;
       }
 
-      // Store images as JSON array
       const imagePathJson = JSON.stringify(chunk);
 
-      // Check size for this chunk
       const chunkData = {
         title: noteTitle,
         description: body.description,
@@ -266,7 +242,7 @@ export async function createNote(request: Request, env: Env) {
         tags: tagsJson,
       };
       const chunkSize = JSON.stringify(chunkData).length;
-      const MAX_SIZE = 900000; // 900KB to leave buffer
+      const MAX_SIZE = 900000;
 
       if (chunkSize > MAX_SIZE) {
         return jsonResponse(
@@ -279,7 +255,6 @@ export async function createNote(request: Request, env: Env) {
         );
       }
 
-      // Create note with continuation fields
       const note: any = await env.DB.prepare(
         `
         INSERT INTO notes (
@@ -315,14 +290,12 @@ export async function createNote(request: Request, env: Env) {
         return jsonResponse({ error: 'Failed to create note' }, 500);
       }
 
-      // Set parent ID for next iteration
       if (isFirstPart) {
         parentNoteId = (note as any).id;
       }
 
       createdNotes.push(note);
 
-      // Update user stats and subject count (only for published notes)
       if (noteStatus === 'published') {
         try {
           await env.DB.batch([
@@ -348,7 +321,6 @@ export async function createNote(request: Request, env: Env) {
   }
 }
 
-// Update note summary
 export async function updateNoteSummary(noteId: string, request: Request, env: Env) {
   const body = (await request.json()) as any;
 
@@ -359,11 +331,9 @@ export async function updateNoteSummary(noteId: string, request: Request, env: E
   return jsonResponse({ success: true });
 }
 
-// Toggle note like
 export async function toggleNoteLike(noteId: string, request: Request, env: Env) {
   const user = await getOrCreateUser(request, env);
 
-  // Check if already liked
   const { results } = await env.DB.prepare(
     'SELECT * FROM note_likes WHERE note_id = ? AND user_id = ?',
   )
@@ -371,7 +341,6 @@ export async function toggleNoteLike(noteId: string, request: Request, env: Env)
     .all();
 
   if (results.length > 0) {
-    // Unlike
     const note = (await env.DB.prepare('SELECT author_id FROM notes WHERE id = ?')
       .bind(noteId)
       .first()) as any;
@@ -382,7 +351,6 @@ export async function toggleNoteLike(noteId: string, request: Request, env: Env)
         user.id,
       ),
       env.DB.prepare('UPDATE notes SET likes = likes - 1 WHERE id = ?').bind(noteId),
-      // Decrement author's total_likes (diamonds only from notes now)
       ...(note && note.author_id
         ? [
             env.DB.prepare('UPDATE users SET total_likes = total_likes - 1 WHERE id = ?').bind(
@@ -393,7 +361,6 @@ export async function toggleNoteLike(noteId: string, request: Request, env: Env)
     ]);
     return jsonResponse({ liked: false });
   } else {
-    // Like
     const note = (await env.DB.prepare('SELECT author_id FROM notes WHERE id = ?')
       .bind(noteId)
       .first()) as any;
@@ -404,7 +371,6 @@ export async function toggleNoteLike(noteId: string, request: Request, env: Env)
         user.id,
       ),
       env.DB.prepare('UPDATE notes SET likes = likes + 1 WHERE id = ?').bind(noteId),
-      // Increment author's total_likes (diamonds only from notes now)
       ...(note && note.author_id
         ? [
             env.DB.prepare('UPDATE users SET total_likes = total_likes + 1 WHERE id = ?').bind(
@@ -417,13 +383,11 @@ export async function toggleNoteLike(noteId: string, request: Request, env: Env)
   }
 }
 
-// User update own note
 export async function userUpdateNote(noteId: string, request: Request, env: Env) {
   try {
     const user = await getOrCreateUser(request, env);
     const body = (await request.json()) as any;
 
-    // Verify ownership
     const note = (await env.DB.prepare('SELECT author_id FROM notes WHERE id = ?')
       .bind(noteId)
       .first()) as any;
@@ -436,7 +400,6 @@ export async function userUpdateNote(noteId: string, request: Request, env: Env)
       return jsonResponse({ error: 'Unauthorized - You can only edit your own notes' }, 403);
     }
 
-    // Build update query dynamically based on provided fields
     const updates: string[] = [];
     const values: any[] = [];
 
@@ -473,7 +436,6 @@ export async function userUpdateNote(noteId: string, request: Request, env: Env)
       return jsonResponse({ error: 'No fields to update' }, 400);
     }
 
-    // Always update updated_at
     updates.push('updated_at = datetime("now")');
     values.push(noteId);
 
@@ -482,7 +444,6 @@ export async function userUpdateNote(noteId: string, request: Request, env: Env)
       .bind(...values)
       .run();
 
-    // Get updated note
     const updatedNote = await env.DB.prepare('SELECT * FROM notes WHERE id = ?')
       .bind(noteId)
       .first();
@@ -493,14 +454,12 @@ export async function userUpdateNote(noteId: string, request: Request, env: Env)
   }
 }
 
-// Get user's own notes
 export async function getMyNotes(request: Request, env: Env) {
   try {
     const user = await getOrCreateUser(request, env);
 
-    // Check if filtering by status
     const url = new URL(request.url);
-    const statusFilter = url.searchParams.get('status'); // 'draft', 'published', or null for all
+    const statusFilter = url.searchParams.get('status');
 
     let query = `
       SELECT
@@ -544,12 +503,10 @@ export async function getMyNotes(request: Request, env: Env) {
   }
 }
 
-// Publish a draft note
 export async function publishDraftNote(noteId: string, request: Request, env: Env) {
   try {
     const user = await getOrCreateUser(request, env);
 
-    // Get the note and verify ownership
     const note = (await env.DB.prepare(
       'SELECT author_id, subject_id, status FROM notes WHERE id = ?',
     )
@@ -568,7 +525,6 @@ export async function publishDraftNote(noteId: string, request: Request, env: En
       return jsonResponse({ error: 'Note is already published' }, 400);
     }
 
-    // Update note status to published
     await env.DB.prepare(
       `
       UPDATE notes
@@ -579,7 +535,6 @@ export async function publishDraftNote(noteId: string, request: Request, env: En
       .bind(noteId)
       .run();
 
-    // Update user stats and subject count (since it's being published now)
     await env.DB.batch([
       env.DB.prepare('UPDATE users SET notes_uploaded = notes_uploaded + 1 WHERE id = ?').bind(
         user.id,
@@ -589,7 +544,6 @@ export async function publishDraftNote(noteId: string, request: Request, env: En
       ),
     ]);
 
-    // Get updated note
     const updatedNote = await env.DB.prepare('SELECT * FROM notes WHERE id = ?')
       .bind(noteId)
       .first();
@@ -600,12 +554,10 @@ export async function publishDraftNote(noteId: string, request: Request, env: En
   }
 }
 
-// User delete own note (with point deduction)
 export async function userDeleteNote(noteId: string, request: Request, env: Env) {
   try {
     const user = await getOrCreateUser(request, env);
 
-    // Verify ownership
     const note = (await env.DB.prepare(
       'SELECT author_id, subject_id, likes, admin_upvotes FROM notes WHERE id = ?',
     )
@@ -620,22 +572,15 @@ export async function userDeleteNote(noteId: string, request: Request, env: Env)
       return jsonResponse({ error: 'Unauthorized - You can only delete your own notes' }, 403);
     }
 
-    // Calculate points to deduct: user likes (1 each) + admin upvotes (5 each)
     const pointsToDeduct = (note.likes || 0) + (note.admin_upvotes || 0) * 5;
 
-    // Delete related data and update stats
     await env.DB.batch([
-      // Delete note likes
       env.DB.prepare('DELETE FROM note_likes WHERE note_id = ?').bind(noteId),
-      // Delete admin note likes
       env.DB.prepare('DELETE FROM admin_note_likes WHERE note_id = ?').bind(noteId),
-      // Delete the note itself
       env.DB.prepare('DELETE FROM notes WHERE id = ?').bind(noteId),
-      // Update note count in subjects table (ensure it doesn't go below 0)
       env.DB.prepare('UPDATE subjects SET note_count = MAX(0, note_count - 1) WHERE id = ?').bind(
         note.subject_id,
       ),
-      // Update user stats: decrease notes_uploaded, total_likes, and total_admin_upvotes (ensure they don't go below 0)
       env.DB.prepare(
         `
         UPDATE users

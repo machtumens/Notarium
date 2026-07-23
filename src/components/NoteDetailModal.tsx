@@ -23,12 +23,8 @@ export default function NoteDetailModal({
   onLike,
   currentUser,
 }: NoteDetailModalProps) {
-  // Hooks must run unconditionally on every render (before any early return).
-  // When `note` is null we still return null below, so these hook values are
-  // never rendered; the null-safe args keep runtime behavior identical.
   const [isMobile, setIsMobile] = useState(false);
 
-  // Initialize custom hooks
   const { isLiked, likeCount, handleLike } = useNoteInteractions({
     noteId: note?.id ?? 0,
     initialLiked: note?.liked_by_me || false,
@@ -39,7 +35,6 @@ export default function NoteDetailModal({
     noteId: note?.id ?? 0,
   });
 
-  // Handle window resize for mobile detection
   useEffect(() => {
     const checkMobile = () => {
       setIsMobile(window.innerWidth < 768);
@@ -51,7 +46,6 @@ export default function NoteDetailModal({
 
   if (!note) return null;
 
-  // Parse images - support both single image string and array of images
   const images = (() => {
     if (!note.image) return [];
     if (typeof note.image === 'string') {
@@ -70,7 +64,6 @@ export default function NoteDetailModal({
     return [];
   })();
 
-  // Handle AI Summary generation
   const handleGenerateSummary = async () => {
     await generateSummary({
       title: note.title,
@@ -79,7 +72,6 @@ export default function NoteDetailModal({
     });
   };
 
-  // Handle like with callback
   const handleLikeWithCallback = () => {
     handleLike(onLike);
   };

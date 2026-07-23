@@ -1,16 +1,3 @@
--- Notarium database schema — authoritative reference
--- this reflects the table structure after all migrations have been applied
--- to create from scratch: npx wrangler d1 execute notarium-db --file=backend/schema.sql
---
--- architecture notes for maintainers:
--- - all tables use STRICT mode for type safety
--- - image_path stores base64 JSON arrays; consider migrating to R2 object URLs
---   as the user base grows to avoid D1 row-size pressure
--- - enable D1 read replication in the Cloudflare dashboard for leaderboard
---   and subject listing endpoints (zero code change required)
--- - chat sessions older than 30 days with no messages can be pruned
---   via a Cloudflare Cron Trigger on a schedule
-
 CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   encrypted_yw_id TEXT NOT NULL UNIQUE,
@@ -35,6 +22,10 @@ CREATE TABLE IF NOT EXISTS users (
   google_id TEXT,
   oauth_provider TEXT DEFAULT 'local',
   last_seen_at TEXT,
+  current_streak INTEGER DEFAULT 0,
+  longest_streak INTEGER DEFAULT 0,
+  last_study_date TEXT,
+  learning_points INTEGER DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 ) STRICT;
@@ -55,12 +46,10 @@ CREATE TABLE IF NOT EXISTS notes (
   author_id INTEGER NOT NULL,
   extracted_text TEXT,
   summary TEXT,
-  -- JSON array of base64 images, max 3 per note
   image_path TEXT,
   content TEXT,
   tags TEXT,
   author_class TEXT,
-  -- links to parent note for multi-part series
   parent_note_id INTEGER,
   part_number INTEGER,
   status TEXT NOT NULL DEFAULT 'published',
@@ -68,7 +57,6 @@ CREATE TABLE IF NOT EXISTS notes (
   scheduled_publish_at TEXT,
   likes INTEGER NOT NULL DEFAULT 0,
   admin_upvotes INTEGER NOT NULL DEFAULT 0,
-  -- soft delete — set instead of hard deleting
   deleted_at TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -147,7 +135,32 @@ CREATE TABLE IF NOT EXISTS usage_stats (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 ) STRICT;
 
--- indexes
+CREATE TABLE IF NOT EXISTS quiz_attempts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  note_id INTEGER,
+  question_text TEXT NOT NULL,
+  question_hash TEXT NOT NULL,
+  is_correct INTEGER NOT NULL,
+  confidence INTEGER,
+  answered_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS study_items (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  note_id INTEGER,
+  question_text TEXT NOT NULL,
+  question_hash TEXT NOT NULL,
+  ease_factor REAL DEFAULT 2.5,
+  interval_days INTEGER DEFAULT 0,
+  repetitions INTEGER DEFAULT 0,
+  due_at TEXT,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(user_id, question_hash)
+);
+
 CREATE INDEX IF NOT EXISTS idx_notes_subject_id ON notes(subject_id);
 CREATE INDEX IF NOT EXISTS idx_notes_author_id ON notes(author_id);
 CREATE INDEX IF NOT EXISTS idx_notes_created_at ON notes(created_at DESC);
@@ -162,3 +175,5 @@ CREATE INDEX IF NOT EXISTS idx_users_stats ON users(total_likes DESC, total_admi
 CREATE INDEX IF NOT EXISTS idx_notes_browse ON notes(subject_id, status, visibility, created_at DESC) WHERE deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 CREATE INDEX IF NOT EXISTS idx_notes_active ON notes(deleted_at) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_quiz_attempts_user_time ON quiz_attempts(user_id, answered_at);
+CREATE INDEX IF NOT EXISTS idx_study_items_user_due ON study_items(user_id, due_at);

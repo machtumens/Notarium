@@ -64,14 +64,12 @@ export default function SubjectNotesPage({
     try {
       setIsLoading(true);
 
-      // Fetch real notes from backend
       const filterParam = currentUser?.grade ? `?filter=${gradeFilter}` : '';
       const response = await api.request(`/api/notes/subject/${subject.id}${filterParam}`, {
         method: 'GET',
       });
 
       if (response.notes) {
-        // Map backend response to frontend Note interface
         const loadedNotes: Note[] = response.notes.map((note: Note) => ({
           id: note.id,
           title: note.title,
@@ -98,7 +96,6 @@ export default function SubjectNotesPage({
 
         setNotes(loadedNotes);
 
-        // Extract all unique tags
         const tags = new Set<string>();
         loadedNotes.forEach((note) => {
           note.tags?.forEach((tag) => tags.add(tag));
@@ -137,7 +134,6 @@ export default function SubjectNotesPage({
     try {
       const response = await api.likeNote(noteId);
       if (response.success) {
-        // Reload notes to get updated like counts
         await loadNotes();
       }
     } catch (err) {
@@ -150,7 +146,6 @@ export default function SubjectNotesPage({
     try {
       setIsLoading(true);
       await api.admin.likeNote(noteId);
-      // Reload notes to get updated admin like counts
       await loadNotes();
     } catch (err) {
       logger.error('subject-notes', 'Failed to admin like', err);
@@ -164,7 +159,6 @@ export default function SubjectNotesPage({
     try {
       setIsLoading(true);
       await api.admin.deleteNote(noteId);
-      // Remove note from list
       setNotes(notes.filter((note) => note.id !== noteId));
     } catch (err) {
       logger.error('subject-notes', 'Failed to delete note', err);
@@ -418,7 +412,6 @@ export default function SubjectNotesPage({
                   background: (() => {
                     if (!note.image)
                       return `linear-gradient(135deg, ${darkTheme.colors.accent}20, ${darkTheme.colors.accent}05)`;
-                    // Check if it's a JSON array
                     if (note.image.startsWith('[')) {
                       try {
                         const images = JSON.parse(note.image);
@@ -429,9 +422,8 @@ export default function SubjectNotesPage({
                         ) {
                           return `url(${images[0]}) center/cover no-repeat`;
                         }
-                      } catch {} // best-effort: JSON.parse fallback for image display
+                      } catch {}
                     }
-                    // Single image
                     if (note.image.startsWith('data:')) {
                       return `url(${note.image}) center/cover no-repeat`;
                     }
@@ -448,7 +440,7 @@ export default function SubjectNotesPage({
                         return Array.isArray(images) && images[0]?.startsWith('data:')
                           ? '0'
                           : 'clamp(48px, 10vw, 64px)';
-                      } catch {} // best-effort: JSON.parse fallback for image display
+                      } catch {}
                     }
                     return note.image.startsWith('data:') ? '0' : 'clamp(48px, 10vw, 64px)';
                   })(),
@@ -774,7 +766,6 @@ export default function SubjectNotesPage({
                         {note.admin_upvotes}
                       </button>
                     ) : (
-                      /* Regular Like Button - For Students */
                       <button
                         onClick={(e) => {
                           e.stopPropagation();

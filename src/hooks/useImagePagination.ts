@@ -18,14 +18,12 @@ export const useImagePagination = ({ images }: UseImagePaginationProps) => {
   const hasMultipleImages = images.length > 1;
   const minSwipeDistance = 50;
 
-  // Reset zoom when changing images
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional: reset zoom/position when the displayed image changes; behavior-preserving
     setZoomLevel(1);
     setImagePosition({ x: 0, y: 0 });
   }, [currentImageIndex]);
 
-  // Navigation handlers
   const goToPreviousImage = useCallback(() => {
     setCurrentImageIndex((prev) => (prev > 0 ? prev - 1 : images.length - 1));
   }, [images.length]);
@@ -34,7 +32,6 @@ export const useImagePagination = ({ images }: UseImagePaginationProps) => {
     setCurrentImageIndex((prev) => (prev < images.length - 1 ? prev + 1 : 0));
   }, [images.length]);
 
-  // Zoom handlers
   const handleZoomIn = useCallback(() => {
     setZoomLevel((prev) => Math.min(prev + 0.5, 4));
   }, []);
@@ -42,8 +39,6 @@ export const useImagePagination = ({ images }: UseImagePaginationProps) => {
   const handleZoomOut = useCallback(() => {
     setZoomLevel((prev) => {
       const next = Math.max(prev - 0.5, 1);
-      // Recenter once we drop back to (or below) 1.5x, matching prior behavior
-      // which checked the pre-update zoom level of <= 1.5.
       if (prev <= 1.5) {
         setImagePosition({ x: 0, y: 0 });
       }
@@ -56,7 +51,6 @@ export const useImagePagination = ({ images }: UseImagePaginationProps) => {
     setImagePosition({ x: 0, y: 0 });
   }, []);
 
-  // Drag handlers for zoomed images
   const handleMouseDown = (e: React.MouseEvent) => {
     if (zoomLevel > 1) {
       setIsDragging(true);
@@ -77,7 +71,6 @@ export const useImagePagination = ({ images }: UseImagePaginationProps) => {
     setIsDragging(false);
   };
 
-  // Touch swipe handlers
   const onTouchStart = (e: React.TouchEvent) => {
     if (hasMultipleImages && zoomLevel === 1) {
       setTouchEnd(null);
@@ -106,10 +99,6 @@ export const useImagePagination = ({ images }: UseImagePaginationProps) => {
     }
   };
 
-  // Keyboard navigation for fullscreen.
-  // Wrapped in useCallback with only the values it actually reads so the global
-  // keydown listener is not torn down / re-added on every zoom step. The zoom and
-  // navigation handlers it calls are themselves stable (useCallback above).
   const handleKeyPress = useCallback(
     (e: KeyboardEvent) => {
       if (isFullScreen) {

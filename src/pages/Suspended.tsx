@@ -11,17 +11,14 @@ export default function Suspended() {
   } | null>(null);
 
   useEffect(() => {
-    // Check if user is actually suspended
     const checkSuspension = async () => {
       try {
         const response = await api.auth.me();
         if (!response.user.suspended) {
-          // Not suspended, redirect to home
           navigate('/', { replace: true });
           return;
         }
 
-        // Calculate days remaining
         const endDate = new Date(response.user.suspension_end_date);
         const now = new Date();
         const daysRemaining = Math.ceil(
@@ -34,7 +31,6 @@ export default function Suspended() {
           endDate: response.user.suspension_end_date,
         });
       } catch (error) {
-        // If error, redirect to login
         navigate('/login', { replace: true });
       }
     };
@@ -48,7 +44,7 @@ export default function Suspended() {
   };
 
   if (!suspensionData) {
-    return null; // Loading state
+    return null;
   }
 
   return (

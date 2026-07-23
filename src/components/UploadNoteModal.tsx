@@ -27,7 +27,7 @@ export default function UploadNoteModal({
   preselectedSubject,
 }: UploadNoteModalProps) {
   const { user } = useAuth();
-  const uploadMode = 'scan'; // Always use scan mode
+  const uploadMode = 'scan';
   const [uploadImages, setUploadImages] = useState<string[]>([]);
   const [showCamera, setShowCamera] = useState(false);
   const [extractedText, setExtractedText] = useState('');
@@ -43,15 +43,14 @@ export default function UploadNoteModal({
   const [fullscreenImage, setFullscreenImage] = useState<number | null>(null);
   const [currentPage, setCurrentPage] = useState(0);
   const [ocrCompleted, setOcrCompleted] = useState(false);
-  const [viewMode, setViewMode] = useState<'image' | 'text'>('image'); // Toggle between image and text view
+  const [viewMode, setViewMode] = useState<'image' | 'text'>('image');
   const [saveAsDraft, setSaveAsDraft] = useState(false);
   const [scheduledDate, setScheduledDate] = useState('');
   const [visibility, setVisibility] = useState<'everyone' | 'class'>('everyone');
   const [selectedSubject, setSelectedSubject] = useState<number | undefined>(preselectedSubject);
-  const [enhanceContrast, setEnhanceContrast] = useState(true); // Toggle for B&W + high contrast (ON by default)
+  const [enhanceContrast, setEnhanceContrast] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Track window resize for responsive design
   useEffect(() => {
     const handleResize = () => {
       setIsMobile(window.innerWidth < 768);
@@ -60,7 +59,6 @@ export default function UploadNoteModal({
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Apply B&W + high contrast enhancement for better note readability
   const applyContrastEnhancement = (base64Image: string): Promise<string> => {
     return new Promise((resolve) => {
       const img = new Image();
@@ -76,27 +74,21 @@ export default function UploadNoteModal({
         canvas.height = img.height;
         ctx.drawImage(img, 0, 0);
 
-        // Get image data
         const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
         const data = imageData.data;
 
-        // Convert to grayscale and apply high contrast
         for (let i = 0; i < data.length; i += 4) {
-          // Convert to grayscale using luminance formula
           const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
 
-          // Apply high contrast (increase separation between darks and lights)
-          const contrast = 1.5; // Contrast multiplier
+          const contrast = 1.5;
           const factor = (259 * (contrast + 255)) / (255 * (259 - contrast));
           const enhanced = factor * (gray - 128) + 128;
 
-          // Clamp values between 0-255
           const final = Math.max(0, Math.min(255, enhanced));
 
-          // Set RGB to same value (grayscale) with high contrast
-          data[i] = final; // R
-          data[i + 1] = final; // G
-          data[i + 2] = final; // B
+          data[i] = final;
+          data[i + 1] = final;
+          data[i + 2] = final;
           // Alpha stays the same
         }
 
@@ -109,7 +101,6 @@ export default function UploadNoteModal({
     });
   };
 
-  // Compress image with better quality (0.8) to maintain readability
   const compressImage = (base64Image: string): Promise<string> => {
     return new Promise((resolve) => {
       const img = new Image();
@@ -117,14 +108,12 @@ export default function UploadNoteModal({
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d');
 
-        // More aggressive max dimensions for better compression
         const MAX_WIDTH = 800;
         const MAX_HEIGHT = 1200;
 
         let width = img.width;
         let height = img.height;
 
-        // Calculate new dimensions
         if (width > MAX_WIDTH || height > MAX_HEIGHT) {
           const ratio = Math.min(MAX_WIDTH / width, MAX_HEIGHT / height);
           width = width * ratio;
@@ -134,10 +123,8 @@ export default function UploadNoteModal({
         canvas.width = width;
         canvas.height = height;
 
-        // Draw and compress
         ctx?.drawImage(img, 0, 0, width, height);
 
-        // Use JPEG with 0.8 quality for better readability
         const compressed = canvas.toDataURL('image/jpeg', 0.8);
 
         logger.debug(
@@ -162,7 +149,6 @@ export default function UploadNoteModal({
       const reader = new FileReader();
       reader.onloadend = async () => {
         if (typeof reader.result === 'string') {
-          // Apply contrast enhancement if enabled, then compress
           let processed = reader.result;
           if (enhanceContrast) {
             processed = await applyContrastEnhancement(processed);
@@ -171,11 +157,9 @@ export default function UploadNoteModal({
           newImages.push(compressed);
           processedCount++;
 
-          // When all files are processed, update state
           if (processedCount === fileArray.length) {
             setUploadImages((prev) => {
               const allImages = [...prev, ...newImages];
-              // Auto-process OCR if in scan mode
               if (uploadMode === 'scan') {
                 setTimeout(() => processImagesOCR(allImages), 100);
               }
@@ -187,13 +171,11 @@ export default function UploadNoteModal({
       reader.readAsDataURL(file);
     });
 
-    // Reset the file input so the same files can be selected again
     event.target.value = '';
   };
 
   const handlePhotoCapture = async (photoBase64: string) => {
     setShowCamera(false);
-    // Apply contrast enhancement if enabled, then compress camera photo
     let processed = photoBase64;
     if (enhanceContrast) {
       processed = await applyContrastEnhancement(processed);
@@ -201,7 +183,6 @@ export default function UploadNoteModal({
     const compressed = await compressImage(processed);
     setUploadImages((prev) => {
       const newImages = [...prev, compressed];
-      // Auto-process OCR if in scan mode
       if (uploadMode === 'scan') {
         setTimeout(() => processImagesOCR(newImages), 100);
       }
@@ -217,13 +198,12 @@ export default function UploadNoteModal({
 
     logger.debug('ocr', 'Starting for', images.length, 'images');
     setIsProcessingOCR(true);
-    setExtractedText(''); // Clear any existing text
+    setExtractedText('');
     setOcrCompleted(false);
 
     try {
       let combinedText = '';
 
-      // Process each image sequentially
       for (let i = 0; i < images.length; i++) {
         try {
           logger.debug('ocr', `Processing image ${i + 1}/${images.length}`);
@@ -319,12 +299,10 @@ export default function UploadNoteModal({
 
     setIsSubmitting(true);
     try {
-      // Use extracted text for summary if not already generated
       const contentForSummary = extractedText;
       let quickSummary = generatedSummary;
       let autoTags = suggestedTags;
 
-      // Generate if not already generated
       if (contentForSummary && !quickSummary) {
         const [summary, tags] = await Promise.all([
           generateQuickSummary(contentForSummary, noteTitle),
@@ -336,23 +314,20 @@ export default function UploadNoteModal({
         setSuggestedTags(tags);
       }
 
-      // Combine manual tags with AI suggestions
       const manualTagList = manualTags
         .split(',')
         .map((t) => t.trim())
         .filter((t) => t);
       const finalTags = manualTagList.length > 0 ? manualTagList : autoTags;
 
-      // Size-based auto-split: Group images into chunks that fit under size limit
-      const MAX_SIZE_PER_NOTE = 900000; // 900KB (1MB with buffer)
+      const MAX_SIZE_PER_NOTE = 900000;
       const imageChunks: string[][] = [];
       let currentChunk: string[] = [];
       let currentSize = 0;
 
       for (const image of uploadImages) {
-        const imageSize = image.length * 0.75; // Approximate base64 to bytes
+        const imageSize = image.length * 0.75;
 
-        // If adding this image would exceed limit, start new chunk
         if (currentChunk.length > 0 && currentSize + imageSize > MAX_SIZE_PER_NOTE) {
           imageChunks.push([...currentChunk]);
           currentChunk = [image];
@@ -363,14 +338,12 @@ export default function UploadNoteModal({
         }
       }
 
-      // Add final chunk if not empty
       if (currentChunk.length > 0) {
         imageChunks.push(currentChunk);
       }
 
       const numberOfNotes = imageChunks.length;
 
-      // Create notes from chunks (same title for all)
       const createdNotes = [];
       for (let i = 0; i < numberOfNotes; i++) {
         const imageChunk = imageChunks[i];
@@ -419,7 +392,6 @@ export default function UploadNoteModal({
     }
   };
 
-  // Add effect to auto-generate summary and tags when title and extracted text are both available
   useEffect(() => {
     const generateAISuggestions = async () => {
       if (noteTitle && extractedText && !generatedSummary && !isProcessingOCR) {
@@ -886,7 +858,6 @@ export default function UploadNoteModal({
                   )}
                 </>
               ) : (
-                /* Text View - Show extracted text */
                 <div
                   style={{
                     flex: 1,
@@ -1344,7 +1315,6 @@ export default function UploadNoteModal({
                   <span
                     key={idx}
                     onClick={() => {
-                      // Add tag to manual tags
                       setManualTags((prev) => {
                         const currentTags = prev
                           ? prev

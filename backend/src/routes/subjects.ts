@@ -1,16 +1,10 @@
-/**
- * Subjects listing and grade-class taxonomy (public listing + admin CRUD + reassignment).
- */
 import type { Env } from '../lib/env';
 import { jsonResponse } from '../lib/response';
 import { getOrCreateUser, requireAdmin } from '../lib/auth';
 
-// Get all subjects
 export async function getSubjects(request: Request, env: Env) {
-  // Resolve/create the user for auth enforcement (throws if unauthenticated).
   await getOrCreateUser(request, env);
 
-  // Use the denormalized note_count column instead of a per-row correlated subquery.
   const { results } = await env.DB.prepare(
     `
     SELECT id, name, icon, note_count
@@ -21,8 +15,6 @@ export async function getSubjects(request: Request, env: Env) {
 
   return jsonResponse({ subjects: results });
 }
-
-// ===== Grade Classes Endpoints =====
 
 export async function getPublicGradeClasses(env: Env) {
   const { results } = await env.DB.prepare(

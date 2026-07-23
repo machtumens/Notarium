@@ -1,9 +1,5 @@
 import { logger } from '../lib/logger';
 
-/**
- * Camera utilities for capturing images from device camera
- */
-
 export interface CameraStreamOptions {
   facingMode?: 'user' | 'environment';
 }
@@ -13,16 +9,11 @@ export interface CapturePhotoOptions {
   format?: 'image/jpeg' | 'image/png';
 }
 
-/**
- * Request access to the device camera
- */
 export async function getCameraStream(options: CameraStreamOptions = {}): Promise<MediaStream> {
   const { facingMode = 'environment' } = options;
 
   try {
-    // Try multiple constraint variations to maximize compatibility
     const constraints = [
-      // Most restrictive: exact facingMode with ideal resolution
       {
         video: {
           facingMode: { ideal: facingMode },
@@ -31,12 +22,10 @@ export async function getCameraStream(options: CameraStreamOptions = {}): Promis
         },
         audio: false,
       },
-      // Less restrictive: facingMode only
       {
         video: { facingMode },
         audio: false,
       },
-      // Fallback: any camera with minimum quality
       {
         video: {
           width: { min: 320 },
@@ -44,7 +33,6 @@ export async function getCameraStream(options: CameraStreamOptions = {}): Promis
         },
         audio: false,
       },
-      // Last resort: any video device
       {
         video: true,
         audio: false,
@@ -88,9 +76,6 @@ export async function getCameraStream(options: CameraStreamOptions = {}): Promis
   }
 }
 
-/**
- * Capture a photo from a video element and return as base64
- */
 export function capturePhotoFromVideo(
   videoElement: HTMLVideoElement,
   options: CapturePhotoOptions = {},
@@ -104,14 +89,12 @@ export function capturePhotoFromVideo(
     readyState: videoElement.readyState,
   });
 
-  // Ensure video has actual dimensions
   if (videoElement.videoWidth === 0 || videoElement.videoHeight === 0) {
     throw new Error(
       `Video dimensions not available: ${videoElement.videoWidth}x${videoElement.videoHeight}`,
     );
   }
 
-  // Create canvas and draw video frame
   const canvas = document.createElement('canvas');
   canvas.width = videoElement.videoWidth;
   canvas.height = videoElement.videoHeight;
@@ -130,16 +113,10 @@ export function capturePhotoFromVideo(
   return result;
 }
 
-/**
- * Stop all tracks in a media stream
- */
 export function stopMediaStream(stream: MediaStream): void {
   stream.getTracks().forEach((track) => track.stop());
 }
 
-/**
- * Convert base64 string to Blob
- */
 export function base64ToBlob(base64: string, mimeType: string = 'image/jpeg'): Blob {
   const byteCharacters = atob(base64.split(',')[1] || base64);
   const byteNumbers = new Array(byteCharacters.length);
@@ -152,9 +129,6 @@ export function base64ToBlob(base64: string, mimeType: string = 'image/jpeg'): B
   return new Blob([byteArray], { type: mimeType });
 }
 
-/**
- * Convert Blob to base64 string
- */
 export async function blobToBase64(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();

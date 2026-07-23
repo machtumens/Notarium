@@ -1,7 +1,3 @@
-/**
- * Admin-only endpoints: activity log, usage stats, note moderation (upvote/like/edit/delete),
- * user moderation (suspend/warn/unsuspend/remove), and admin listings.
- */
 import type { Env } from '../lib/env';
 import { jsonResponse } from '../lib/response';
 import { requireAdmin } from '../lib/auth';
@@ -53,11 +49,8 @@ export async function getUsageStatistics(request: Request, env: Env) {
   if (adminUser instanceof Response) return adminUser;
 
   try {
-    // Batch all count queries into a single round-trip (order matters — read by index below)
     const countResults = await env.DB.batch([
-      // 0: total users count
       env.DB.prepare('SELECT COUNT(*) as count FROM users'),
-      // 1: active users (last 7 days)
       env.DB.prepare(`
       SELECT COUNT(DISTINCT user_id) as count FROM (
         SELECT author_id as user_id FROM notes WHERE created_at >= datetime('now', '-7 days')
@@ -67,7 +60,6 @@ export async function getUsageStatistics(request: Request, env: Env) {
         SELECT user_id FROM note_likes WHERE created_at >= datetime('now', '-7 days')
       )
     `),
-      // 2: active users (last 30 days)
       env.DB.prepare(`
       SELECT COUNT(DISTINCT user_id) as count FROM (
         SELECT author_id as user_id FROM notes WHERE created_at >= datetime('now', '-30 days')
@@ -77,27 +69,19 @@ export async function getUsageStatistics(request: Request, env: Env) {
         SELECT user_id FROM note_likes WHERE created_at >= datetime('now', '-30 days')
       )
     `),
-      // 3: total notes
       env.DB.prepare('SELECT COUNT(*) as count FROM notes'),
-      // 4: notes created in last 7 days
       env.DB.prepare(`
       SELECT COUNT(*) as count FROM notes WHERE created_at >= datetime('now', '-7 days')
     `),
-      // 5: notes created in last 30 days
       env.DB.prepare(`
       SELECT COUNT(*) as count FROM notes WHERE created_at >= datetime('now', '-30 days')
     `),
-      // 6: total likes
       env.DB.prepare('SELECT COUNT(*) as count FROM note_likes'),
-      // 7: total admin upvotes
       env.DB.prepare('SELECT COUNT(*) as count FROM admin_note_likes'),
-      // 8: total chat sessions
       env.DB.prepare('SELECT COUNT(*) as count FROM chat_sessions'),
-      // 9: chat sessions in last 7 days
       env.DB.prepare(`
       SELECT COUNT(*) as count FROM chat_sessions WHERE created_at >= datetime('now', '-7 days')
     `),
-      // 10: chat sessions in last 30 days
       env.DB.prepare(`
       SELECT COUNT(*) as count FROM chat_sessions WHERE created_at >= datetime('now', '-30 days')
     `),
@@ -115,7 +99,6 @@ export async function getUsageStatistics(request: Request, env: Env) {
     const chatSessions7d = countResults[9]?.results?.[0] as any;
     const chatSessions30d = countResults[10]?.results?.[0] as any;
 
-    // Get top contributors (users with most notes)
     const { results: topContributors } = await env.DB.prepare(
       `
       SELECT
@@ -133,7 +116,6 @@ export async function getUsageStatistics(request: Request, env: Env) {
     `,
     ).all();
 
-    // Get user distribution by class
     const { results: usersByClass } = await env.DB.prepare(
       `
       SELECT
@@ -146,7 +128,6 @@ export async function getUsageStatistics(request: Request, env: Env) {
     `,
     ).all();
 
-    // Get notes distribution by class
     const { results: notesByClass } = await env.DB.prepare(
       `
       SELECT
@@ -159,7 +140,6 @@ export async function getUsageStatistics(request: Request, env: Env) {
     `,
     ).all();
 
-    // Get popular subjects
     const { results: popularSubjects } = await env.DB.prepare(
       `
       SELECT
@@ -176,7 +156,6 @@ export async function getUsageStatistics(request: Request, env: Env) {
     `,
     ).all();
 
-    // Get daily activity for last 14 days
     const { results: dailyActivity } = await env.DB.prepare(
       `
       SELECT
@@ -189,7 +168,6 @@ export async function getUsageStatistics(request: Request, env: Env) {
     `,
     ).all();
 
-    // Get daily user registrations for last 14 days
     const { results: dailyRegistrations } = await env.DB.prepare(
       `
       SELECT
@@ -202,14 +180,12 @@ export async function getUsageStatistics(request: Request, env: Env) {
     `,
     ).all();
 
-    // Get suspended users count
     const suspendedUsers = (await env.DB.prepare(
       `
       SELECT COUNT(*) as count FROM users WHERE suspended = 1
     `,
     ).first()) as any;
 
-    // Get warned users count
     const warnedUsers = (await env.DB.prepare(
       `
       SELECT COUNT(*) as count FROM users WHERE warning = 1
@@ -248,7 +224,6 @@ export async function verifyAdmin(request: Request, env: Env) {
   const body = (await request.json()) as any;
   const { email, password } = body;
 
-  // Check if email ends with @notarium.site and password matches environment variable
   if (email && email.endsWith('@notarium.site') && password === env.ADMIN_PASSWORD) {
     return jsonResponse({ success: true, isAdmin: true }, 200, env);
   }
@@ -260,14 +235,12 @@ export async function adminUpvoteNote(noteId: string, request: Request, env: Env
   const adminUser = await requireAdmin(request, env);
   if (adminUser instanceof Response) return adminUser;
 
-  // Update note admin upvotes
   await env.DB.prepare(
     'UPDATE notes SET admin_upvotes = admin_upvotes + 1, updated_at = datetime("now") WHERE id = ?',
   )
     .bind(noteId)
     .run();
 
-  // Get note author and update their total admin upvotes
   const note = await env.DB.prepare('SELECT author_id FROM notes WHERE id = ?')
     .bind(noteId)
     .first();
@@ -282,7 +255,6 @@ export async function adminUpvoteNote(noteId: string, request: Request, env: Env
   return jsonResponse({ success: true });
 }
 
-// Admin like note (new endpoint using Bearer token auth)
 export async function adminLikeNote(noteId: string, request: Request, env: Env) {
   const adminUser = await requireAdmin(request, env);
   if (adminUser instanceof Response) return adminUser;
@@ -293,7 +265,6 @@ export async function adminLikeNote(noteId: string, request: Request, env: Env) 
     .all();
 
   if (results.length > 0) {
-    // Unlike
     const note = (await env.DB.prepare('SELECT author_id, title FROM notes WHERE id = ?')
       .bind(noteId)
       .first()) as any;
@@ -306,7 +277,6 @@ export async function adminLikeNote(noteId: string, request: Request, env: Env) 
       env.DB.prepare('UPDATE notes SET admin_upvotes = admin_upvotes - 1 WHERE id = ?').bind(
         noteId,
       ),
-      // Update user's total admin upvotes (diamonds only from notes now)
       ...(note && note.author_id
         ? [
             env.DB.prepare(
@@ -316,7 +286,6 @@ export async function adminLikeNote(noteId: string, request: Request, env: Env) 
         : []),
     ]);
 
-    // Log activity
     await logAdminActivity(
       env,
       adminUser.id,
@@ -329,7 +298,6 @@ export async function adminLikeNote(noteId: string, request: Request, env: Env) 
 
     return jsonResponse({ liked: false });
   } else {
-    // Like
     const note = (await env.DB.prepare('SELECT author_id, title FROM notes WHERE id = ?')
       .bind(noteId)
       .first()) as any;
@@ -342,7 +310,6 @@ export async function adminLikeNote(noteId: string, request: Request, env: Env) 
       env.DB.prepare('UPDATE notes SET admin_upvotes = admin_upvotes + 1 WHERE id = ?').bind(
         noteId,
       ),
-      // Update user's total admin upvotes (diamonds only from notes now)
       ...(note && note.author_id
         ? [
             env.DB.prepare(
@@ -352,7 +319,6 @@ export async function adminLikeNote(noteId: string, request: Request, env: Env) 
         : []),
     ]);
 
-    // Log activity
     await logAdminActivity(
       env,
       adminUser.id,
@@ -367,13 +333,11 @@ export async function adminLikeNote(noteId: string, request: Request, env: Env) 
   }
 }
 
-// Admin delete note
 export async function deleteNote(noteId: string, request: Request, env: Env) {
   const adminUser = await requireAdmin(request, env);
   if (adminUser instanceof Response) return adminUser;
 
   try {
-    // Get note details before deletion
     const note = (await env.DB.prepare(
       'SELECT id, author_id, subject_id, title FROM notes WHERE id = ?',
     )
@@ -384,25 +348,18 @@ export async function deleteNote(noteId: string, request: Request, env: Env) {
       return jsonResponse({ error: 'Note not found' }, 404);
     }
 
-    // Delete related data
     await env.DB.batch([
-      // Delete note likes
       env.DB.prepare('DELETE FROM note_likes WHERE note_id = ?').bind(noteId),
-      // Delete admin note likes
       env.DB.prepare('DELETE FROM admin_note_likes WHERE note_id = ?').bind(noteId),
-      // Delete the note itself
       env.DB.prepare('DELETE FROM notes WHERE id = ?').bind(noteId),
-      // Update note count in subjects table (ensure it doesn't go below 0)
       env.DB.prepare('UPDATE subjects SET note_count = MAX(0, note_count - 1) WHERE id = ?').bind(
         note.subject_id,
       ),
-      // Update notes_uploaded count for the author (ensure it doesn't go below 0)
       env.DB.prepare(
         'UPDATE users SET notes_uploaded = MAX(0, notes_uploaded - 1) WHERE id = ?',
       ).bind(note.author_id),
     ]);
 
-    // Log activity
     await logAdminActivity(
       env,
       adminUser.id,
@@ -419,7 +376,6 @@ export async function deleteNote(noteId: string, request: Request, env: Env) {
   }
 }
 
-// Admin update note
 export async function updateNote(noteId: string, request: Request, env: Env) {
   const adminUser = await requireAdmin(request, env);
   if (adminUser instanceof Response) return adminUser;
@@ -427,12 +383,10 @@ export async function updateNote(noteId: string, request: Request, env: Env) {
   try {
     const body = (await request.json()) as any;
 
-    // Get note title before update for logging
     const originalNote = (await env.DB.prepare('SELECT title FROM notes WHERE id = ?')
       .bind(noteId)
       .first()) as any;
 
-    // Build update query dynamically based on provided fields
     const updates: string[] = [];
     const values: any[] = [];
     const changedFields: string[] = [];
@@ -485,12 +439,10 @@ export async function updateNote(noteId: string, request: Request, env: Env) {
       .bind(...values)
       .run();
 
-    // Fetch and return updated note
     const updatedNote = await env.DB.prepare('SELECT * FROM notes WHERE id = ?')
       .bind(noteId)
       .first();
 
-    // Log activity
     await logAdminActivity(
       env,
       adminUser.id,
@@ -507,7 +459,6 @@ export async function updateNote(noteId: string, request: Request, env: Env) {
   }
 }
 
-// Suspend user
 export async function suspendUser(userId: string, request: Request, env: Env) {
   const adminUser = await requireAdmin(request, env);
   if (adminUser instanceof Response) return adminUser;
@@ -515,7 +466,7 @@ export async function suspendUser(userId: string, request: Request, env: Env) {
   const body = (await request.json()) as any;
   const { days, reason } = body;
   const endDate = new Date();
-  endDate.setDate(endDate.getDate() + (days || 7)); // Default 7 days
+  endDate.setDate(endDate.getDate() + (days || 7));
   const endDateISO = endDate.toISOString();
 
   await env.DB.prepare(
@@ -527,7 +478,6 @@ export async function suspendUser(userId: string, request: Request, env: Env) {
   return jsonResponse({ success: true, suspension_end_date: endDateISO, reason });
 }
 
-// Warn user
 export async function warnUser(userId: string, request: Request, env: Env) {
   const adminUser = await requireAdmin(request, env);
   if (adminUser instanceof Response) return adminUser;
@@ -542,7 +492,6 @@ export async function warnUser(userId: string, request: Request, env: Env) {
     .bind(warningMessage, userId)
     .run();
 
-  // Also send a notification so it appears in the notification panel
   try {
     await env.DB.prepare(
       `
@@ -562,26 +511,20 @@ export async function removeUser(userId: string, request: Request, env: Env) {
   if (adminUser instanceof Response) return adminUser;
 
   try {
-    // Delete user and all related data in the correct order to avoid foreign key constraints
-
-    // 1. Delete all likes given BY this user (on other people's notes)
     const likesResult = await env.DB.prepare('DELETE FROM note_likes WHERE user_id = ?')
       .bind(userId)
       .run();
 
-    // 2. Delete all admin upvotes given BY this user
     const adminUpvotesResult = await env.DB.prepare(
       'DELETE FROM admin_note_likes WHERE admin_id = ?',
     )
       .bind(userId)
       .run();
 
-    // 3. Delete admin activity log entries for this user
     const activityResult = await env.DB.prepare('DELETE FROM admin_activity_log WHERE admin_id = ?')
       .bind(userId)
       .run();
 
-    // decrement subject note_count for each subject affected before cascade-deleting
     await env.DB.prepare(
       `
       UPDATE subjects SET note_count = MAX(0, note_count - 1)
@@ -591,14 +534,8 @@ export async function removeUser(userId: string, request: Request, env: Env) {
       .bind(userId)
       .run();
 
-    // 4. Delete all notes authored by this user (cascades note_likes + admin_note_likes)
     await env.DB.prepare('DELETE FROM notes WHERE author_id = ?').bind(userId).run();
 
-    // 5. The following are auto-deleted via ON DELETE CASCADE:
-    //    - chat_sessions (user_id references users with CASCADE)
-    //    - chat_messages (session_id references chat_sessions with CASCADE)
-
-    // 6. Finally, delete the user
     await env.DB.prepare('DELETE FROM users WHERE id = ?').bind(userId).run();
 
     return jsonResponse({ success: true });
@@ -658,7 +595,6 @@ export async function getAllUsers(request: Request, env: Env) {
 
     return jsonResponse({ users: results });
   } catch (error: any) {
-    // If users table doesn't exist or query fails, return empty list
     return jsonResponse({ users: [] });
   }
 }
@@ -704,7 +640,6 @@ export async function getAllNotes(request: Request, env: Env) {
 
     return jsonResponse({ notes: results });
   } catch (error: any) {
-    // If notes table doesn't exist or is empty, return empty list
     return jsonResponse({ notes: [] });
   }
 }

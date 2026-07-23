@@ -21,10 +21,10 @@ export function PlaceholdersAndVanishInput({
   };
   const handleVisibilityChange = () => {
     if (document.visibilityState !== 'visible' && intervalRef.current) {
-      clearInterval(intervalRef.current); // Clear the interval when the tab is not visible
+      clearInterval(intervalRef.current);
       intervalRef.current = null;
     } else if (document.visibilityState === 'visible') {
-      startAnimation(); // Restart the interval when the tab becomes visible
+      startAnimation();
     }
   };
 

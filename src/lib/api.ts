@@ -42,18 +42,14 @@ const baseURL =
     ? 'http://localhost:8787'
     : import.meta.env.VITE_API_URL || 'https://notarium-backend.notarium-backend.workers.dev';
 
-// ponytail: sessionStorage over httpOnly cookie — upgrade to httpOnly+SameSite cookie if cross-site session persistence is needed
-// Token storage key kept as 'notarium_token' so it stays consistent with the OAuth-callback agent.
 const TOKEN_KEY = 'notarium_token';
 
 let cachedToken: string | null = null;
 
-// Initialize token from sessionStorage
 if (typeof window !== 'undefined') {
   cachedToken = sessionStorage.getItem(TOKEN_KEY);
 }
 
-// Helper to get current token from sessionStorage
 const getToken = () => {
   if (typeof window !== 'undefined') {
     return sessionStorage.getItem(TOKEN_KEY);
@@ -61,7 +57,6 @@ const getToken = () => {
   return cachedToken;
 };
 
-// Centralized token setter — pages should call this instead of touching storage directly
 const setToken = (token: string) => {
   cachedToken = token;
   if (typeof window !== 'undefined') {
@@ -122,7 +117,6 @@ export const api = {
     api.clearToken();
   },
 
-  // Auth endpoints
   auth: {
     signup: (data: SignupData): Promise<LoginResponse> =>
       api.request<LoginResponse>('/api/auth/signup', {
@@ -141,7 +135,6 @@ export const api = {
       }),
   },
 
-  // Legacy auth methods for compatibility
   register: async (
     email: string,
     password: string,
@@ -183,7 +176,6 @@ export const api = {
     return response;
   },
 
-  // Notes endpoints
   notes: {
     getAll: (): Promise<NotesResponse> => api.request<NotesResponse>('/api/notes'),
     create: (note: CreateNoteData): Promise<Note> =>
@@ -195,7 +187,6 @@ export const api = {
 
   getNotes: (): Promise<NotesResponse> => api.request<NotesResponse>('/api/notes'),
 
-  // Subjects endpoints
   subjects: {
     getAll: (): Promise<SubjectsResponse> => api.request<SubjectsResponse>('/api/subjects'),
   },
@@ -233,7 +224,6 @@ export const api = {
     }
   },
 
-  // Search notes
   searchNotes: async (query: string) => {
     try {
       const response = await api.request(`/api/notes/search?q=${encodeURIComponent(query)}`);
@@ -245,7 +235,6 @@ export const api = {
     }
   },
 
-  // Note interactions
   likeNote: async (noteId: number) => {
     try {
       const response = await api.request(`/api/notes/${noteId}/like`, {
@@ -268,7 +257,6 @@ export const api = {
     }
   },
 
-  // Chat endpoints
   chat: {
     createSession: async (subject: string, topic: string) => {
       const response = await api.request('/api/chat/sessions', {
@@ -331,7 +319,6 @@ export const api = {
     },
   },
 
-  // AI Features
   ai: {
     generateSummary: async (noteId: number, content: string) => {
       const response = await api.request(`/api/notes/${noteId}/summary`, {
@@ -370,7 +357,6 @@ export const api = {
     },
   },
 
-  // Debug endpoints
   debug: {
     testUpdate: async (userId: number, name: string) => {
       const response = await api.request('/api/debug/verify-update', {
@@ -381,7 +367,6 @@ export const api = {
     },
   },
 
-  // Admin endpoints
   admin: {
     verify: async (email: string, password: string) => {
       try {
@@ -492,10 +477,8 @@ export const api = {
       api.request<{ success: boolean }>(`/api/admin/notifications/${id}`, { method: 'DELETE' }),
   },
 
-  // Grade classes (public)
   getGradeClasses: () => api.request<GradeClassesResponse>('/api/grade-classes'),
 
-  // User notifications
   notifications: {
     getAll: () => api.request<NotificationsListResponse>('/api/notifications'),
     getUnreadCount: () => api.request<UnreadCountResponse>('/api/notifications/unread-count'),
@@ -505,8 +488,6 @@ export const api = {
       api.request<{ success: boolean }>('/api/notifications/read-all', { method: 'POST' }),
   },
 
-  // Study features (learning-science): quiz attempts, spaced-repetition reviews,
-  // learning points, streaks, confidence ratings, free-recall grading.
   logQuizAttempt: (payload: {
     note_id?: number;
     question_text: string;
