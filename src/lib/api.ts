@@ -7,34 +7,25 @@ import type {
   ProfileUpdateData,
   Note,
   CreateNoteData,
-  Subject,
-  Quiz,
-  QuizGenerationRequest,
-  StudyPlanRequest,
-  ConceptExplanationRequest,
-  SummaryRequest,
-  ChatSession,
-  ChatMessage,
-  LeaderboardEntry,
   NotesResponse,
   SubjectsResponse,
-  LeaderboardResponse,
-  ChatSessionsResponse,
-  ChatMessagesResponse,
-  SummaryResponse,
-  QuizResponse,
-  StudyPlanResponse,
-  ConceptExplanationResponse,
-  OCRResponse,
-  SuspendUserRequest,
-  WarnUserRequest,
   RequestOptions,
-  getErrorMessage,
   GradeClass,
   GradeClassesResponse,
   AppNotification,
   NotificationsListResponse,
   UnreadCountResponse,
+  TwoFactorSetup,
+  TwoFactorEnableResponse,
+  ForgotPasswordResponse,
+  SetPasswordResponse,
+  PromoteClassesResponse,
+  AdminSubject,
+  OpsHealth,
+  OpsMetrics,
+  OpsTimeseries,
+  OpsFlags,
+  OpsCloudflare,
 } from '../types';
 
 const baseURL =
@@ -65,7 +56,9 @@ const setToken = (token: string) => {
 };
 
 export const api = {
-  async request<T = unknown>(endpoint: string, options: RequestOptions = {}): Promise<T> {
+  // ponytail: default T = any so the many legacy untyped callers (response.foo)
+  // keep working; typed callers still pass an explicit <T> and get full safety.
+  async request<T = any>(endpoint: string, options: RequestOptions = {}): Promise<T> {
     const url = `${baseURL}${endpoint}`;
 
     const currentToken = getToken();
@@ -82,19 +75,13 @@ export const api = {
       config.body = JSON.stringify(config.body);
     }
 
-    const response = await fetch(url, config);
+    const response = await fetch(url, config as RequestInit);
     const data = await response.json();
 
     if (!response.ok) {
       const errorMsg = data.error || `API request failed: ${response.status}`;
-      console.error(`API Error (${response.status}):`, {
-        url,
-        status: response.status,
-        error: errorMsg,
-        fullResponse: data,
-        hasToken: !!currentToken,
-        tokenLength: currentToken?.length || 0,
-      });
+      // Log only non-sensitive fields — never log full response bodies or token length.
+      logger.error('api', `Error ${response.status}`, { url, hasToken: !!currentToken });
       throw new Error(errorMsg);
     }
 
@@ -133,16 +120,55 @@ export const api = {
         method: 'POST',
         body: credentials,
       }),
+    verify2fa: (challenge: string, code: string): Promise<LoginResponse> =>
+      api.request<LoginResponse>('/api/auth/2fa/verify', {
+        method: 'POST',
+        body: { challenge, code },
+      }),
   },
+
+  twoFactor: {
+    setup: (): Promise<TwoFactorSetup> =>
+      api.request<TwoFactorSetup>('/api/auth/2fa/setup', { method: 'POST' }),
+    enable: (code: string): Promise<TwoFactorEnableResponse> =>
+      api.request<TwoFactorEnableResponse>('/api/auth/2fa/enable', {
+        method: 'POST',
+        body: { code },
+      }),
+    disable: (params: { code?: string; password?: string }): Promise<{ success: boolean }> =>
+      api.request<{ success: boolean }>('/api/auth/2fa/disable', {
+        method: 'POST',
+        body: params,
+      }),
+  },
+
+  forgotPassword: (email: string): Promise<ForgotPasswordResponse> =>
+    api.request<ForgotPasswordResponse>('/api/auth/forgot-password', {
+      method: 'POST',
+      body: { email },
+    }),
+
+  setPassword: (newPassword: string): Promise<SetPasswordResponse> =>
+    api.request<SetPasswordResponse>('/api/auth/set-password', {
+      method: 'POST',
+      body: { newPassword },
+    }),
 
   register: async (
     email: string,
     password: string,
     name: string,
-    role: string,
+    _role: string,
     classValue: string,
+    academic_year?: string,
   ) => {
-    const response = await api.auth.signup({ email, password, name, class: classValue });
+    const response = await api.auth.signup({
+      email,
+      password,
+      name,
+      class: classValue,
+      ...(academic_year && { academic_year }),
+    });
     if (response.token) {
       setToken(response.token);
     }
@@ -151,6 +177,9 @@ export const api = {
 
   login: async (email: string, password: string) => {
     const response = await api.auth.login({ email, password });
+    if (response.requires_2fa) {
+      return response;
+    }
     if (response.token) {
       setToken(response.token);
     }
@@ -400,7 +429,7 @@ export const api = {
       }
     },
     deleteUser: async (userId: number) => {
-      const response = await api.request(`/api/admin/user/${userId}`, {
+      await api.request(`/api/admin/user/${userId}`, {
         method: 'DELETE',
       });
       return { success: true };
@@ -437,6 +466,68 @@ export const api = {
       });
       return { success: response.success };
     },
+    restoreNote: async (noteId: number) => {
+      const response = await api.request(`/api/admin/notes/${noteId}/restore`, {
+        method: 'POST',
+      });
+      return { success: response.success };
+    },
+    featureNote: async (noteId: number) => {
+      const response = await api.request(`/api/admin/notes/${noteId}/feature`, {
+        method: 'POST',
+      });
+      return { success: response.success, featured: response.featured };
+    },
+    searchNotes: async (params: {
+      q?: string;
+      subject?: string;
+      status?: string;
+      sort?: string;
+    }) => {
+      const qs = new URLSearchParams();
+      if (params.q) qs.set('q', params.q);
+      if (params.subject) qs.set('subject', params.subject);
+      if (params.status) qs.set('status', params.status);
+      if (params.sort) qs.set('sort', params.sort);
+      const query = qs.toString();
+      try {
+        const response = await api.request(`/api/admin/notes${query ? `?${query}` : ''}`, {
+          method: 'GET',
+        });
+        return { notes: response.notes || [] };
+      } catch (error) {
+        return { notes: [] };
+      }
+    },
+    updateUser: async (
+      userId: number,
+      data: {
+        display_name?: string;
+        class?: string;
+        diamonds?: number;
+        learning_points?: number;
+      },
+    ) => {
+      const response = await api.request(`/api/admin/user/${userId}`, {
+        method: 'PUT',
+        body: data,
+      });
+      return { success: response.success, user: response.user };
+    },
+    getSubjects: () =>
+      api.request<{ subjects: AdminSubject[] }>('/api/admin/subjects', { method: 'GET' }),
+    createSubject: (data: { name: string; icon?: string }) =>
+      api.request<{ subject: AdminSubject }>('/api/admin/subjects', {
+        method: 'POST',
+        body: data,
+      }),
+    updateSubject: (id: number, data: { name?: string; icon?: string }) =>
+      api.request<{ subject: AdminSubject }>(`/api/admin/subjects/${id}`, {
+        method: 'PUT',
+        body: data,
+      }),
+    deleteSubject: (id: number) =>
+      api.request<{ success: boolean }>(`/api/admin/subjects/${id}`, { method: 'DELETE' }),
     getGradeClasses: () => api.request<{ grade_classes: GradeClass[] }>('/api/admin/grade-classes'),
     createGradeClass: (data: { grade: number; class_name: string; semester?: string }) =>
       api.request<{ grade_class: GradeClass }>('/api/admin/grade-classes', {
@@ -459,6 +550,11 @@ export const api = {
         method: 'POST',
         body: data,
       }),
+    promoteClasses: (class_ids: number[], new_academic_year?: string) =>
+      api.request<PromoteClassesResponse>('/api/admin/grade-classes/promote', {
+        method: 'POST',
+        body: { class_ids, ...(new_academic_year && { new_academic_year }) },
+      }),
     getNotifications: () => api.request<NotificationsListResponse>('/api/admin/notifications'),
     createNotification: (data: {
       target_type: string;
@@ -475,6 +571,64 @@ export const api = {
       }),
     deleteNotification: (id: number) =>
       api.request<{ success: boolean }>(`/api/admin/notifications/${id}`, { method: 'DELETE' }),
+  },
+
+  ops: {
+    health: () => api.request<OpsHealth>('/api/health'),
+    metrics: () => api.request<OpsMetrics>('/api/ops/metrics'),
+    timeseries: (metric: string, range: number) =>
+      api.request<OpsTimeseries>(
+        `/api/ops/timeseries?metric=${encodeURIComponent(metric)}&range=${range}`,
+      ),
+    flags: () => api.request<OpsFlags>('/api/ops/flags'),
+    cloudflare: (range = 7) => api.request<OpsCloudflare>(`/api/ops/cloudflare?range=${range}`),
+    setMaintenance: (on: boolean) =>
+      api.request<{ success: boolean; maintenance: boolean }>('/api/ops/maintenance', {
+        method: 'POST',
+        body: { on },
+      }),
+    setFlag: (flag: string, enabled: boolean) =>
+      api.request<{ success: boolean; flag: string; enabled: boolean }>('/api/ops/flags', {
+        method: 'POST',
+        body: { flag, enabled },
+      }),
+    recompute: (target: string) =>
+      api.request<{ success: boolean; target: string; skipped?: boolean }>('/api/ops/recompute', {
+        method: 'POST',
+        body: { target },
+      }),
+    // Fetches the CSV as text and triggers a browser download.
+    exportActivityLog: async () => {
+      const token = getToken();
+      const res = await fetch(`${baseURL}/api/ops/activity-log.csv`, {
+        headers: { ...(token && { Authorization: `Bearer ${token}` }) },
+      });
+      if (!res.ok) {
+        throw new Error(`Export failed: ${res.status}`);
+      }
+      const csv = await res.text();
+      if (typeof window !== 'undefined') {
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+        const objectUrl = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = objectUrl;
+        a.download = 'admin-activity-log.csv';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(objectUrl);
+      }
+      return csv;
+    },
+    purgeNotes: (days: number) =>
+      api.request<{ success: boolean; deleted: number }>('/api/ops/danger/purge-notes', {
+        method: 'POST',
+        body: { olderThanDays: days },
+      }),
+    revokeTokens: () =>
+      api.request<{ success: boolean }>('/api/ops/danger/revoke-tokens', {
+        method: 'POST',
+      }),
   },
 
   getGradeClasses: () => api.request<GradeClassesResponse>('/api/grade-classes'),

@@ -110,7 +110,6 @@ export async function searchNotes(query: string, request: Request, env: Env) {
       u.photo_url as author_photo,
       u.class as author_class,
       s.name as subject_name,
-      u.email as author_email,
       (
         /* Title match - highest priority (10 points per word) */
         CASE WHEN ${buildLikeConditions('n.title')} THEN ${searchWords.length * 10} ELSE 0 END +
@@ -317,11 +316,25 @@ export async function createNote(request: Request, env: Env) {
       totalParts: createdNotes.length,
     });
   } catch (error: any) {
-    return jsonResponse({ error: error.message || 'Failed to create note' }, 500);
+    console.error('createNote error:', error);
+    return jsonResponse({ error: 'Internal server error' }, 500);
   }
 }
 
 export async function updateNoteSummary(noteId: string, request: Request, env: Env) {
+  const user = await getOrCreateUser(request, env);
+
+  const note = (await env.DB.prepare('SELECT author_id FROM notes WHERE id = ?')
+    .bind(noteId)
+    .first()) as any;
+
+  if (!note) {
+    return jsonResponse({ error: 'Note not found' }, 404);
+  }
+  if (note.author_id !== user.id) {
+    return jsonResponse({ error: 'Unauthorized - You can only edit your own notes' }, 403);
+  }
+
   const body = (await request.json()) as any;
 
   await env.DB.prepare('UPDATE notes SET summary = ?, updated_at = datetime("now") WHERE id = ?')
@@ -450,7 +463,8 @@ export async function userUpdateNote(noteId: string, request: Request, env: Env)
 
     return jsonResponse({ success: true, note: updatedNote });
   } catch (error: any) {
-    return jsonResponse({ error: 'Failed to update note' }, 500);
+    console.error('userUpdateNote error:', error);
+    return jsonResponse({ error: 'Internal server error' }, 500);
   }
 }
 
@@ -499,7 +513,8 @@ export async function getMyNotes(request: Request, env: Env) {
 
     return jsonResponse({ notes });
   } catch (error: any) {
-    return jsonResponse({ error: 'Failed to get notes' }, 500);
+    console.error('getMyNotes error:', error);
+    return jsonResponse({ error: 'Internal server error' }, 500);
   }
 }
 
@@ -550,7 +565,8 @@ export async function publishDraftNote(noteId: string, request: Request, env: En
 
     return jsonResponse({ success: true, note: updatedNote });
   } catch (error: any) {
-    return jsonResponse({ error: 'Failed to publish note' }, 500);
+    console.error('publishDraftNote error:', error);
+    return jsonResponse({ error: 'Internal server error' }, 500);
   }
 }
 
@@ -595,6 +611,7 @@ export async function userDeleteNote(noteId: string, request: Request, env: Env)
 
     return jsonResponse({ success: true, points_deducted: pointsToDeduct });
   } catch (error: any) {
-    return jsonResponse({ error: 'Failed to delete note' }, 500);
+    console.error('userDeleteNote error:', error);
+    return jsonResponse({ error: 'Internal server error' }, 500);
   }
 }

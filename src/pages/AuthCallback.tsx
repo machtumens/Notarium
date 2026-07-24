@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
+import api from '../lib/api';
 
 export default function AuthCallback() {
   const [searchParams] = useSearchParams();
@@ -13,8 +14,20 @@ export default function AuthCallback() {
 
     const token = searchParams.get('token');
     if (token) {
-      sessionStorage.setItem('notarium_token', token);
-      window.location.href = '/';
+      // Validate the token before trusting it to prevent session-fixation via
+      // a phishing link containing an attacker-controlled ?token= value.
+      api.setToken(token);
+      api
+        .getCurrentUser()
+        .then(() => {
+          // Token is valid — the session is now established.
+          window.location.href = '/';
+        })
+        .catch(() => {
+          // Token failed validation — discard it and send the user to login.
+          api.clearToken();
+          navigate('/login?error=1');
+        });
       return;
     }
 

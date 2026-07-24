@@ -1,9 +1,18 @@
 import type { Env } from '../lib/env';
 import { jsonResponse } from '../lib/response';
-import { getOrCreateUser, requireAdmin } from '../lib/auth';
+import { getOrCreateUser, requireModerator } from '../lib/auth';
+
+/** Strip HTML tags and escape angle brackets to prevent stored-XSS. */
+function stripHtml(input: string): string {
+  return input
+    .replace(/<[^>]*>/g, '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
 
 export async function adminCreateNotification(request: Request, env: Env) {
-  const admin = await requireAdmin(request, env);
+  const admin = await requireModerator(request, env);
   if (admin instanceof Response) return admin;
   const body = (await request.json()) as any;
   const {
@@ -23,6 +32,8 @@ export async function adminCreateNotification(request: Request, env: Env) {
     return jsonResponse({ error: 'Invalid target_type' }, 400, env);
   if (!validTypes.includes(notification_type))
     return jsonResponse({ error: 'Invalid notification_type' }, 400, env);
+  const safeTitle = stripHtml(String(title));
+  const safeMessage = stripHtml(String(message));
   const row = await env.DB.prepare(
     `
     INSERT INTO notifications (sender_id, target_type, target_grade, target_class, target_user_id, notification_type, title, message, created_at)
@@ -37,15 +48,15 @@ export async function adminCreateNotification(request: Request, env: Env) {
       target_class || null,
       target_user_id || null,
       notification_type,
-      title,
-      message,
+      safeTitle,
+      safeMessage,
     )
     .first();
   return jsonResponse({ notification: row }, 201, env);
 }
 
 export async function adminGetNotifications(request: Request, env: Env) {
-  const admin = await requireAdmin(request, env);
+  const admin = await requireModerator(request, env);
   if (admin instanceof Response) return admin;
   const { results } = await env.DB.prepare(
     `SELECT n.*, u.display_name as sender_name FROM notifications n LEFT JOIN users u ON n.sender_id = u.id ORDER BY n.created_at DESC LIMIT 100`,
@@ -54,7 +65,7 @@ export async function adminGetNotifications(request: Request, env: Env) {
 }
 
 export async function adminDeleteNotification(id: string, request: Request, env: Env) {
-  const admin = await requireAdmin(request, env);
+  const admin = await requireModerator(request, env);
   if (admin instanceof Response) return admin;
   await env.DB.prepare('DELETE FROM notification_reads WHERE notification_id = ?')
     .bind(Number(id))

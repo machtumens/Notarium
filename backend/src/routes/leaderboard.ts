@@ -5,9 +5,7 @@ export async function getLeaderboard(env: Env) {
   const { results } = await env.DB.prepare(
     `
     SELECT
-      encrypted_yw_id,
       display_name,
-      email,
       photo_url,
       class,
       notes_uploaded,

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import api from '../lib/api';
 import { logger } from '../lib/logger';
+import { safePhotoUrl } from '../lib/safeUrl';
 import LoadingSpinner from '../components/LoadingSpinner';
 import { darkTheme, cardStyle } from '../theme';
 
@@ -184,8 +185,8 @@ export default function LeaderboardPage({ isLoading, setIsLoading }: Leaderboard
                 style={{
                   width: '40px',
                   height: '40px',
-                  background: entry.photo_url
-                    ? `url('${entry.photo_url}') center/cover`
+                  background: safePhotoUrl(entry.photo_url)
+                    ? `url('${safePhotoUrl(entry.photo_url)}') center/cover`
                     : `linear-gradient(135deg, ${darkTheme.colors.accent}, #8b5cf6)`,
                   borderRadius: '50%',
                   display: 'flex',
@@ -197,7 +198,7 @@ export default function LeaderboardPage({ isLoading, setIsLoading }: Leaderboard
                   fontSize: '14px',
                 }}
               >
-                {!entry.photo_url &&
+                {!safePhotoUrl(entry.photo_url) &&
                   (entry.display_name?.charAt(0).toUpperCase() ||
                     entry.name?.charAt(0).toUpperCase() ||
                     'U')}

@@ -1,7 +1,8 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef } from 'react';
 import api from '../lib/api';
 import { logger } from '../lib/logger';
 import { useAuth } from '../App';
+import { safePhotoUrl } from '../lib/safeUrl';
 import {
   darkTheme,
   modalOverlayStyle,
@@ -28,7 +29,9 @@ export default function ProfileEditor({ onClose }: ProfileEditorProps) {
   const [name, setName] = useState(user?.name || '');
   const [selectedClass, setSelectedClass] = useState(user?.class || '10.1');
   const [description, setDescription] = useState(user?.description || '');
-  const [photoPreview, setPhotoPreview] = useState<string | null>(user?.photo_url || null);
+  const [photoPreview, setPhotoPreview] = useState<string | null>(
+    safePhotoUrl(user?.photo_url) ?? null,
+  );
   const [photoBase64, setPhotoBase64] = useState<string | null>(null);
 
   const [showPasswordChange, setShowPasswordChange] = useState(false);
@@ -42,20 +45,8 @@ export default function ProfileEditor({ onClose }: ProfileEditorProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    const savedProfile = localStorage.getItem('profileData');
-    if (savedProfile) {
-      try {
-        const profile = JSON.parse(savedProfile);
-        // eslint-disable-next-line react-hooks/set-state-in-effect -- hydrates form fields from localStorage on mount; behavior-preserving
-        if (profile.name) setName(profile.name);
-        if (profile.description) setDescription(profile.description);
-        if (profile.class) setSelectedClass(profile.class);
-      } catch (e) {
-        logger.debug('profile', 'Failed to load saved profile data');
-      }
-    }
-  }, []);
+  // Form fields are seeded from the authenticated user object via useState
+  // initial values above; no localStorage read is needed here.
 
   const processImageFile = (file: File) => {
     if (file.size > 2 * 1024 * 1024) {
@@ -107,15 +98,6 @@ export default function ProfileEditor({ onClose }: ProfileEditorProps) {
       if (photoBase64) {
         updateData.photo_url = photoBase64;
       }
-
-      localStorage.setItem(
-        'profileData',
-        JSON.stringify({
-          name,
-          description,
-          class: selectedClass,
-        }),
-      );
 
       await api.updateProfile(updateData);
       await refreshUser();

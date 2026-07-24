@@ -1,30 +1,14 @@
 import { useEffect, useRef } from 'react';
-
-interface ThreeJSGlobals {
-  Camera: new () => unknown;
-  Scene: new () => unknown;
-  PlaneGeometry: new (width: number, height: number) => unknown;
-  ShaderMaterial: new (params: {
-    uniforms: unknown;
-    vertexShader: string;
-    fragmentShader: string;
-  }) => unknown;
-  Mesh: new (geometry: unknown, material: unknown) => { position: { z: number } };
-  WebGLRenderer: new (params?: { antialias?: boolean }) => unknown;
-  Vector2: new () => { x: number; y: number };
-}
-
-declare global {
-  interface Window {
-    THREE: ThreeJSGlobals;
-  }
-}
+import * as THREE from 'three';
 
 interface SceneRef {
-  camera: unknown;
-  scene: unknown;
-  renderer: unknown;
-  uniforms: unknown;
+  camera: THREE.Camera | null;
+  scene: THREE.Scene | null;
+  renderer: THREE.WebGLRenderer | null;
+  uniforms: {
+    time: { value: number };
+    resolution: { value: THREE.Vector2 };
+  } | null;
   animationId: number | null;
 }
 
@@ -38,46 +22,23 @@ export function ShaderAnimation() {
     animationId: null,
   });
 
-  useEffect(() => {
-    const script = document.createElement('script');
-    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/three.js/89/three.min.js';
-    script.onload = () => {
-      if (containerRef.current && window.THREE) {
-        // eslint-disable-next-line react-hooks/immutability -- stable component function referenced by the script onload callback; behavior-preserving
-        initThreeJS();
-      }
-    };
-    document.head.appendChild(script);
+  function initThreeJS() {
+    if (!containerRef.current) return;
 
-    return () => {
-      if (sceneRef.current.animationId) {
-        cancelAnimationFrame(sceneRef.current.animationId);
-      }
-      if (sceneRef.current.renderer) {
-        sceneRef.current.renderer.dispose();
-      }
-      document.head.removeChild(script);
-    };
-  }, []);
-
-  const initThreeJS = () => {
-    if (!containerRef.current || !window.THREE) return;
-
-    const THREE = window.THREE;
     const container = containerRef.current;
-
     container.innerHTML = '';
 
     const camera = new THREE.Camera();
-    camera.position.z = 1;
+    (camera as THREE.Camera & { position: THREE.Vector3 }).position.z = 1;
 
     const scene = new THREE.Scene();
 
-    const geometry = new THREE.PlaneBufferGeometry(2, 2);
+    // PlaneBufferGeometry was removed in r140; PlaneGeometry is the current API
+    const geometry = new THREE.PlaneGeometry(2, 2);
 
     const uniforms = {
-      time: { type: 'f', value: 1.0 },
-      resolution: { type: 'v2', value: new THREE.Vector2() },
+      time: { value: 1.0 },
+      resolution: { value: new THREE.Vector2() },
     };
 
     const vertexShader = `
@@ -90,7 +51,7 @@ export function ShaderAnimation() {
       #define TWO_PI 6.2831853072
       #define PI 3.14159265359
 
-      precision mediump float; // Use medium precision for better performance
+      precision mediump float;
       uniform vec2 resolution;
       uniform float time;
 
@@ -117,13 +78,11 @@ export function ShaderAnimation() {
         float lineWidth = 0.0008;
 
         vec3 color = vec3(0.0);
-        // Reduced iterations from 3x5 to 2x3 for better performance
         for(int j = 0; j < 2; j++){
           for(int i=0; i < 3; i++){
             color[j] += lineWidth*float(i*i) / abs(fract(t - 0.01*float(j)+float(i)*0.01)*1.0 - length(uv));
           }
         }
-        // Fill blue channel with simplified calculation
         color[2] = color[0] * 0.8;
 
         gl_FragColor = vec4(color[2],color[1],color[0],1.0);
@@ -131,18 +90,18 @@ export function ShaderAnimation() {
     `;
 
     const material = new THREE.ShaderMaterial({
-      uniforms: uniforms,
-      vertexShader: vertexShader,
-      fragmentShader: fragmentShader,
+      uniforms,
+      vertexShader,
+      fragmentShader,
     });
 
     const mesh = new THREE.Mesh(geometry, material);
     scene.add(mesh);
 
     const renderer = new THREE.WebGLRenderer({
-      antialias: false, // Disable antialiasing for better performance
+      antialias: false,
       alpha: true,
-      powerPreference: 'low-power', // Use low-power mode
+      powerPreference: 'low-power',
     });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     renderer.domElement.style.width = '100%';
@@ -168,7 +127,7 @@ export function ShaderAnimation() {
 
     setSize();
 
-    let resizeTimeout: NodeJS.Timeout;
+    let resizeTimeout: ReturnType<typeof setTimeout>;
     const onWindowResize = () => {
       clearTimeout(resizeTimeout);
       resizeTimeout = setTimeout(() => {
@@ -186,16 +145,32 @@ export function ShaderAnimation() {
       sceneRef.current.animationId = requestAnimationFrame(animate);
 
       const deltaTime = currentTime - lastFrameTime;
-
       if (deltaTime >= frameInterval) {
         lastFrameTime = currentTime - (deltaTime % frameInterval);
-        uniforms.time.value += 0.05;
+        if (sceneRef.current.uniforms) {
+          sceneRef.current.uniforms.time.value += 0.05;
+        }
         renderer.render(scene, camera);
       }
     };
 
     animate(0);
-  };
+  }
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+
+    initThreeJS();
+
+    return () => {
+      if (sceneRef.current.animationId) {
+        cancelAnimationFrame(sceneRef.current.animationId);
+      }
+      if (sceneRef.current.renderer) {
+        sceneRef.current.renderer.dispose();
+      }
+    };
+  }, []);
 
   return (
     <div

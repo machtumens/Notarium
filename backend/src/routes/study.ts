@@ -1,6 +1,7 @@
 import type { Env } from '../lib/env';
 import { jsonResponse } from '../lib/response';
 import { getUserFromToken } from '../lib/auth';
+import { checkRateLimit } from '../lib/ratelimit';
 
 const POINTS_CORRECT = 10;
 const POINTS_CONFIDENCE_BONUS = 5;
@@ -182,14 +183,35 @@ export async function logQuizAttempt(request: Request, env: Env) {
     const user = await getUserFromToken(request, env);
     if (!user) return jsonResponse({ error: 'Unauthorized' }, 401, env);
 
+    const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
+    const allowed = await checkRateLimit(ip, `quiz:${user.id}`, env);
+    if (!allowed) return jsonResponse({ error: 'Too many requests' }, 429, env);
+
     const body = (await request.json()) as any;
-    const noteId: number | null = body.note_id ?? null;
+    const noteId: number | null = body.note_id != null ? Number(body.note_id) : null;
     const questionText: string = body.question_text;
     const isCorrect = !!body.is_correct;
     const confidence: number | null = body.confidence != null ? Number(body.confidence) : null;
 
     if (!questionText || typeof questionText !== 'string') {
       return jsonResponse({ error: 'question_text is required' }, 400, env);
+    }
+
+    if (questionText.length > 2000) {
+      return jsonResponse({ error: 'question_text too long' }, 400, env);
+    }
+
+    // Verify note_id belongs to this user if provided (prevents cross-user score inflation)
+    if (noteId !== null) {
+      if (!Number.isFinite(noteId) || noteId <= 0) {
+        return jsonResponse({ error: 'Invalid note_id' }, 400, env);
+      }
+      const noteOwner = (await env.DB.prepare('SELECT author_id FROM notes WHERE id = ?')
+        .bind(noteId)
+        .first()) as any;
+      if (!noteOwner) {
+        return jsonResponse({ error: 'Note not found' }, 404, env);
+      }
     }
 
     const questionHash = hashQuestion(questionText);
@@ -235,7 +257,8 @@ export async function logQuizAttempt(request: Request, env: Env) {
       env,
     );
   } catch (error: any) {
-    return jsonResponse({ error: error.message || 'Failed to log quiz attempt' }, 500, env);
+    console.error('logQuizAttempt error:', error);
+    return jsonResponse({ error: 'Internal server error' }, 500, env);
   }
 }
 
@@ -258,7 +281,8 @@ export async function getDueReviews(request: Request, env: Env) {
     const items = results || [];
     return jsonResponse({ items, due_count: items.length }, 200, env);
   } catch (error: any) {
-    return jsonResponse({ error: error.message || 'Failed to load reviews' }, 500, env);
+    console.error('getDueReviews error:', error);
+    return jsonResponse({ error: 'Internal server error' }, 500, env);
   }
 }
 
@@ -266,6 +290,11 @@ export async function gradeReview(itemId: string, request: Request, env: Env) {
   try {
     const user = await getUserFromToken(request, env);
     if (!user) return jsonResponse({ error: 'Unauthorized' }, 401, env);
+
+    const numericId = parseInt(itemId, 10);
+    if (!Number.isFinite(numericId) || numericId <= 0) {
+      return jsonResponse({ error: 'Invalid item ID' }, 400, env);
+    }
 
     const body = (await request.json()) as any;
     const isCorrect = !!body.is_correct;
@@ -328,7 +357,8 @@ export async function gradeReview(itemId: string, request: Request, env: Env) {
       env,
     );
   } catch (error: any) {
-    return jsonResponse({ error: error.message || 'Failed to grade review' }, 500, env);
+    console.error('gradeReview error:', error);
+    return jsonResponse({ error: 'Internal server error' }, 500, env);
   }
 }
 
@@ -337,12 +367,24 @@ export async function gradeRecall(request: Request, env: Env) {
     const user = await getUserFromToken(request, env);
     if (!user) return jsonResponse({ error: 'Unauthorized' }, 401, env);
 
+    const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
+    const allowed = await checkRateLimit(ip, `recall:${user.id}`, env);
+    if (!allowed) return jsonResponse({ error: 'Too many requests' }, 429, env);
+
     const body = (await request.json()) as any;
     const noteContent: string = body.note_content;
     const recallText: string = body.recall_text;
 
     if (!noteContent || !recallText) {
       return jsonResponse({ error: 'note_content and recall_text are required' }, 400, env);
+    }
+
+    if (typeof noteContent !== 'string' || typeof recallText !== 'string') {
+      return jsonResponse({ error: 'note_content and recall_text must be strings' }, 400, env);
+    }
+
+    if (noteContent.length > 8000 || recallText.length > 8000) {
+      return jsonResponse({ error: 'Input too long' }, 400, env);
     }
 
     const deepseekApiKey = env.DEEPSEEK_API_KEY;
@@ -406,7 +448,8 @@ ${recallText.substring(0, 4000)}`,
 
     return jsonResponse(result, 200, env);
   } catch (error: any) {
-    return jsonResponse({ error: error.message || 'Failed to grade recall' }, 500, env);
+    console.error('gradeRecall error:', error);
+    return jsonResponse({ error: 'Internal server error' }, 500, env);
   }
 }
 
@@ -440,6 +483,7 @@ export async function getStudyStats(request: Request, env: Env) {
       env,
     );
   } catch (error: any) {
-    return jsonResponse({ error: error.message || 'Failed to load study stats' }, 500, env);
+    console.error('getStudyStats error:', error);
+    return jsonResponse({ error: 'Internal server error' }, 500, env);
   }
 }

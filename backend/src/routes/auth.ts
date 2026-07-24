@@ -1,6 +1,12 @@
 import type { Env } from '../lib/env';
 import { jsonResponse } from '../lib/response';
-import { hashPassword, verifyPassword, createToken, verifyToken } from '../lib/auth';
+import {
+  hashPassword,
+  verifyPassword,
+  createToken,
+  verifyToken,
+  timingSafeEqualStr,
+} from '../lib/auth';
 import { checkRateLimit, validateRequestSize } from '../lib/ratelimit';
 import { signupSchema, loginSchema } from '../lib/validation';
 import { createMfaChallenge } from '../lib/totp';
@@ -125,7 +131,8 @@ export async function signupEndpoint(request: Request, env: Env) {
     if (error.message && error.message.includes('UNIQUE')) {
       return jsonResponse({ error: 'Email already registered' }, 409, env);
     }
-    return jsonResponse({ error: error.message || 'Signup failed' }, 500, env);
+    console.error('signup error:', error);
+    return jsonResponse({ error: 'Signup failed' }, 500, env);
   }
 }
 
@@ -220,15 +227,13 @@ export async function loginEndpoint(request: Request, env: Env) {
           (user as any).diamonds = 0;
         }
       } catch (fallbackError: any) {
-        return jsonResponse(
-          { error: `Database error: ${fallbackError?.message || 'could not query user'}` },
-          500,
-        );
+        console.error('login db fallback error:', fallbackError);
+        return jsonResponse({ error: 'Database error' }, 500);
       }
     }
 
     if (email.endsWith('@notariumadmin.com')) {
-      if (password !== env.ADMIN_PASSWORD) {
+      if (!(await timingSafeEqualStr(env.ADMIN_PASSWORD, String(password || '')))) {
         return jsonResponse({ error: 'Invalid email or password' }, 401, env);
       }
       let adminUser = (await env.DB.prepare(`SELECT * FROM users WHERE email = ?`)
@@ -360,7 +365,8 @@ export async function loginEndpoint(request: Request, env: Env) {
       env,
     );
   } catch (error: any) {
-    return jsonResponse({ error: `Login failed: ${error?.message || 'Unknown error'}` }, 500, env);
+    console.error('login error:', error);
+    return jsonResponse({ error: 'Login failed' }, 500, env);
   }
 }
 
@@ -394,6 +400,7 @@ export async function meEndpoint(request: Request, env: Env) {
             grade,
             grade_class_id,
             role,
+            admin_role,
             notes_uploaded,
             total_likes,
             total_admin_upvotes,
@@ -406,6 +413,7 @@ export async function meEndpoint(request: Request, env: Env) {
             warning_message,
             warning_first_viewed,
             warning_view_count,
+            totp_enabled,
             (notes_uploaded + total_likes + total_admin_upvotes) as points
           FROM users WHERE id = ?
         `,
@@ -531,6 +539,7 @@ export async function meEndpoint(request: Request, env: Env) {
         name: userData.display_name,
         class: userData.class,
         role: userData.role,
+        admin_role: userData.admin_role || null,
         notes_count: userData.notes_uploaded || 0,
         total_likes: userData.total_likes || 0,
         total_admin_upvotes: userData.total_admin_upvotes || 0,
@@ -545,13 +554,16 @@ export async function meEndpoint(request: Request, env: Env) {
         warning_message: userData.warning_message || null,
         grade: userData.grade || null,
         grade_class_id: userData.grade_class_id || null,
+        totp_enabled: userData.totp_enabled || 0,
       };
 
       return jsonResponse({ user });
     } catch (dbError: any) {
+      console.error('me db error:', dbError);
       return jsonResponse({ error: 'Failed to get user data' }, 500);
     }
   } catch (error: any) {
-    return jsonResponse({ error: error.message || 'Failed to get current user' }, 500);
+    console.error('me error:', error);
+    return jsonResponse({ error: 'Failed to get current user' }, 500);
   }
 }

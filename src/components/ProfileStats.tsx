@@ -3,6 +3,7 @@ import api from '../lib/api';
 import { useAuth } from '../App';
 import { darkTheme, modalOverlayStyle, inputStyle, buttonPrimaryStyle } from '../theme';
 import type { LeaderboardEntry } from '../types';
+import { safePhotoUrl } from '../lib/safeUrl';
 
 interface ProfileStatsProps {
   onClose: () => void;
@@ -202,8 +203,8 @@ export default function ProfileStats({ onClose, onEditProfile }: ProfileStatsPro
                 style={{
                   width: '80px',
                   height: '80px',
-                  background: user?.photo_url
-                    ? `url('${user.photo_url}') center/cover`
+                  background: safePhotoUrl(user?.photo_url)
+                    ? `url('${safePhotoUrl(user?.photo_url)}') center/cover`
                     : `linear-gradient(135deg, ${darkTheme.colors.accent}, #8b5cf6)`,
                   borderRadius: '50%',
                   display: 'flex',
@@ -226,7 +227,7 @@ export default function ProfileStats({ onClose, onEditProfile }: ProfileStatsPro
                   e.currentTarget.style.boxShadow = 'none';
                 }}
               >
-                {!user?.photo_url && user?.name?.charAt(0).toUpperCase()}
+                {!safePhotoUrl(user?.photo_url) && user?.name?.charAt(0).toUpperCase()}
                 <div
                   style={{
                     position: 'absolute',

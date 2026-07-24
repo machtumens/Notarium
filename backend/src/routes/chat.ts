@@ -1,7 +1,22 @@
 import type { Env } from '../lib/env';
+import type { User } from '../lib/env';
 import { jsonResponse } from '../lib/response';
 import { getOrCreateUser } from '../lib/auth';
 import { chatWithGemini } from './ai';
+
+// Returns the caller iff they own the session, otherwise null.
+// ponytail: single ownership gate reused by every session route — closes the IDOR.
+async function getSessionOwner(
+  sessionId: string,
+  request: Request,
+  env: Env,
+): Promise<User | null> {
+  const user = await getOrCreateUser(request, env);
+  const session = await env.DB.prepare('SELECT id FROM chat_sessions WHERE id = ? AND user_id = ?')
+    .bind(sessionId, user.id)
+    .first();
+  return session ? user : null;
+}
 
 export async function createChatSession(request: Request, env: Env) {
   const user = await getOrCreateUser(request, env);
@@ -37,7 +52,10 @@ export async function getChatSessions(request: Request, env: Env) {
   return jsonResponse({ sessions: results });
 }
 
-export async function getChatMessages(sessionId: string, env: Env) {
+export async function getChatMessages(sessionId: string, request: Request, env: Env) {
+  const owner = await getSessionOwner(sessionId, request, env);
+  if (!owner) return jsonResponse({ error: 'Not found' }, 404, env);
+
   const { results } = await env.DB.prepare(
     `
     SELECT * FROM chat_messages
@@ -52,6 +70,9 @@ export async function getChatMessages(sessionId: string, env: Env) {
 }
 
 export async function addChatMessage(sessionId: string, request: Request, env: Env) {
+  const owner = await getSessionOwner(sessionId, request, env);
+  if (!owner) return jsonResponse({ error: 'Not found' }, 404, env);
+
   const body = (await request.json()) as any;
 
   const message = await env.DB.prepare(
@@ -61,7 +82,9 @@ export async function addChatMessage(sessionId: string, request: Request, env: E
     RETURNING *
   `,
   )
-    .bind(sessionId, body.role, body.content)
+    // role is forced to 'user' — never trust a client-supplied role (prevents
+    // injecting fake system/assistant turns into the AI context).
+    .bind(sessionId, 'user', body.content)
     .first();
 
   await env.DB.prepare('UPDATE chat_sessions SET updated_at = datetime("now") WHERE id = ?')
@@ -73,7 +96,9 @@ export async function addChatMessage(sessionId: string, request: Request, env: E
 
 export async function getAIResponse(sessionId: string, request: Request, env: Env) {
   try {
-    const user = await getOrCreateUser(request, env);
+    const user = await getSessionOwner(sessionId, request, env);
+    if (!user) return jsonResponse({ error: 'Not found' }, 404, env);
+
     const body = (await request.json()) as any;
     const { message, subject } = body;
 

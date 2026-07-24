@@ -1,6 +1,6 @@
 import type { Env } from '../lib/env';
 import { jsonResponse } from '../lib/response';
-import { getOrCreateUser, requireAdmin } from '../lib/auth';
+import { getOrCreateUser, requireModerator } from '../lib/auth';
 import { promoteClassesSchema } from '../lib/validation';
 import { currentAcademicYear, nextAcademicYear } from '../lib/academicYear';
 
@@ -32,7 +32,7 @@ export async function getPublicGradeClasses(env: Env) {
 }
 
 export async function adminGetGradeClasses(request: Request, env: Env) {
-  const admin = await requireAdmin(request, env);
+  const admin = await requireModerator(request, env);
   if (admin instanceof Response) return admin;
   const url = new URL(request.url);
   const grade = url.searchParams.get('grade');
@@ -55,7 +55,7 @@ export async function adminGetGradeClasses(request: Request, env: Env) {
 }
 
 export async function adminCreateGradeClass(request: Request, env: Env) {
-  const admin = await requireAdmin(request, env);
+  const admin = await requireModerator(request, env);
   if (admin instanceof Response) return admin;
   const body = (await request.json()) as any;
   const { grade, class_name, semester = '' } = body;
@@ -73,12 +73,13 @@ export async function adminCreateGradeClass(request: Request, env: Env) {
   } catch (e: any) {
     if (e.message?.includes('UNIQUE'))
       return jsonResponse({ error: 'Class already exists for this grade and semester' }, 409, env);
-    return jsonResponse({ error: e.message || 'Failed to create class' }, 500, env);
+    console.error('adminCreateGradeClass error:', e);
+    return jsonResponse({ error: 'Internal server error' }, 500, env);
   }
 }
 
 export async function adminUpdateGradeClass(id: string, request: Request, env: Env) {
-  const admin = await requireAdmin(request, env);
+  const admin = await requireModerator(request, env);
   if (admin instanceof Response) return admin;
   const body = (await request.json()) as any;
   const fields: string[] = [];
@@ -108,7 +109,7 @@ export async function adminUpdateGradeClass(id: string, request: Request, env: E
 }
 
 export async function adminDeleteGradeClass(id: string, request: Request, env: Env) {
-  const admin = await requireAdmin(request, env);
+  const admin = await requireModerator(request, env);
   if (admin instanceof Response) return admin;
   const count = (await env.DB.prepare('SELECT COUNT(*) as c FROM users WHERE grade_class_id = ?')
     .bind(Number(id))
@@ -127,7 +128,7 @@ export async function adminDeleteGradeClass(id: string, request: Request, env: E
  * confirm. Reversible via the existing reassign endpoint.
  */
 export async function adminPromoteClasses(request: Request, env: Env) {
-  const admin = await requireAdmin(request, env);
+  const admin = await requireModerator(request, env);
   if (admin instanceof Response) return admin;
 
   const parsed = promoteClassesSchema.safeParse(await request.json());
@@ -197,7 +198,7 @@ export async function adminPromoteClasses(request: Request, env: Env) {
 }
 
 export async function adminReassignUserClass(request: Request, env: Env) {
-  const admin = await requireAdmin(request, env);
+  const admin = await requireModerator(request, env);
   if (admin instanceof Response) return admin;
   const body = (await request.json()) as any;
   const { user_id, new_class, send_notification = true } = body;

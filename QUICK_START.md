@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- ✅ API Key: `AIzaSyAN0B5T7psGFbnoiKMe8eVyH6w5S6LP4Co` (configured)
+- ✅ API Key: set `GEMINI_API_KEY` via `wrangler secret put` (never commit the key)
 - ✅ Backend: Running on `http://localhost:8787`
 - Node.js and npm installed
 
@@ -216,10 +216,10 @@ Try uploading:
 
 ## 🔑 API Key Security
 
-⚠️ **Current Key** (Development):
+⚠️ **Never commit API keys.** Store them as Wrangler secrets:
 
 ```
-AIzaSyAN0B5T7psGFbnoiKMe8eVyH6w5S6LP4Co
+wrangler secret put GEMINI_API_KEY
 ```
 
 **For Production**:

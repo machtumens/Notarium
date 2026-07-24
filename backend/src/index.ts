@@ -1,6 +1,13 @@
 import type { Env } from './lib/env';
 import { getAllowedOrigin, jsonResponse } from './lib/response';
-import { hashPassword, verifyPassword, createToken, verifyToken, requireAdmin } from './lib/auth';
+import {
+  hashPassword,
+  verifyPassword,
+  createToken,
+  verifyToken,
+  requireAdmin,
+  timingSafeEqualStr,
+} from './lib/auth';
 import { checkRateLimit } from './lib/ratelimit';
 import { initializeDatabase, MOCK_SUBJECTS } from './lib/db';
 import { handleOAuthRoutes } from './routes/oauth';
@@ -67,6 +74,13 @@ import {
   unsuspendUser,
   getAllUsers,
   getAllNotes,
+  updateUserProfile,
+  restoreNote,
+  featureNote,
+  listSubjects,
+  createSubject,
+  updateSubject,
+  deleteSubject,
 } from './routes/admin';
 import {
   adminCreateNotification,
@@ -84,11 +98,64 @@ import {
   gradeRecall,
   getStudyStats,
 } from './routes/study';
+import {
+  healthCheck,
+  getOpsMetrics,
+  getOpsTimeseries,
+  getFlags,
+  setMaintenance,
+  setFlag,
+  recompute,
+  exportActivityLog,
+  purgeDeletedNotes,
+  revokeAllTokens,
+  getCloudflareMetrics,
+} from './routes/ops';
 
 let dbInitialized = false;
 
+// Endpoints that call paid third-party AI APIs must be authenticated, otherwise
+// anyone can drain the API budget (Workers autoscale — there is no natural ceiling).
+// ponytail: one guard reused by the AI routes.
+async function requireUser(request: Request, env: Env) {
+  const auth = request.headers.get('Authorization');
+  const token = auth?.startsWith('Bearer ') ? auth.slice(7) : null;
+  const decoded = token ? await verifyToken(token, env) : null;
+  return decoded?.id ? decoded : null;
+}
+
+// Best-effort request-metrics recorder. Sampled: always record errors (>=400),
+// and ~1 in 5 successful (2xx) requests. Never throws. Uses ctx.waitUntil so it
+// does not block the response.
+function recordMetric(
+  env: Env,
+  ctx: ExecutionContext | undefined,
+  path: string,
+  method: string,
+  status: number,
+  ms: number,
+): void {
+  try {
+    if (!env.DB) return;
+    const isError = status >= 400;
+    const sample = isError || Date.now() % 5 === 0;
+    if (!sample) return;
+    const task = env.DB.prepare(
+      `INSERT INTO request_metrics (path, method, status, duration_ms) VALUES (?, ?, ?, ?)`,
+    )
+      .bind(path, method, status, ms)
+      .run()
+      .catch(() => {});
+    if (ctx && typeof ctx.waitUntil === 'function') {
+      ctx.waitUntil(task);
+    }
+  } catch {
+    // non-fatal
+  }
+}
+
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx?: ExecutionContext): Promise<Response> {
     const requestOrigin = request.headers.get('Origin');
     const corsOrigin = getAllowedOrigin(env, requestOrigin);
 
@@ -106,7 +173,59 @@ export default {
       });
     }
 
-    const response = await this._handle(request, env);
+    const started = Date.now();
+
+    // Maintenance middleware: cheap single KV read. When maintenance is on,
+    // allow a small allowlist + all ops routes through; otherwise only admins
+    // bypass, everyone else gets a 503.
+    const url = new URL(request.url);
+    const path = url.pathname;
+    if (path.startsWith('/api/')) {
+      let maintenanceOn = false;
+      try {
+        maintenanceOn = (await env.RATE_LIMIT.get('site:maintenance')) === 'on';
+      } catch {
+        // KV unavailable — leave maintenanceOn = false (fail open)
+      }
+      if (maintenanceOn) {
+        const allowlisted =
+          path === '/api/health' ||
+          path === '/api/auth/admin-login' ||
+          path === '/api/auth/login' ||
+          path === '/api/auth/me' ||
+          path.startsWith('/api/ops/');
+        if (!allowlisted) {
+          let isAdmin = false;
+          try {
+            const auth = request.headers.get('Authorization');
+            const token = auth?.startsWith('Bearer ') ? auth.slice(7) : null;
+            if (token) {
+              const decoded = await verifyToken(token, env);
+              isAdmin = decoded?.role === 'admin';
+            }
+          } catch {
+            isAdmin = false;
+          }
+          if (!isAdmin) {
+            const blocked = jsonResponse(
+              { error: 'Service temporarily unavailable for maintenance', maintenance: true },
+              503,
+              env,
+            );
+            const bh = new Headers(blocked.headers);
+            bh.set('Access-Control-Allow-Origin', corsOrigin);
+            bh.set('Access-Control-Allow-Credentials', 'true');
+            return new Response(blocked.body, { status: 503, headers: bh });
+          }
+        }
+      }
+    }
+
+    const response = await this._handle(request, env, ctx);
+
+    if (path.startsWith('/api/')) {
+      recordMetric(env, ctx, path, request.method, response.status, Date.now() - started);
+    }
 
     const newHeaders = new Headers(response.headers);
     newHeaders.set('Access-Control-Allow-Origin', corsOrigin);
@@ -118,7 +237,7 @@ export default {
     });
   },
 
-  async _handle(request: Request, env: Env): Promise<Response> {
+  async _handle(request: Request, env: Env, _ctx?: ExecutionContext): Promise<Response> {
     if (env.DB && !dbInitialized) {
       try {
         await initializeDatabase(env);
@@ -194,11 +313,35 @@ export default {
           const body = (await request.json()) as any;
           const { token: adminToken } = body;
 
-          if (!adminToken || adminToken !== env.ADMIN_PASSWORD) {
+          // Match the supplied token against each configured admin credential.
+          // The sub-role is inferred from which password matched (the `as` hint
+          // in the body, if any, is not used for matching).
+          let account: { sub: string; email: string; display: string } | null = null;
+          const tokenStr = String(adminToken || '');
+          if (tokenStr && (await timingSafeEqualStr(env.ADMIN_PASSWORD, tokenStr))) {
+            account = { sub: 'super', email: 'admin@notarium.internal', display: 'Admin' };
+          } else if (
+            env.MODERATOR_PASSWORD &&
+            (await timingSafeEqualStr(env.MODERATOR_PASSWORD, tokenStr))
+          ) {
+            account = {
+              sub: 'moderator',
+              email: 'moderator@notarium.internal',
+              display: 'Moderator',
+            };
+          } else if (env.TECH_PASSWORD && (await timingSafeEqualStr(env.TECH_PASSWORD, tokenStr))) {
+            account = {
+              sub: 'technical',
+              email: 'tech@notarium.internal',
+              display: 'Technical Admin',
+            };
+          }
+
+          if (!account) {
             return jsonResponse({ error: 'Invalid admin token' }, 401, env);
           }
 
-          const adminEmail = 'admin@notarium.internal';
+          const adminEmail = account.email;
           let admin = await env.DB.prepare(`SELECT * FROM users WHERE email = ?`)
             .bind(adminEmail)
             .first();
@@ -211,16 +354,22 @@ export default {
               RETURNING id, email, display_name, class, role
             `,
             )
-              .bind('admin_internal', 'Admin', adminEmail, '')
+              .bind('admin_' + account.sub, account.display, adminEmail, '')
               .first();
             admin = result;
           }
+
+          // Ensure the row carries the correct sub-role (also fixes pre-existing rows).
+          await env.DB.prepare(`UPDATE users SET admin_role = ? WHERE id = ?`)
+            .bind(account.sub, (admin as any).id)
+            .run();
 
           const token = await createToken(
             {
               id: (admin as any).id,
               email: (admin as any).email,
               role: 'admin',
+              admin_role: account.sub,
             },
             env,
           );
@@ -243,13 +392,15 @@ export default {
                 email: (admin as any).email,
                 name: (admin as any).display_name,
                 role: 'admin',
+                admin_role: account.sub,
               },
             },
             200,
             env,
           );
         } catch (error: any) {
-          return jsonResponse({ error: error.message }, 500);
+          console.error('admin-login error:', error);
+          return jsonResponse({ error: 'Internal server error' }, 500);
         }
       }
       if (path === '/api/debug/ping' && request.method === 'POST') {
@@ -319,7 +470,7 @@ export default {
             values.push(userId);
             const sql = `UPDATE users SET ${updates.join(', ')} WHERE id = ?`;
 
-            const result = await env.DB.prepare(sql)
+            await env.DB.prepare(sql)
               .bind(...values)
               .run();
 
@@ -333,19 +484,29 @@ export default {
 
             return jsonResponse({ success: true, updated: true, user: updated });
           } catch (dbError: any) {
-            return jsonResponse({ error: `Failed to update profile: ${dbError.message}` }, 500);
+            console.error('profile update error:', dbError);
+            return jsonResponse({ error: 'Failed to update profile' }, 500);
           }
         } catch (error: any) {
-          return jsonResponse({ error: error.message || 'Internal server error' }, 500);
+          console.error('profile route error:', error);
+          return jsonResponse({ error: 'Internal server error' }, 500);
         }
       }
 
       if (path === '/api/admin/migrate-passwords' && request.method === 'POST') {
         try {
+          const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
+          if (!(await checkRateLimit(ip, 'admin-migrate', env))) {
+            return jsonResponse({ error: 'Too many requests. Try again later.' }, 429, env);
+          }
+          // Require a valid admin JWT in addition to the body password.
+          const adminCheck = await requireAdmin(request, env);
+          if (adminCheck instanceof Response) return adminCheck;
+
           const body = (await request.json()) as any;
           const { adminPassword, batchSize = 5, offset = 0 } = body;
 
-          if (adminPassword !== env.ADMIN_PASSWORD) {
+          if (!(await timingSafeEqualStr(env.ADMIN_PASSWORD, String(adminPassword || '')))) {
             return jsonResponse({ error: 'Unauthorized' }, 401, env);
           }
 
@@ -397,7 +558,8 @@ export default {
             env,
           );
         } catch (error: any) {
-          return jsonResponse({ error: error.message || 'Migration failed' }, 500, env);
+          console.error('migrate-passwords error:', error);
+          return jsonResponse({ error: 'Migration failed' }, 500, env);
         }
       }
 
@@ -449,6 +611,10 @@ export default {
           return jsonResponse({ error: 'Database not available' }, 503);
         }
         try {
+          const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
+          if (!(await checkRateLimit(ip, 'change-password', env))) {
+            return jsonResponse({ error: 'Too many requests. Try again later.' }, 429, env);
+          }
           const auth = request.headers.get('Authorization');
           const token = auth?.startsWith('Bearer ') ? auth.slice(7) : null;
 
@@ -503,7 +669,8 @@ export default {
             env,
           );
         } catch (error: any) {
-          return jsonResponse({ error: error.message || 'Failed to change password' }, 500);
+          console.error('change-password error:', error);
+          return jsonResponse({ error: 'Failed to change password' }, 500);
         }
       }
       if (env.DB && path === '/api/user/update' && request.method === 'POST') {
@@ -629,7 +796,7 @@ export default {
 
       if (path.match(/^\/api\/chat\/sessions\/\d+\/messages$/) && request.method === 'GET') {
         const sessionId = path.split('/')[4];
-        return await getChatMessages(sessionId, env);
+        return await getChatMessages(sessionId, request, env);
       }
 
       if (path.match(/^\/api\/chat\/sessions\/\d+\/messages$/) && request.method === 'POST') {
@@ -647,6 +814,11 @@ export default {
         return await getAIResponse(sessionId, request, env);
       }
       if (path === '/api/gemini/quick-summary' && request.method === 'POST') {
+        const _qsUser = await requireUser(request, env);
+        if (!_qsUser) return jsonResponse({ error: 'Unauthorized' }, 401, env);
+        if (!(await checkRateLimit(String(_qsUser.id), 'ai', env))) {
+          return jsonResponse({ error: 'Too many requests. Try again later.' }, 429, env);
+        }
         if (!env.GEMINI_API_KEY) {
           const body = (await request.json()) as any;
           const summary = `${body.title || 'Study material'}: ${body.content?.substring(0, 80) || 'No content available'}...`;
@@ -664,16 +836,25 @@ export default {
           const summary = await generateNoteSummary(content, title || 'Untitled', env);
           return jsonResponse({ success: true, summary });
         } catch (error: any) {
-          return jsonResponse({ error: error.message || 'Failed to generate summary' }, 500);
+          console.error('quick-summary error:', error);
+          return jsonResponse({ error: 'Failed to generate summary' }, 500);
         }
       }
 
       if (path === '/api/gemini/auto-tags' && request.method === 'POST') {
+        const _atUser = await requireUser(request, env);
+        if (!_atUser) return jsonResponse({ error: 'Unauthorized' }, 401, env);
+        if (!(await checkRateLimit(String(_atUser.id), 'ai', env))) {
+          return jsonResponse({ error: 'Too many requests. Try again later.' }, 429, env);
+        }
         try {
           const body = (await request.json()) as any;
           const { title, content } = body;
 
-          const deepseekApiKey = env.DEEPSEEK_API_KEY || 'sk-5691768e614e4bfc9f563f0a45741be1';
+          const deepseekApiKey = env.DEEPSEEK_API_KEY;
+          if (!deepseekApiKey) {
+            return jsonResponse({ success: true, tags: ['study', 'notes', 'learning'] });
+          }
 
           const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
             method: 'POST',
@@ -719,6 +900,11 @@ Tags:`,
       }
 
       if (path === '/api/gemini/summarize' && request.method === 'POST') {
+        const _sumUser = await requireUser(request, env);
+        if (!_sumUser) return jsonResponse({ error: 'Unauthorized' }, 401, env);
+        if (!(await checkRateLimit(String(_sumUser.id), 'ai', env))) {
+          return jsonResponse({ error: 'Too many requests. Try again later.' }, 429, env);
+        }
         if (!env.GEMINI_API_KEY) {
           const body = (await request.json()) as any;
           const summary = `${body.title || 'Topic'}: ${body.description || 'This covers key concepts'}.`;
@@ -734,11 +920,17 @@ Tags:`,
           );
           return jsonResponse({ success: true, summary });
         } catch (error: any) {
-          return jsonResponse({ error: error.message }, 500);
+          console.error('summarize error:', error);
+          return jsonResponse({ error: 'Failed to generate summary' }, 500);
         }
       }
 
       if (path === '/api/gemini/ocr' && request.method === 'POST') {
+        const _ocrUser = await requireUser(request, env);
+        if (!_ocrUser) return jsonResponse({ error: 'Unauthorized' }, 401, env);
+        if (!(await checkRateLimit(String(_ocrUser.id), 'ai', env))) {
+          return jsonResponse({ error: 'Too many requests. Try again later.' }, 429, env);
+        }
         return await performOCREndpoint(request, env);
       }
 
@@ -753,10 +945,20 @@ Tags:`,
       }
 
       if (path === '/api/study-plan' && request.method === 'POST') {
+        const _spUser = await requireUser(request, env);
+        if (!_spUser) return jsonResponse({ error: 'Unauthorized' }, 401, env);
+        if (!(await checkRateLimit(String(_spUser.id), 'ai', env))) {
+          return jsonResponse({ error: 'Too many requests. Try again later.' }, 429, env);
+        }
         return await generateStudyPlanEndpoint(request, env);
       }
 
       if (path === '/api/concept-explain' && request.method === 'POST') {
+        const _ceUser = await requireUser(request, env);
+        if (!_ceUser) return jsonResponse({ error: 'Unauthorized' }, 401, env);
+        if (!(await checkRateLimit(String(_ceUser.id), 'ai', env))) {
+          return jsonResponse({ error: 'Too many requests. Try again later.' }, 429, env);
+        }
         return await explainConceptEndpoint(request, env);
       }
       if (path === '/api/admin/verify' && request.method === 'POST') {
@@ -801,6 +1003,36 @@ Tags:`,
       if (path.match(/^\/api\/admin\/user\/\d+$/) && request.method === 'DELETE') {
         const userId = path.split('/')[4];
         return await removeUser(userId, request, env);
+      }
+
+      if (path.match(/^\/api\/admin\/user\/\d+$/) && request.method === 'PUT') {
+        const userId = path.split('/')[4];
+        return await updateUserProfile(userId, request, env);
+      }
+
+      if (path.match(/^\/api\/admin\/notes\/\d+\/restore$/) && request.method === 'POST') {
+        const noteId = path.split('/')[4];
+        return await restoreNote(noteId, request, env);
+      }
+
+      if (path.match(/^\/api\/admin\/notes\/\d+\/feature$/) && request.method === 'POST') {
+        const noteId = path.split('/')[4];
+        return await featureNote(noteId, request, env);
+      }
+
+      if (path === '/api/admin/subjects' && request.method === 'GET') {
+        return await listSubjects(request, env);
+      }
+      if (path === '/api/admin/subjects' && request.method === 'POST') {
+        return await createSubject(request, env);
+      }
+      if (path.match(/^\/api\/admin\/subjects\/\d+$/) && request.method === 'PUT') {
+        const id = path.split('/').pop()!;
+        return await updateSubject(id, request, env);
+      }
+      if (path.match(/^\/api\/admin\/subjects\/\d+$/) && request.method === 'DELETE') {
+        const id = path.split('/').pop()!;
+        return await deleteSubject(id, request, env);
       }
 
       if (path === '/api/admin/users' && request.method === 'GET') {
@@ -889,6 +1121,41 @@ Tags:`,
       if (path === '/api/study/stats' && request.method === 'GET') {
         if (!env.DB) return jsonResponse({ error: 'Database not available' }, 503);
         return await getStudyStats(request, env);
+      }
+
+      // ---- Ops / technical dashboard (Phase 3) ----
+      if (path === '/api/health' && request.method === 'GET') {
+        return await healthCheck(request, env);
+      }
+      if (path === '/api/ops/metrics' && request.method === 'GET') {
+        return await getOpsMetrics(request, env);
+      }
+      if (path === '/api/ops/timeseries' && request.method === 'GET') {
+        return await getOpsTimeseries(request, env);
+      }
+      if (path === '/api/ops/cloudflare' && request.method === 'GET') {
+        return await getCloudflareMetrics(request, env);
+      }
+      if (path === '/api/ops/flags' && request.method === 'GET') {
+        return await getFlags(request, env);
+      }
+      if (path === '/api/ops/maintenance' && request.method === 'POST') {
+        return await setMaintenance(request, env);
+      }
+      if (path === '/api/ops/flags' && request.method === 'POST') {
+        return await setFlag(request, env);
+      }
+      if (path === '/api/ops/recompute' && request.method === 'POST') {
+        return await recompute(request, env);
+      }
+      if (path === '/api/ops/activity-log.csv' && request.method === 'GET') {
+        return await exportActivityLog(request, env);
+      }
+      if (path === '/api/ops/danger/purge-notes' && request.method === 'POST') {
+        return await purgeDeletedNotes(request, env);
+      }
+      if (path === '/api/ops/danger/revoke-tokens' && request.method === 'POST') {
+        return await revokeAllTokens(request, env);
       }
 
       const oauthResponse = await handleOAuthRoutes(path, url, request, env);

@@ -1,6 +1,7 @@
 import type { Env } from '../lib/env';
 import { jsonResponse } from '../lib/response';
 import { getUserFromToken, createToken, hashPassword, verifyPassword } from '../lib/auth';
+import { checkRateLimit } from '../lib/ratelimit';
 import {
   generateTotpSecret,
   buildOtpAuthUri,
@@ -32,6 +33,10 @@ export async function setup2fa(request: Request, env: Env) {
 
 /** POST /api/auth/2fa/enable — confirm a code, activate 2FA, return backup codes once. */
 export async function enable2fa(request: Request, env: Env) {
+  const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
+  if (!(await checkRateLimit(ip, '2fa-enable', env))) {
+    return jsonResponse({ error: 'Too many requests. Try again later.' }, 429, env);
+  }
   const decoded = await authUser(request, env);
   if (!decoded) return jsonResponse({ error: 'Unauthorized' }, 401, env);
   const { code } = (await request.json()) as any;
@@ -82,8 +87,20 @@ export async function disable2fa(request: Request, env: Env) {
  * real session token.
  */
 export async function verify2fa(request: Request, env: Env) {
+  const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
+  // Rate-limit by IP first (fast, cheap check).
+  if (!(await checkRateLimit(ip, '2fa-verify', env))) {
+    return jsonResponse({ error: 'Too many requests. Try again later.' }, 429, env);
+  }
   const { challenge, code } = (await request.json()) as any;
   const userId = await verifyMfaChallenge(String(challenge || ''), env);
+  // Also rate-limit per user id if the challenge is valid, so an attacker with
+  // multiple IPs cannot brute-force a 6-digit code for a specific account.
+  if (userId) {
+    if (!(await checkRateLimit(String(userId), '2fa-verify', env))) {
+      return jsonResponse({ error: 'Too many requests. Try again later.' }, 429, env);
+    }
+  }
   if (!userId) return jsonResponse({ error: 'Invalid or expired challenge' }, 401, env);
 
   const user = (await env.DB.prepare(
@@ -142,6 +159,10 @@ export async function verify2fa(request: Request, env: Env) {
  * enumeration). Tells the client whether Google recovery is available.
  */
 export async function forgotPassword(request: Request, env: Env) {
+  const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
+  if (!(await checkRateLimit(ip, 'forgot-password', env))) {
+    return jsonResponse({ error: 'Too many requests. Try again later.' }, 429, env);
+  }
   const { email } = (await request.json()) as any;
   if (!email) return jsonResponse({ error: 'Email is required' }, 400, env);
   const user = (await env.DB.prepare(`SELECT google_id, oauth_provider FROM users WHERE email = ?`)
@@ -175,6 +196,10 @@ export async function forgotPassword(request: Request, env: Env) {
  * the endpoint a Google-recovered user hits to (re)establish a password.
  */
 export async function setPassword(request: Request, env: Env) {
+  const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
+  if (!(await checkRateLimit(ip, 'set-password', env))) {
+    return jsonResponse({ error: 'Too many requests. Try again later.' }, 429, env);
+  }
   const decoded = await authUser(request, env);
   if (!decoded) return jsonResponse({ error: 'Unauthorized' }, 401, env);
   const { newPassword } = (await request.json()) as any;
