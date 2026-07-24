@@ -1,19 +1,23 @@
 import type { Env } from '../lib/env';
 import { jsonResponse } from '../lib/response';
-import { getOrCreateUser } from '../lib/auth';
+import { getOrCreateUser, getAuthedUser } from '../lib/auth';
 
 export async function getNotesBySubject(subjectId: string, request: Request, env: Env) {
-  const user = await getOrCreateUser(request, env);
+  // Public read: works for guests too. Personalization (class/grade filter,
+  // liked/upvoted flags) is applied only when a valid token identifies a user.
+  const user = await getAuthedUser(request, env);
+  const uid = user?.id ?? 0;
+  const uclass = user?.class ?? '';
   const url = new URL(request.url);
   const filter = url.searchParams.get('filter');
 
   let gradeCondition = '';
   let gradeParams: (string | number)[] = [];
 
-  if (filter === 'my_class' && user.class) {
+  if (filter === 'my_class' && user?.class) {
     gradeCondition = "AND (u.class = ? OR u.class IS NULL OR u.class = '')";
     gradeParams = [user.class];
-  } else if (filter === 'my_grade' && user.grade) {
+  } else if (filter === 'my_grade' && user?.grade) {
     gradeCondition = 'AND (n.author_grade = ? OR n.author_grade IS NULL)';
     gradeParams = [user.grade];
   }
@@ -59,14 +63,16 @@ export async function getNotesBySubject(subjectId: string, request: Request, env
     ORDER BY n.created_at DESC
   `,
   )
-    .bind(user.id, user.id, subjectId, user.class || '', ...gradeParams)
+    .bind(uid, uid, subjectId, uclass, ...gradeParams)
     .all();
 
   return jsonResponse({ notes: results });
 }
 
 export async function searchNotes(query: string, request: Request, env: Env) {
-  const user = await getOrCreateUser(request, env);
+  // Public read: guests may search. Class-visibility scoping applies only when
+  // a valid token identifies a user.
+  const user = await getAuthedUser(request, env);
 
   if (!query || query.trim().length === 0) {
     return jsonResponse({ notes: [] });
@@ -158,7 +164,7 @@ export async function searchNotes(query: string, request: Request, env: Env) {
       ...wordParams, // WHERE author_name params
       ...wordParams, // WHERE tags params
       ...wordParams, // WHERE subject params
-      user.class, // visibility check
+      user?.class ?? '', // visibility check (empty for guests)
     )
     .all();
 

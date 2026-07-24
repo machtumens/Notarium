@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS users (
   totp_enabled INTEGER NOT NULL DEFAULT 0 CHECK(totp_enabled IN (0, 1)),
   totp_backup_codes TEXT,
   role TEXT NOT NULL DEFAULT 'student' CHECK(role IN ('student', 'admin')),
+  admin_role TEXT,
   notes_uploaded INTEGER NOT NULL DEFAULT 0,
   total_likes INTEGER NOT NULL DEFAULT 0,
   total_admin_upvotes INTEGER NOT NULL DEFAULT 0,
@@ -66,6 +67,7 @@ CREATE TABLE IF NOT EXISTS notes (
   scheduled_publish_at TEXT,
   likes INTEGER NOT NULL DEFAULT 0,
   admin_upvotes INTEGER NOT NULL DEFAULT 0,
+  featured INTEGER NOT NULL DEFAULT 0,
   deleted_at TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -237,3 +239,27 @@ CREATE TABLE IF NOT EXISTS oauth_states (
 );
 
 CREATE INDEX IF NOT EXISTS idx_oauth_states_expires ON oauth_states(expires_at);
+
+-- Ops metrics: request-level and AI-provider usage samples (Phase 3 ops dashboard).
+CREATE TABLE IF NOT EXISTS request_metrics (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  ts TEXT NOT NULL DEFAULT (datetime('now')),
+  path TEXT,
+  method TEXT,
+  status INTEGER,
+  duration_ms INTEGER
+) STRICT;
+
+CREATE INDEX IF NOT EXISTS idx_request_metrics_ts ON request_metrics(ts);
+
+CREATE TABLE IF NOT EXISTS ai_usage (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  ts TEXT NOT NULL DEFAULT (datetime('now')),
+  provider TEXT,
+  endpoint TEXT,
+  ok INTEGER,
+  duration_ms INTEGER,
+  tokens INTEGER
+) STRICT;
+
+CREATE INDEX IF NOT EXISTS idx_ai_usage_ts ON ai_usage(ts);

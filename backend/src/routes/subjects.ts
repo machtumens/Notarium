@@ -1,12 +1,12 @@
 import type { Env } from '../lib/env';
 import { jsonResponse } from '../lib/response';
-import { getOrCreateUser, requireModerator } from '../lib/auth';
+import { requireModerator } from '../lib/auth';
 import { promoteClassesSchema } from '../lib/validation';
 import { currentAcademicYear, nextAcademicYear } from '../lib/academicYear';
 
-export async function getSubjects(request: Request, env: Env) {
-  await getOrCreateUser(request, env);
-
+export async function getSubjects(_request: Request, env: Env) {
+  // Public list — no auth needed and no per-user data. (Previously called
+  // getOrCreateUser purely as a side effect, which minted ghost users.)
   const { results } = await env.DB.prepare(
     `
     SELECT id, name, icon, note_count

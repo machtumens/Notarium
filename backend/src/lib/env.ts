@@ -4,6 +4,8 @@ export interface Env {
   GEMINI_API_KEY?: string;
   JWT_SECRET: string;
   ADMIN_PASSWORD: string;
+  MODERATOR_PASSWORD?: string;
+  TECH_PASSWORD?: string;
   DEEPSEEK_API_KEY?: string;
   GOOGLE_CLOUD_VISION_API_KEY?: string;
   GOOGLE_CLIENT_ID?: string;
@@ -12,6 +14,8 @@ export interface Env {
   OAUTH_TOKEN_AES_KEY?: string;
   FRONTEND_URL?: string;
   EXTRA_ALLOWED_ORIGINS?: string;
+  CF_API_TOKEN?: string;
+  CF_ACCOUNT_ID?: string;
 }
 
 export interface User {
@@ -27,6 +31,7 @@ export interface User {
   graduated?: number;
   totp_enabled?: number;
   role: string;
+  admin_role?: string;
   notes_uploaded?: number;
   total_likes?: number;
   total_admin_upvotes?: number;

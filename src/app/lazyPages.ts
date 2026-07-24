@@ -1,0 +1,20 @@
+import { lazy } from 'react';
+
+export const Login = lazy(() => import('../pages/Login'));
+export const AdminLogin = lazy(() => import('../pages/AdminLogin'));
+export const Signup = lazy(() => import('../pages/Signup'));
+export const Suspended = lazy(() => import('../pages/Suspended'));
+export const PasswordResetPage = lazy(() => import('../pages/PasswordResetPage'));
+export const SubjectsPage = lazy(() => import('../pages/SubjectsPage'));
+export const SubjectNotesPage = lazy(() => import('../pages/SubjectNotesPage'));
+export const LeaderboardPage = lazy(() => import('../pages/LeaderboardPage'));
+export const ChatPage = lazy(() => import('../pages/ChatPage'));
+export const AdminPage = lazy(() => import('../pages/AdminPage'));
+export const OpsDashboard = lazy(() => import('../pages/OpsDashboard'));
+export const MyNotesPage = lazy(() => import('../pages/MyNotesPage'));
+export const ReviewPage = lazy(() => import('../pages/ReviewPage'));
+export const ProfileEditor = lazy(() => import('../components/ProfileEditor'));
+export const ProfileStats = lazy(() => import('../components/ProfileStats'));
+export const FoundersModal = lazy(() => import('../components/FoundersModal'));
+export const AuthCallback = lazy(() => import('../pages/AuthCallback'));
+export const SettingsPage = lazy(() => import('../pages/SettingsPage'));

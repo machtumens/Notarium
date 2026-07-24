@@ -3,6 +3,8 @@ import { useTheme } from '../hooks/useTheme';
 import { BeamsBackground } from '../components/ui/beams-background';
 import { darkThemeStyles } from '../theme';
 import GoogleLinkCard from '../components/settings/GoogleLinkCard';
+import TwoFactorCard from '../components/settings/TwoFactorCard';
+import SetPasswordCard from '../components/settings/SetPasswordCard';
 
 export default function SettingsPage() {
   const navigate = useNavigate();
@@ -51,6 +53,8 @@ export default function SettingsPage() {
           </h1>
 
           <GoogleLinkCard />
+          <TwoFactorCard />
+          <SetPasswordCard />
         </div>
       </div>
     </div>

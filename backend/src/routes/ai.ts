@@ -2,6 +2,26 @@ import type { Env } from '../lib/env';
 import { jsonResponse } from '../lib/response';
 import { getUserFromToken } from '../lib/auth';
 
+// Best-effort AI usage logging. Never throws.
+export async function logAiUsage(
+  env: Env,
+  provider: string,
+  endpoint: string,
+  ok: boolean,
+  durationMs: number,
+  tokens: number | null,
+): Promise<void> {
+  try {
+    await env.DB.prepare(
+      `INSERT INTO ai_usage (provider, endpoint, ok, duration_ms, tokens) VALUES (?, ?, ?, ?, ?)`,
+    )
+      .bind(provider, endpoint, ok ? 1 : 0, durationMs, tokens)
+      .run();
+  } catch {
+    // non-fatal
+  }
+}
+
 export async function getUserNotes(userId: number, subject?: string, env?: Env): Promise<any[]> {
   if (!env) return [];
 
@@ -108,6 +128,7 @@ CONTENT:
       throw new Error('AI service not configured');
     }
 
+    const aiStart = Date.now();
     const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -123,8 +144,17 @@ CONTENT:
     });
 
     const data = (await response.json()) as any;
+    const aiOk = response.ok && !!data.choices && data.choices.length > 0;
+    await logAiUsage(
+      env,
+      'deepseek',
+      'chat',
+      aiOk,
+      Date.now() - aiStart,
+      data?.usage?.total_tokens ?? null,
+    );
 
-    if (!response.ok || !data.choices || data.choices.length === 0) {
+    if (!aiOk) {
       throw new Error(data.error?.message || 'DeepSeek API error');
     }
 
@@ -278,9 +308,19 @@ IMPORTANT: Your response must be EXACTLY 2 sentences, no more, no less. Write th
       }),
     });
 
+    const summaryStart = Date.now();
     const data = (await response.json()) as any;
+    const summaryOk = response.ok && !!data.choices && data.choices.length > 0;
+    await logAiUsage(
+      env,
+      'deepseek',
+      'summary',
+      summaryOk,
+      Date.now() - summaryStart,
+      data?.usage?.total_tokens ?? null,
+    );
 
-    if (!response.ok || !data.choices || data.choices.length === 0) {
+    if (!summaryOk) {
       throw new Error(data.error?.message || 'DeepSeek API error');
     }
 

@@ -38,6 +38,7 @@ Add tiny logging so we can chart traffic/errors/latency/AI over time.
 ### Tier C — Cloudflare platform metrics (needs a secret) — optional, best ops signal
 
 - **[DECIDE]** add `CF_API_TOKEN` + `CF_ACCOUNT_ID` secrets → query the Cloudflare **GraphQL Analytics API** for Worker invocations, CPU time, errors, subrequests, D1 rows read/written, KV ops, bandwidth, cache-hit ratio. Free, but external token + a fetch proxy endpoint. Default: add later once A/B are live.
+- **IMPLEMENTED — set these two secrets to enable.** `GET /api/ops/cloudflare?range=<days>` proxies the Cloudflare GraphQL Analytics API for Worker invocations (requests/errors/subrequests + CPU P50/P99 by hour) and D1 usage (rows read/written, read/write queries by day). Requires `CF_API_TOKEN` (token permission: **Account Analytics: Read**) and `CF_ACCOUNT_ID`. Degrades gracefully: with the secrets unset the endpoint returns `{ configured: false }` and the dashboard shows a "not configured" hint; a CF request/GraphQL failure returns `{ configured: true, ok: false, error }` (HTTP 200, never a 500) shown as an error card.
 
 ### Health panel (build with A)
 

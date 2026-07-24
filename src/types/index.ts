@@ -5,7 +5,9 @@ export interface User {
   class: string;
   grade?: number;
   grade_class_id?: number;
+  totp_enabled?: number;
   role: 'student' | 'admin';
+  admin_role?: string;
   points: number;
   notes_count: number;
   diamonds?: number;
@@ -28,9 +30,11 @@ export interface LoginCredentials {
 }
 
 export interface LoginResponse {
-  success: boolean;
-  user: User;
-  token: string;
+  success?: boolean;
+  user?: User;
+  token?: string;
+  requires_2fa?: boolean;
+  challenge?: string;
 }
 
 export interface SignupData {
@@ -38,6 +42,41 @@ export interface SignupData {
   password: string;
   name: string;
   class: string;
+  academic_year?: string;
+}
+
+export interface TwoFactorSetup {
+  secret: string;
+  otpauth_uri: string;
+}
+
+export interface TwoFactorEnableResponse {
+  success: boolean;
+  backup_codes: string[];
+}
+
+export interface ForgotPasswordResponse {
+  recovery: 'google' | 'none';
+  message: string;
+}
+
+export interface SetPasswordResponse {
+  success: boolean;
+  message: string;
+}
+
+export interface PromoteSummaryItem {
+  class: string;
+  action: string;
+  promoted_to?: string;
+  students_affected?: number;
+  error?: string;
+}
+
+export interface PromoteClassesResponse {
+  success: boolean;
+  academic_year: string;
+  summary: PromoteSummaryItem[];
 }
 
 export interface ProfileUpdateData {
@@ -86,6 +125,13 @@ export interface Subject {
   description?: string;
   icon?: string;
   color?: string;
+}
+
+export interface AdminSubject {
+  id: number;
+  name: string;
+  icon?: string;
+  note_count: number;
 }
 
 export interface QuizQuestion {
@@ -321,7 +367,78 @@ export function getErrorMessage(error: unknown): string {
   return 'An unknown error occurred';
 }
 
-export interface RequestOptions extends RequestInit {
+export interface RequestOptions extends Omit<RequestInit, 'body' | 'headers'> {
   body?: unknown;
   headers?: Record<string, string>;
+}
+
+// ---- Ops / technical dashboard (Phase 3) ----
+export interface OpsHealth {
+  status: 'ok' | 'down';
+  time: string;
+  db?: boolean;
+  kv?: boolean;
+  ai_configured?: boolean;
+  oauth_configured?: boolean;
+  latest_migration?: string;
+}
+
+export interface OpsMetrics {
+  live_users: { m5: number; h1: number; d1: number };
+  totals: {
+    users: number;
+    notes: number;
+    suspended_users: number;
+    active_warnings: number;
+    chat_sessions: number;
+    quiz_attempts: number;
+  };
+  moderation: { soft_deleted_notes: number; featured_notes: number };
+  table_rows: { users: number; notes: number; chat_messages: number; study_items: number };
+}
+
+export interface OpsTimeseries {
+  metric: string;
+  points: Array<{ t: string; v: number }>;
+}
+
+export interface OpsFlags {
+  maintenance: boolean;
+  signups: boolean;
+  uploads: boolean;
+  ai_chat: boolean;
+}
+
+// ---- Tier-C Cloudflare platform metrics ----
+export interface OpsCloudflareWorkerPoint {
+  t: string;
+  requests: number;
+  errors: number;
+  subrequests: number;
+  cpuP50: number;
+  cpuP99: number;
+}
+
+export interface OpsCloudflareD1Point {
+  t: string;
+  rowsRead: number;
+  rowsWritten: number;
+  readQueries: number;
+  writeQueries: number;
+}
+
+export interface OpsCloudflare {
+  // false = secrets not set; true (or absent) = configured
+  configured?: boolean;
+  // false = configured but the CF request/GraphQL failed
+  ok?: boolean;
+  error?: string;
+  workers?: {
+    points: OpsCloudflareWorkerPoint[];
+    totals: { requests: number; errors: number; subrequests: number };
+  };
+  d1?: {
+    points: OpsCloudflareD1Point[];
+    totals: { rowsRead: number; rowsWritten: number; readQueries: number; writeQueries: number };
+  };
 }

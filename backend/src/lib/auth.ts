@@ -146,44 +146,34 @@ const USER_COLUMNS =
   'warning_message, warning_first_viewed, warning_view_count, ' +
   'last_seen_at, created_at, updated_at';
 
-export async function getOrCreateUser(request: Request, env: Env): Promise<User> {
-  const userIdFromToken = await getUserIdFromToken(request, env);
-
-  if (userIdFromToken) {
-    const user = await env.DB.prepare(`SELECT ${USER_COLUMNS} FROM users WHERE id = ?`)
-      .bind(userIdFromToken)
-      .first();
-
-    if (user) {
-      return user as unknown as User;
-    }
-  }
-
-  const userId = request.headers.get('X-Encrypted-Yw-ID');
-
-  if (!userId) {
-    throw new Error('User ID not found');
-  }
-
-  const { results } = await env.DB.prepare(
-    `SELECT ${USER_COLUMNS} FROM users WHERE encrypted_yw_id = ?`,
-  )
+/**
+ * JWT-only identity resolver. Returns the full user row for a valid Bearer
+ * token, or null when the request is unauthenticated (or the token's user no
+ * longer exists). Never trusts a client header and never creates a user —
+ * account creation happens only through signup / OAuth / admin-login.
+ *
+ * Use this for endpoints that should work for guests too (personalization is
+ * optional): treat a null result as "anonymous".
+ */
+export async function getAuthedUser(request: Request, env: Env): Promise<User | null> {
+  const userId = await getUserIdFromToken(request, env);
+  if (!userId) return null;
+  const user = await env.DB.prepare(`SELECT ${USER_COLUMNS} FROM users WHERE id = ?`)
     .bind(userId)
-    .all();
-
-  if (results.length > 0) {
-    return results[0] as unknown as User;
-  }
-
-  const insertResult = await env.DB.prepare(
-    'INSERT INTO users (encrypted_yw_id, role, class) VALUES (?, ?, ?) RETURNING *',
-  )
-    .bind(userId, 'student', '10.1')
     .first();
+  return (user as unknown as User) ?? null;
+}
 
-  if (!insertResult) {
-    throw new Error('Failed to create user');
+/**
+ * Identity for endpoints that REQUIRE an authenticated user (all mutations and
+ * per-user reads). Throws when unauthenticated so the caller/handler denies the
+ * request. Formerly this trusted an `X-Encrypted-Yw-ID` header and auto-created
+ * a user from it — a full authentication bypass — which has been removed.
+ */
+export async function getOrCreateUser(request: Request, env: Env): Promise<User> {
+  const user = await getAuthedUser(request, env);
+  if (!user) {
+    throw new Error('Unauthorized');
   }
-
-  return insertResult as unknown as User;
+  return user;
 }

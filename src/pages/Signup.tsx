@@ -10,7 +10,17 @@ const ShaderAnimation = lazy(() =>
 
 const SCHOOL_DOMAIN = '@sekolahkristencalvin.org';
 
+// Indonesian school year starts in July (month index >= 6).
+function computeAcademicYears(): string[] {
+  const now = new Date();
+  const startYear = now.getMonth() >= 6 ? now.getFullYear() : now.getFullYear() - 1;
+  const current = `${startYear}/${startYear + 1}`;
+  const next = `${startYear + 1}/${startYear + 2}`;
+  return [current, next];
+}
+
 export default function Signup() {
+  const academicYears = useMemo(() => computeAcademicYears(), []);
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -18,6 +28,7 @@ export default function Signup() {
     confirmPassword: '',
     grade: '',
     class: '',
+    academic_year: academicYears[0],
   });
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -94,6 +105,7 @@ export default function Signup() {
           email: formData.email,
           password: formData.password,
           class: formData.class,
+          academic_year: formData.academic_year,
         },
       });
 
@@ -234,6 +246,26 @@ export default function Signup() {
                       ))}
                     </select>
                   </div>
+                </div>
+
+                <div className="space-y-1">
+                  <label htmlFor="academic_year" className="text-sm font-medium text-white">
+                    Academic Year
+                  </label>
+                  <select
+                    id="academic_year"
+                    name="academic_year"
+                    value={formData.academic_year}
+                    onChange={handleChange}
+                    className="w-full px-3 py-2 border border-zinc-700 rounded-md bg-zinc-800 text-white focus:outline-none focus:ring-2 focus:ring-white/20"
+                    required
+                  >
+                    {academicYears.map((year) => (
+                      <option key={year} value={year}>
+                        {year}
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
                 <div className="space-y-1">
