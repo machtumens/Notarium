@@ -54,18 +54,17 @@ describe('G. IDOR / object security (111-120)', () => {
     expect(res.status).toBeLessThan(500);
   });
 
-  it('MAJOR FINDING: POST /api/notes accepts an unauthenticated X-Encrypted-Yw-ID header as identity', async () => {
+  it('FIXED: POST /api/notes rejects an unauthenticated X-Encrypted-Yw-ID header (requires JWT)', async () => {
     const subj = await seedSubject();
-    // No Authorization header at all — only the spoofable identity header.
+    // No Authorization header at all — only the (no longer trusted) identity header.
     const res = await call('/api/notes', {
       method: 'POST',
       headers: { 'X-Encrypted-Yw-ID': 'attacker-chosen-identity' },
       body: { title: 'ghost note', content: 'x', subject_id: subj },
     });
-    // If this is NOT 401, the endpoint authenticated a request with no token.
-    // Documented as the vulnerability; flip the expectation once a fix requires JWT.
-    expect(res.status, 'note create should require a real JWT, not a header').not.toBe(401);
-    expect(res.status).toBeLessThan(500);
+    // The header is no longer trusted for identity and no ghost user is created;
+    // an unauthenticated write must be rejected with 401.
+    expect(res.status, 'note create must require a real JWT, not a header').toBe(401);
   });
 
   it('120. ownership is by author_id, so it is stable across a note’s lifecycle', async () => {

@@ -6,8 +6,9 @@ export async function getNotesBySubject(subjectId: string, request: Request, env
   // Public read: works for guests too. Personalization (class/grade filter,
   // liked/upvoted flags) is applied only when a valid token identifies a user.
   const user = await getAuthedUser(request, env);
-  const uid = user?.id ?? 0;
-  const uclass = user?.class ?? '';
+  if (!user) return jsonResponse({ error: 'Unauthorized' }, 401);
+  const uid = user.id;
+  const uclass = user.class ?? '';
   const url = new URL(request.url);
   const filter = url.searchParams.get('filter');
 
@@ -70,9 +71,10 @@ export async function getNotesBySubject(subjectId: string, request: Request, env
 }
 
 export async function searchNotes(query: string, request: Request, env: Env) {
-  // Public read: guests may search. Class-visibility scoping applies only when
-  // a valid token identifies a user.
+  // Requires auth (matches the app's login-gated model); class-visibility
+  // scoping uses the authenticated user's class.
   const user = await getAuthedUser(request, env);
+  if (!user) return jsonResponse({ error: 'Unauthorized' }, 401);
 
   if (!query || query.trim().length === 0) {
     return jsonResponse({ notes: [] });
@@ -323,6 +325,7 @@ export async function createNote(request: Request, env: Env) {
     });
   } catch (error: any) {
     console.error('createNote error:', error);
+    if (error?.message === 'Unauthorized') return jsonResponse({ error: 'Unauthorized' }, 401);
     return jsonResponse({ error: 'Internal server error' }, 500);
   }
 }
@@ -470,6 +473,7 @@ export async function userUpdateNote(noteId: string, request: Request, env: Env)
     return jsonResponse({ success: true, note: updatedNote });
   } catch (error: any) {
     console.error('userUpdateNote error:', error);
+    if (error?.message === 'Unauthorized') return jsonResponse({ error: 'Unauthorized' }, 401);
     return jsonResponse({ error: 'Internal server error' }, 500);
   }
 }
@@ -520,6 +524,7 @@ export async function getMyNotes(request: Request, env: Env) {
     return jsonResponse({ notes });
   } catch (error: any) {
     console.error('getMyNotes error:', error);
+    if (error?.message === 'Unauthorized') return jsonResponse({ error: 'Unauthorized' }, 401);
     return jsonResponse({ error: 'Internal server error' }, 500);
   }
 }
@@ -572,6 +577,7 @@ export async function publishDraftNote(noteId: string, request: Request, env: En
     return jsonResponse({ success: true, note: updatedNote });
   } catch (error: any) {
     console.error('publishDraftNote error:', error);
+    if (error?.message === 'Unauthorized') return jsonResponse({ error: 'Unauthorized' }, 401);
     return jsonResponse({ error: 'Internal server error' }, 500);
   }
 }
@@ -618,6 +624,7 @@ export async function userDeleteNote(noteId: string, request: Request, env: Env)
     return jsonResponse({ success: true, points_deducted: pointsToDeduct });
   } catch (error: any) {
     console.error('userDeleteNote error:', error);
+    if (error?.message === 'Unauthorized') return jsonResponse({ error: 'Unauthorized' }, 401);
     return jsonResponse({ error: 'Internal server error' }, 500);
   }
 }

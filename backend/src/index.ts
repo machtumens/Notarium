@@ -499,16 +499,13 @@ export default {
           if (!(await checkRateLimit(ip, 'admin-migrate', env))) {
             return jsonResponse({ error: 'Too many requests. Try again later.' }, 429, env);
           }
-          // Require a valid admin JWT in addition to the body password.
+          // Authenticated by admin JWT. The legacy body-password gate is
+          // redundant now that a valid admin token is required, so it's removed.
           const adminCheck = await requireAdmin(request, env);
           if (adminCheck instanceof Response) return adminCheck;
 
           const body = (await request.json()) as any;
-          const { adminPassword, batchSize = 5, offset = 0 } = body;
-
-          if (!(await timingSafeEqualStr(env.ADMIN_PASSWORD, String(adminPassword || '')))) {
-            return jsonResponse({ error: 'Unauthorized' }, 401, env);
-          }
+          const { batchSize = 5, offset = 0 } = body;
 
           const users = await env.DB.prepare(
             `
@@ -1163,7 +1160,13 @@ Tags:`,
 
       return jsonResponse({ error: 'Not found' }, 404);
     } catch (error: any) {
-      return jsonResponse({ error: error.message || 'Internal server error' }, 500);
+      // getOrCreateUser throws 'Unauthorized' for unauthenticated requests that
+      // reach a per-user endpoint — surface a clean 401, not a 500.
+      if (error?.message === 'Unauthorized') {
+        return jsonResponse({ error: 'Unauthorized' }, 401, env);
+      }
+      console.error('Unhandled error:', error);
+      return jsonResponse({ error: 'Internal server error' }, 500, env);
     }
   },
 };

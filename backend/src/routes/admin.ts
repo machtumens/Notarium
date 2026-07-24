@@ -793,7 +793,8 @@ export async function updateUserProfile(userId: string, request: Request, env: E
 
     // PRIVILEGE GUARD: only super may set a non-student role; never admin_role.
     if (body.role !== undefined && body.role !== 'student') {
-      const sub = adminUser.admin_role ?? 'super';
+      // Least-privilege: a token with no admin_role is NOT super (matches requireRole).
+      const sub = adminUser.admin_role ?? 'none';
       if (sub === 'super') {
         updates.push('role = ?');
         values.push(body.role);
