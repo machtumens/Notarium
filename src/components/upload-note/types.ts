@@ -1,8 +1,8 @@
 export interface Subject {
   id: number;
   name: string;
-  icon: string;
-  note_count: number;
+  icon?: string;
+  note_count?: number;
 }
 
 export interface UploadNoteModalProps {

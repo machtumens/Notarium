@@ -28,8 +28,8 @@ export default function ChatPage() {
   const [inputValue, setInputValue] = useState('');
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
-  const [uploadedDocuments, setUploadedDocuments] = useState<UploadedDocument[]>([]);
-  const [keyConcepts, setKeyConcepts] = useState<string[]>([]);
+  const [_uploadedDocuments, _setUploadedDocuments] = useState<UploadedDocument[]>([]);
+  const [_keyConcepts, _setKeyConcepts] = useState<string[]>([]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -80,16 +80,16 @@ export default function ChatPage() {
 
       if (!currentSession) {
         const data = await api.chat.createSession('General', 'AI Chat');
-        currentSession = data.session;
+        currentSession = data.session as import('../types').ChatSession;
         setSessions([currentSession, ...sessions]);
         setSelectedSession(currentSession);
       }
 
       setMessages((prev) => [...prev, { role: 'user', content: message }]);
 
-      const response = await api.request(`/api/chat/sessions/${currentSession.id}/ai-response`, {
+      const response = await api.request(`/api/chat/sessions/${currentSession!.id}/ai-response`, {
         method: 'POST',
-        body: { message, subject: currentSession.subject },
+        body: { message, subject: currentSession!.subject },
       });
 
       const aiResponseContent =
@@ -108,7 +108,7 @@ export default function ChatPage() {
         ...prev,
         {
           role: 'assistant',
-          content: `Error: ${error.message || 'Failed to get response from AI tutor. Please try again.'}`,
+          content: `Error: ${error instanceof Error ? error.message : 'Failed to get response from AI tutor. Please try again.'}`,
         },
       ]);
     } finally {

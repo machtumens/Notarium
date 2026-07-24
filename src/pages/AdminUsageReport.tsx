@@ -101,9 +101,9 @@ export default function AdminUsageReport() {
     topContributors,
     usersByClass,
     notesByClass,
-    popularSubjects,
+    popularSubjects: _popularSubjects,
     dailyActivity,
-    dailyRegistrations,
+    dailyRegistrations: _dailyRegistrations,
   } = stats;
 
   return (

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Note } from '../pages/SubjectNotesPage';
-import { User } from '../lib/api';
+import type { User } from '../types';
 import { darkTheme } from '../theme';
 import { useNoteInteractions } from '../hooks/useNoteInteractions';
 import { useStudyFeatures } from '../hooks/useStudyFeatures';
@@ -21,7 +21,7 @@ export default function NoteDetailModal({
   note,
   onClose,
   onLike,
-  currentUser,
+  currentUser: _currentUser,
 }: NoteDetailModalProps) {
   const [isMobile, setIsMobile] = useState(false);
 

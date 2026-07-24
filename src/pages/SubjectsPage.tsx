@@ -3,7 +3,7 @@ import { toast } from 'sonner';
 import api from '../lib/api';
 import { logger } from '../lib/logger';
 import LoadingSpinner from '../components/LoadingSpinner';
-import { darkTheme, cardStyle } from '../theme';
+import { darkTheme } from '../theme';
 import { ArrowRight } from 'lucide-react';
 
 const SubjectsShaderScene = lazy(() => import('../components/ui/SubjectsShaderScene'));

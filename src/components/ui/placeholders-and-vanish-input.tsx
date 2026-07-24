@@ -13,7 +13,7 @@ export function PlaceholdersAndVanishInput({
 }) {
   const [currentPlaceholder, setCurrentPlaceholder] = useState(0);
 
-  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const startAnimation = () => {
     intervalRef.current = setInterval(() => {
       setCurrentPlaceholder((prev) => (prev + 1) % placeholders.length);
@@ -43,7 +43,8 @@ export function PlaceholdersAndVanishInput({
   interface PixelData {
     x: number;
     y: number;
-    color: [number, number, number, number];
+    r: number;
+    color: string;
   }
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -81,18 +82,14 @@ export function PlaceholdersAndVanishInput({
           newData.push({
             x: n,
             y: t,
-            color: [pixelData[e], pixelData[e + 1], pixelData[e + 2], pixelData[e + 3]],
+            r: 1,
+            color: `rgba(${pixelData[e]}, ${pixelData[e + 1]}, ${pixelData[e + 2]}, ${pixelData[e + 3]})`,
           });
         }
       }
     }
 
-    newDataRef.current = newData.map(({ x, y, color }) => ({
-      x,
-      y,
-      r: 1,
-      color: `rgba(${color[0]}, ${color[1]}, ${color[2]}, ${color[3]})`,
-    }));
+    newDataRef.current = newData;
   }, [value]);
 
   useEffect(() => {

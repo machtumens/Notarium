@@ -7,7 +7,7 @@ import UploadNoteModal from '../components/UploadNoteModal';
 import NoteDetailModal from '../components/NoteDetailModal';
 import GradeClassFilter from '../components/GradeClassFilter';
 import { useAuth } from '../App';
-import { Subject } from './SubjectsPage';
+import type { Subject } from '../types';
 import { darkTheme } from '../theme';
 
 export interface Note {
@@ -20,6 +20,9 @@ export interface Note {
   author_photo?: string;
   subject_id: number;
   image?: string;
+  image_path?: string;
+  extracted_text?: string;
+  summary?: string;
   tags?: string[];
   likes: number;
   admin_upvotes: number;
@@ -545,7 +548,7 @@ export default function SubjectNotesPage({
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        setFullScreenImage(firstImage);
+                        setFullScreenImage(firstImage ?? null);
                       }}
                       style={{
                         position: 'absolute',

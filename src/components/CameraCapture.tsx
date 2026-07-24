@@ -639,7 +639,6 @@ export default function CameraCapture({
                 const isTopLeft = corner === 'tl';
                 const isTopRight = corner === 'tr';
                 const isBottomLeft = corner === 'bl';
-                const isBottomRight = corner === 'br';
 
                 return (
                   <div

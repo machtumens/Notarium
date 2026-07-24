@@ -125,6 +125,8 @@ export const api = {
         method: 'POST',
         body: { challenge, code },
       }),
+    me: (): Promise<{ user: User }> =>
+      api.request<{ user: User }>('/api/auth/me', { method: 'GET' }),
   },
 
   twoFactor: {
@@ -349,14 +351,14 @@ export const api = {
   },
 
   ai: {
-    generateSummary: async (noteId: number, content: string) => {
+    generateSummary: async (noteId: number, content: string = '') => {
       const response = await api.request(`/api/notes/${noteId}/summary`, {
         method: 'POST',
         body: { content },
       });
       return { summary: response.summary || '' };
     },
-    generateQuiz: async (noteId: number, content: string) => {
+    generateQuiz: async (noteId: number, content: string = '') => {
       const response = await api.request(`/api/notes/${noteId}/quiz`, {
         method: 'POST',
         body: { content },

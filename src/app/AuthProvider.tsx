@@ -15,7 +15,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     try {
       const response = await api.getCurrentUser();
-      setUser(response.user);
+      setUser(response);
     } catch (error) {
       console.error('Failed to load user:', error);
       api.clearToken();

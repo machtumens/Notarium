@@ -12,9 +12,9 @@ interface ProfileStatsProps {
 
 export default function ProfileStats({ onClose, onEditProfile }: ProfileStatsProps) {
   const { user, refreshUser } = useAuth();
-  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
+  const [_leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [userRank, setUserRank] = useState<number | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [_loading, setLoading] = useState(true);
   const [editingName, setEditingName] = useState(false);
   const [newName, setNewName] = useState(user?.name || '');
   const [savingName, setSavingName] = useState(false);
@@ -40,7 +40,7 @@ export default function ProfileStats({ onClose, onEditProfile }: ProfileStatsPro
     try {
       const data = await api.getLeaderboard();
       const lb = data.leaderboard || [];
-      const rank = lb.findIndex((u) => u.id === user?.id) + 1;
+      const rank = lb.findIndex((u: LeaderboardEntry) => u.id === user?.id) + 1;
       setLeaderboard(lb);
       setUserRank(rank > 0 ? rank : null);
     } catch (error) {

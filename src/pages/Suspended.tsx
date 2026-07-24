@@ -19,7 +19,7 @@ export default function Suspended() {
           return;
         }
 
-        const endDate = new Date(response.user.suspension_end_date);
+        const endDate = new Date(response.user.suspension_end_date ?? '');
         const now = new Date();
         const daysRemaining = Math.ceil(
           (endDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24),
@@ -28,7 +28,7 @@ export default function Suspended() {
         setSuspensionData({
           daysRemaining,
           reason: response.user.suspension_reason || 'Violation of community guidelines',
-          endDate: response.user.suspension_end_date,
+          endDate: response.user.suspension_end_date ?? '',
         });
       } catch (error) {
         navigate('/login', { replace: true });

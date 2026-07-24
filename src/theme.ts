@@ -14,6 +14,7 @@ export interface Theme {
     danger: string;
     dangerHover: string;
     warning: string;
+    cardBg: string;
   };
   transitions: {
     default: string;
@@ -30,6 +31,7 @@ export interface Theme {
     md: string;
     lg: string;
     xl: string;
+    full: string;
   };
   background?: {
     image?: string;
@@ -54,6 +56,7 @@ const defaultTheme: Theme = {
     danger: '#ef4444',
     dangerHover: '#dc2626',
     warning: '#f59e0b',
+    cardBg: '#1e293b',
   },
   transitions: {
     default: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
@@ -70,6 +73,7 @@ const defaultTheme: Theme = {
     md: '8px',
     lg: '12px',
     xl: '16px',
+    full: '9999px',
   },
   background: {
     image: '/nature.jpg',

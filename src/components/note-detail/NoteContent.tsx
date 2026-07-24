@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { darkTheme } from '../../theme';
 import { useImagePagination } from '../../hooks/useImagePagination';
 

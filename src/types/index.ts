@@ -106,6 +106,7 @@ export interface Note {
   upvoted_by_me?: boolean;
   parent_note_id?: number | null;
   part_number?: number | null;
+  summary?: string;
 }
 
 export interface CreateNoteData {
@@ -125,6 +126,7 @@ export interface Subject {
   description?: string;
   icon?: string;
   color?: string;
+  note_count?: number;
 }
 
 export interface AdminSubject {

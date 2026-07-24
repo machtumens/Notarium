@@ -43,8 +43,8 @@ export function HomePage() {
   const [showProfileEditor, setShowProfileEditor] = useState(false);
   const [showProfileStats, setShowProfileStats] = useState(false);
   const [showFoundersModal, setShowFoundersModal] = useState(false);
-  const [subjects, setSubjects] = useState<Subject[]>([]);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [_subjects, setSubjects] = useState<Subject[]>([]);
+  const [_searchQuery, _setSearchQuery] = useState('');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 640);
   const [, forceUpdate] = useState({});

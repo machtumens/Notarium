@@ -35,7 +35,7 @@ export interface StudyPlanResponse {
   error?: string;
 }
 
-export const useStudyFeatures = ({ noteId }: UseStudyFeaturesProps) => {
+export const useStudyFeatures = ({ noteId: _noteId }: UseStudyFeaturesProps) => {
   const [summary, setSummary] = useState<string | null>(null);
   const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
 

@@ -83,7 +83,7 @@ export function useAdminData() {
   const handleSuspendUser = async (userId: number, days: number, reason: string) => {
     try {
       setActionLoading(userId);
-      const response = await api.admin.suspendUser(userId, days, reason);
+      await api.admin.suspendUser(userId, days, reason);
       await loadData();
     } catch (error) {
       console.error('Failed to suspend user:', error);
@@ -96,7 +96,7 @@ export function useAdminData() {
   const handleWarnUser = async (userId: number, message: string) => {
     try {
       setActionLoading(userId);
-      const response = await api.admin.warnUser(userId, message);
+      await api.admin.warnUser(userId, message);
       await loadData();
     } catch (error) {
       console.error('Failed to warn user:', error);
@@ -112,7 +112,7 @@ export function useAdminData() {
     }
     try {
       setActionLoading(userId);
-      const response = await api.admin.unsuspendUser(userId);
+      await api.admin.unsuspendUser(userId);
       await loadData();
     } catch (error) {
       console.error('Failed to unsuspend user:', error);
