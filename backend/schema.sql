@@ -263,3 +263,27 @@ CREATE TABLE IF NOT EXISTS ai_usage (
 ) STRICT;
 
 CREATE INDEX IF NOT EXISTS idx_ai_usage_ts ON ai_usage(ts);
+
+-- Admin/moderator broadcast notifications and per-user read receipts.
+-- (Definitions mirror initializeDatabase() so a fresh DB from schema.sql matches
+-- production; not STRICT, to match the runtime-created tables.)
+CREATE TABLE IF NOT EXISTS notifications (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  sender_id INTEGER,
+  target_type TEXT NOT NULL,
+  target_grade INTEGER,
+  target_class TEXT,
+  target_user_id INTEGER,
+  notification_type TEXT NOT NULL DEFAULT 'announcement',
+  title TEXT NOT NULL,
+  message TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS notification_reads (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  notification_id INTEGER NOT NULL,
+  user_id INTEGER NOT NULL,
+  read_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(notification_id, user_id)
+);

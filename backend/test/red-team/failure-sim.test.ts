@@ -10,9 +10,10 @@ beforeAll(applySchema);
 beforeEach(resetData);
 
 describe('Failure sim: rate-limit KV degraded', () => {
-  it('corrupt KV value at the rate-limit key -> limiter FAILS OPEN (login still served)', async () => {
+  it('corrupt KV no longer disables the limiter — the DO enforces it independently', async () => {
     const ip = '20.0.0.1';
-    // Poison the exact key checkRateLimit reads so JSON.parse throws inside it.
+    // Poison the exact key the KV fallback would read. The DO limiter ignores KV,
+    // so a corrupt KV value can no longer silently disable rate limiting.
     await env.RATE_LIMIT.put(`ratelimit:login:${ip}`, 'definitely-not-json{');
     const codes: number[] = [];
     for (let i = 0; i < 8; i++) {
@@ -25,9 +26,9 @@ describe('Failure sim: rate-limit KV degraded', () => {
         ).status,
       );
     }
-    // FINDING: none are throttled — the catch in checkRateLimit returns true.
-    expect(codes.every((c) => c !== 429)).toBe(true);
-    // ...but it must still be a normal auth failure, not a 5xx.
+    // The DO still throttles the burst despite the corrupt KV value (5/window)...
+    expect(codes.some((c) => c === 429)).toBe(true);
+    // ...and never returns a 5xx.
     expect(codes.every((c) => c < 500)).toBe(true);
   });
 });

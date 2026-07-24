@@ -53,19 +53,16 @@ describe('D. Rate limiting (61-75)', () => {
     expect((await attemptLogin(ip)).status).toBe(429);
   });
 
-  it('68 & 74. FINDING: a fully-concurrent burst bypasses the limiter (KV read-modify-write race)', async () => {
+  it('68 & 74. FIXED: a fully-concurrent burst is atomically limited (Durable Object)', async () => {
     const ip = '10.0.0.6';
     const results = await Promise.all(Array.from({ length: 12 }, () => attemptLogin(ip)));
     const throttled = results.filter((r) => r.status === 429).length;
-    // Every concurrent request reads the counter before any of them writes it, so
-    // ALL are admitted (throttled === 0). This is the abuse vector: a burst evades
-    // the 5/window cap. Enforcement only holds for sequential traffic.
-    expect(throttled).toBe(0); // documents the vulnerability
-    // Because the burst race means only 1 write survives (last-write-wins), the window
-    // counter is not saturated and the next sequential call also goes through.
-    // Documented as a known gap — atomic KV operations or Durable Objects would fix it.
+    // The DO serializes the read-modify-write, so at most 5/window are admitted and
+    // the remaining concurrent requests are throttled — the KV race is gone.
+    expect(throttled).toBeGreaterThanOrEqual(7);
+    // The window is saturated, so the next attempt is throttled too.
     const next = await attemptLogin(ip);
-    expect([401, 429]).toContain(next.status); // either admitted or throttled depending on write order
+    expect(next.status).toBe(429);
   });
 
   it('69. KV race: a simultaneous burst may exceed the nominal limit (documents the ceiling)', async () => {

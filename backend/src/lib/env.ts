@@ -1,6 +1,9 @@
 export interface Env {
   DB: D1Database;
   RATE_LIMIT: KVNamespace;
+  // Atomic rate limiter (Durable Object). Optional: when absent (e.g. in tests),
+  // checkRateLimit falls back to the KV sliding-window.
+  RATE_LIMITER?: DurableObjectNamespace;
   GEMINI_API_KEY?: string;
   JWT_SECRET: string;
   ADMIN_PASSWORD: string;

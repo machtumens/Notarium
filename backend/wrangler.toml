@@ -19,6 +19,16 @@ database_id = "17779d22-7479-479c-8de7-dfe102916ba3"
 binding = "RATE_LIMIT"
 id = "5d033dba4be2443e98c4782d44e0b777"
 
+# Atomic rate limiter. SQLite-backed DO (new_sqlite_classes) works on the free
+# plan. checkRateLimit falls back to the KV limiter if this binding is absent.
+[[durable_objects.bindings]]
+name = "RATE_LIMITER"
+class_name = "RateLimiter"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["RateLimiter"]
+
 [env.development]
 vars = { ENVIRONMENT = "development", FRONTEND_URL = "http://localhost:5173" }
 

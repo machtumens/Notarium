@@ -112,6 +112,9 @@ import {
   getCloudflareMetrics,
 } from './routes/ops';
 
+// Durable Object classes must be re-exported from the Worker entry module.
+export { RateLimiter } from './durable/RateLimiter';
+
 let dbInitialized = false;
 
 // Endpoints that call paid third-party AI APIs must be authenticated, otherwise
