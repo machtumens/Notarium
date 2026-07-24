@@ -1,5 +1,11 @@
 import type { Env } from './env';
 
+// Bump this whenever initializeDatabase() changes (new table/column/seed).
+// The request-path init runs at most once per version across all Worker
+// isolates (gated by a KV flag) instead of on every cold isolate. Raising the
+// number re-triggers a single idempotent init pass after the next deploy.
+export const SCHEMA_VERSION = 1;
+
 export async function initializeDatabase(env: Env) {
   try {
     await env.DB.prepare(

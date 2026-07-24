@@ -9,7 +9,7 @@ import {
   timingSafeEqualStr,
 } from './lib/auth';
 import { checkRateLimit } from './lib/ratelimit';
-import { initializeDatabase, MOCK_SUBJECTS } from './lib/db';
+import { initializeDatabase, MOCK_SUBJECTS, SCHEMA_VERSION } from './lib/db';
 import { handleOAuthRoutes } from './routes/oauth';
 
 import {
@@ -238,11 +238,23 @@ export default {
   },
 
   async _handle(request: Request, env: Env, _ctx?: ExecutionContext): Promise<Response> {
+    // Schema init is gated so the ~60 DDL statements run at most once per
+    // schema version across ALL isolates — not on every cold isolate's first
+    // request (which was a thundering herd under load, and re-ran a destructive
+    // DELETE on subjects each time). `dbInitialized` skips warm isolates for
+    // free; the KV flag makes "already initialized" a global fact.
     if (env.DB && !dbInitialized) {
+      dbInitialized = true; // set first: concurrent requests in this isolate skip
       try {
-        await initializeDatabase(env);
-        dbInitialized = true;
-      } catch (error) {}
+        const flag = `schema:init:v${SCHEMA_VERSION}`;
+        const alreadyDone = await env.RATE_LIMIT.get(flag).catch(() => null);
+        if (!alreadyDone) {
+          await initializeDatabase(env);
+          await env.RATE_LIMIT.put(flag, new Date().toISOString()).catch(() => {});
+        }
+      } catch (error) {
+        // Non-fatal: schema is idempotent and almost certainly already present.
+      }
     }
 
     const url = new URL(request.url);
