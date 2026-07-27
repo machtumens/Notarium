@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import api from '../lib/api';
 import { logger } from '../lib/logger';
@@ -33,20 +34,16 @@ export interface Note {
   part_number?: number | null;
 }
 
-interface SubjectNotesPageProps {
-  subject: Subject | null;
-  onBack: () => void;
-  isLoading: boolean;
-  setIsLoading: (loading: boolean) => void;
-}
-
-export default function SubjectNotesPage({
-  subject,
-  onBack,
-  isLoading,
-  setIsLoading,
-}: SubjectNotesPageProps) {
+// SubjectNotesPage is now a URL route (/community/:subjectId). It reads the
+// subject id from the route param, self-fetches the subject record from
+// /api/subjects (find-by-id), and owns its own loading state. The former
+// `subject` / `onBack` / loading props were removed in the Paperloop Phase 1
+// route migration.
+export default function SubjectNotesPage() {
+  const { subjectId } = useParams<{ subjectId: string }>();
+  const navigate = useNavigate();
   const { user: currentUser } = useAuth();
+  const [subject, setSubject] = useState<Subject | null>(null);
   const [notes, setNotes] = useState<Note[]>([]);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [selectedNote, setSelectedNote] = useState<Note | null>(null);
@@ -55,6 +52,38 @@ export default function SubjectNotesPage({
   const [allTags, setAllTags] = useState<string[]>([]);
   const [fullScreenImage, setFullScreenImage] = useState<string | null>(null);
   const [gradeFilter, setGradeFilter] = useState<'my_class' | 'my_grade'>('my_grade');
+  const [isLoading, setIsLoading] = useState(true);
+
+  const onBack = () => navigate('/community');
+
+  // Resolve the subject record from the URL id. Only the id is in the URL, so we
+  // fetch the subject list and find the matching entry.
+  useEffect(() => {
+    let cancelled = false;
+    const loadSubject = async () => {
+      if (!subjectId) {
+        setSubject(null);
+        return;
+      }
+      try {
+        const data = await api.getSubjects();
+        if (cancelled) return;
+        const found = (data.subjects || []).find(
+          (s: Subject) => String(s.id) === String(subjectId),
+        );
+        setSubject(found ?? null);
+      } catch (err) {
+        if (cancelled) return;
+        logger.error('subject-notes', 'Failed to load subject', err);
+        toast.error('Failed to load subject. Please try again.');
+        setSubject(null);
+      }
+    };
+    loadSubject();
+    return () => {
+      cancelled = true;
+    };
+  }, [subjectId]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/immutability -- stable component loader function referenced by the effect; behavior-preserving

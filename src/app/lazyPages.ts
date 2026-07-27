@@ -1,5 +1,6 @@
 import { lazy } from 'react';
 
+export const TodayPage = lazy(() => import('../pages/TodayPage'));
 export const Login = lazy(() => import('../pages/Login'));
 export const AdminLogin = lazy(() => import('../pages/AdminLogin'));
 export const Signup = lazy(() => import('../pages/Signup'));

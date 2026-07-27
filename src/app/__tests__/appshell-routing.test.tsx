@@ -1,0 +1,119 @@
+// AppShell routing smoke tests — the first end-to-end route-render coverage for
+// AppRoutes (Paperloop Phase 1). They drive the real <AppRoutes> tree through a
+// MemoryRouter + a real AuthContext.Provider and assert the correct page mounts
+// at each URL. This locks the tab-state → URL-route migration:
+//   /       (authenticated)   -> TodayPage (the new default landing)
+//   /review (authenticated)   -> ReviewPageRoute (preserved standalone route)
+//   /       (unauthenticated) -> redirect to /login (ProtectedRoute gate)
+//
+// jsdom cannot run the Three.js/Canvas <BeamsBackground>, so it is mocked to a
+// no-op (Step H0). The lazy page bodies that self-fetch (ReviewPage, Login) are
+// stubbed to stable sentinels so the smoke tests stay deterministic and never
+// hit the network — the routing wiring is what is under test, not page content.
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, screen } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
+
+// --- Mocks (all hoisted above the AppRoutes import) -------------------------
+
+// WebGL background — unavailable in jsdom. Mock BOTH specifier forms that the
+// shell components import it under (AppShell uses './ui/beams-background',
+// ReviewPageRoute uses '../components/ui/beams-background'); the '@/' alias form
+// is the one Vitest resolves and dedupes on.
+vi.mock('@/components/ui/beams-background', () => ({
+  BeamsBackground: () => null,
+}));
+
+// api singleton — TodayPage (getStudyStats/getDueReviews/request) and AppShell
+// (notifications.getUnreadCount, isAuthenticated) both touch it on mount.
+const api = vi.hoisted(() => ({
+  isAuthenticated: vi.fn(() => true),
+  getStudyStats: vi.fn(() =>
+    Promise.resolve({
+      current_streak: 0,
+      longest_streak: 0,
+      learning_points: 0,
+      due_count: 0,
+    }),
+  ),
+  getDueReviews: vi.fn(() => Promise.resolve({ items: [], due_count: 0 })),
+  request: vi.fn(() => Promise.resolve({ notes: [] })),
+  notifications: {
+    getUnreadCount: vi.fn(() => Promise.resolve({ count: 0 })),
+  },
+}));
+vi.mock('../../lib/api', () => ({ default: api }));
+
+// Lazy page bodies that self-fetch — stub to stable sentinels so the routing
+// assertions do not depend on page internals or the network.
+vi.mock('../../pages/ReviewPage', () => ({
+  default: () => <div>REVIEW PAGE CONTENT</div>,
+}));
+vi.mock('../../pages/Login', () => ({
+  default: () => <div>LOGIN PAGE CONTENT</div>,
+}));
+
+import { AppRoutes } from '../AppRoutes';
+import { AuthContext } from '../AuthContext';
+import type { AuthContextType } from '../types';
+import type { User } from '../../types';
+
+// --- Helpers ----------------------------------------------------------------
+
+const AUTHED_USER = { id: 1, name: 'Study Buddy', role: 'student' } as unknown as User;
+
+function renderAt(path: string, auth: Partial<AuthContextType>) {
+  const value: AuthContextType = {
+    user: null,
+    loading: false,
+    logout: () => {},
+    refreshUser: async () => {},
+    ...auth,
+  } as AuthContextType;
+  return render(
+    <AuthContext.Provider value={value}>
+      <MemoryRouter initialEntries={[path]}>
+        <AppRoutes />
+      </MemoryRouter>
+    </AuthContext.Provider>,
+  );
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  api.isAuthenticated.mockReturnValue(true);
+  api.getStudyStats.mockResolvedValue({
+    current_streak: 0,
+    longest_streak: 0,
+    learning_points: 0,
+    due_count: 0,
+  });
+  api.getDueReviews.mockResolvedValue({ items: [], due_count: 0 });
+  api.request.mockResolvedValue({ notes: [] });
+  api.notifications.getUnreadCount.mockResolvedValue({ count: 0 });
+});
+
+// --- Tests ------------------------------------------------------------------
+
+describe('AppShell routing (Paperloop Phase 1)', () => {
+  it('renders TodayPage at / for an authenticated user (new default landing)', async () => {
+    renderAt('/', { user: AUTHED_USER, loading: false });
+    // TodayPage resolves its lazy chunk + loading state, then renders the greeting.
+    expect(await screen.findByText(/welcome back/i)).toBeInTheDocument();
+    // The Community/Subjects WebGL page must NOT be what mounts at / anymore.
+    expect(screen.queryByText(/loading your dashboard/i)).not.toBeInTheDocument();
+  });
+
+  it('renders ReviewPageRoute at /review for an authenticated user (preserved route)', async () => {
+    renderAt('/review', { user: AUTHED_USER, loading: false });
+    expect(await screen.findByText('REVIEW PAGE CONTENT')).toBeInTheDocument();
+  });
+
+  it('redirects an unauthenticated user at / to /login', async () => {
+    renderAt('/', { user: null, loading: false });
+    // ProtectedRoute bounces to /login; the (stubbed) Login page mounts.
+    expect(await screen.findByText('LOGIN PAGE CONTENT')).toBeInTheDocument();
+    // The protected TodayPage greeting must never appear for an unauthed visitor.
+    expect(screen.queryByText(/welcome back/i)).not.toBeInTheDocument();
+  });
+});

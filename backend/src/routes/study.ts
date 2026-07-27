@@ -39,7 +39,7 @@ interface Sm2Result {
   due_at: string;
 }
 
-function computeSm2(prev: Sm2State, quality: number): Sm2Result {
+export function computeSm2(prev: Sm2State, quality: number): Sm2Result {
   const { interval_days: prevInterval } = prev;
   let { ease_factor: ease, repetitions } = prev;
 

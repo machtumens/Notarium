@@ -1,12 +1,12 @@
 import { useEffect, useState, Suspense } from 'react';
+import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import api from '../lib/api';
 import { safePhotoUrl } from '../lib/safeUrl';
-import type { Subject } from '../types';
-import LoadingSpinner from '../components/LoadingSpinner';
+import LoadingSpinner from './LoadingSpinner';
 import { darkThemeStyles } from '../theme';
 import { useTheme } from '../hooks/useTheme';
-import { ExpandableTabs } from '../components/ui/expandable-tabs';
-import { BeamsBackground } from '../components/ui/beams-background';
+import { ExpandableTabs } from './ui/expandable-tabs';
+import { BeamsBackground } from './ui/beams-background';
 import {
   Book,
   MessageSquare,
@@ -16,35 +16,27 @@ import {
   BookOpen,
   Bell,
   GraduationCap,
+  Home,
+  ClipboardList,
 } from 'lucide-react';
-import NotificationPanel from '../components/NotificationPanel';
-import { useAuth } from './AuthContext';
-import {
-  SubjectsPage,
-  SubjectNotesPage,
-  LeaderboardPage,
-  ChatPage,
-  AdminPage,
-  OpsDashboard,
-  ProfileEditor,
-  ProfileStats,
-  FoundersModal,
-} from './lazyPages';
-import { canModerate, canOps } from './roles';
+import NotificationPanel from './NotificationPanel';
+import { useAuth } from '../app/AuthContext';
+import { ProfileEditor, ProfileStats, FoundersModal } from '../app/lazyPages';
+import { canModerate, canOps } from '../app/roles';
 
-export function HomePage() {
+// AppShell is the persistent application layout: fixed nav, ExpandableTabs bottom
+// nav, mobile hamburger menu, notification bell, profile modals, warning/suspension
+// banners, footer, and the BeamsBackground. All page content is rendered by the
+// router via <Outlet />. Extracted from the former HomePage.tsx tab-state shell in
+// the Paperloop Phase 1 route migration — behavior-preserving.
+export function AppShell() {
   const { user, logout } = useAuth();
   const { currentTheme } = useTheme();
-  const [currentPage, setCurrentPage] = useState<
-    'subjects' | 'subject-notes' | 'leaderboard' | 'chat' | 'admin' | 'ops'
-  >('subjects');
-  const [currentSubject, setCurrentSubject] = useState<Subject | null>(null);
-  const [loading, setLoading] = useState(true);
+  const navigate = useNavigate();
+  const location = useLocation();
   const [showProfileEditor, setShowProfileEditor] = useState(false);
   const [showProfileStats, setShowProfileStats] = useState(false);
   const [showFoundersModal, setShowFoundersModal] = useState(false);
-  const [_subjects, setSubjects] = useState<Subject[]>([]);
-  const [_searchQuery, _setSearchQuery] = useState('');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 640);
   const [, forceUpdate] = useState({});
@@ -58,25 +50,6 @@ export function HomePage() {
     window.addEventListener('themeChange', handleThemeChange);
     return () => window.removeEventListener('themeChange', handleThemeChange);
   }, []);
-
-  const handleSelectSubject = (subject: Subject) => {
-    setCurrentSubject(subject);
-    setCurrentPage('subject-notes');
-  };
-
-  const handleBackToSubjects = () => {
-    setCurrentPage('subjects');
-    setCurrentSubject(null);
-  };
-
-  const loadSubjects = async () => {
-    try {
-      const data = await api.getSubjects();
-      setSubjects(data.subjects || []);
-    } catch (error) {
-      console.error('Failed to load subjects:', error);
-    }
-  };
 
   useEffect(() => {
     const handleResize = () => {
@@ -93,18 +66,18 @@ export function HomePage() {
     setIsMobileMenuOpen(false);
   };
 
-  const navigateTo = (page: typeof currentPage, subject?: Subject) => {
-    if (subject) {
-      setCurrentSubject(subject);
-    }
-    setCurrentPage(page);
+  // Navigate to a URL route and close the mobile menu (replaces the former
+  // tab-state navigateTo helper).
+  const go = (path: string) => {
+    navigate(path);
     closeMobileMenu();
   };
 
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- loader sets loading/data state on mount; behavior-preserving
-    loadSubjects();
-  }, []);
+  // Active-tab highlighting is derived from the current URL pathname instead of
+  // the removed currentPage state.
+  const path = location.pathname;
+  const isActive = (target: string) =>
+    target === '/' ? path === '/' : path === target || path.startsWith(`${target}/`);
 
   useEffect(() => {
     if (!user) return;
@@ -174,10 +147,7 @@ export function HomePage() {
           {/* Logo with Text - Desktop only */}
           {!isMobile && (
             <button
-              onClick={() => {
-                navigateTo('subjects');
-                setCurrentSubject(null);
-              }}
+              onClick={() => go('/')}
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -219,10 +189,7 @@ export function HomePage() {
           {/* Mobile Logo */}
           {isMobile && (
             <button
-              onClick={() => {
-                navigateTo('subjects');
-                setCurrentSubject(null);
-              }}
+              onClick={() => go('/')}
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -250,9 +217,11 @@ export function HomePage() {
               <ExpandableTabs
                 className="bg-black/95 border-white/10 backdrop-blur-xl shadow-2xl"
                 tabs={[
-                  { title: 'Subjects', icon: Book },
+                  { title: 'Today', icon: Home },
+                  { title: 'Community', icon: Book },
+                  { title: 'Progress', icon: Trophy },
                   { title: 'Chat', icon: MessageSquare },
-                  { title: 'Leaderboard', icon: Trophy },
+                  { title: 'Tests', icon: ClipboardList },
                   { title: 'Review', icon: GraduationCap },
                   ...(canModerate(user) ? [{ title: 'Admin', icon: Settings }] : []),
                   ...(canOps(user) ? [{ title: 'Ops', icon: Settings }] : []),
@@ -263,25 +232,23 @@ export function HomePage() {
                 onChange={(index) => {
                   if (index === null) return;
 
-                  const pages = ['subjects', 'chat', 'leaderboard'];
-                  const reviewIndex = 3;
-                  let cursor = 4;
+                  // Fixed leading tabs (indices 0..5).
+                  const paths = ['/', '/community', '/progress', '/chat', '/quiz', '/review'];
+                  let cursor = paths.length; // 6
                   const adminIndex = canModerate(user) ? cursor++ : -1;
                   const opsIndex = canOps(user) ? cursor++ : -1;
                   // cursor now points at the separator; My Notes is one past it.
                   const myNotesIndex = cursor + 1;
                   const logoutIndex = myNotesIndex + 1;
 
-                  if (index < pages.length) {
-                    navigateTo(pages[index] as typeof currentPage);
-                  } else if (index === reviewIndex) {
-                    window.location.href = '/review';
+                  if (index < paths.length) {
+                    go(paths[index]);
                   } else if (index === adminIndex) {
-                    navigateTo('admin');
+                    go('/admin');
                   } else if (index === opsIndex) {
-                    navigateTo('ops');
+                    go('/ops');
                   } else if (index === myNotesIndex) {
-                    window.location.href = '/my-notes';
+                    go('/my-notes');
                   } else if (index === logoutIndex) {
                     logout();
                   }
@@ -781,12 +748,11 @@ export function HomePage() {
               }}
             >
               <button
-                onClick={() => navigateTo('subjects')}
+                onClick={() => go('/')}
                 style={{
                   width: '100%',
                   padding: '12px 16px',
-                  background:
-                    currentPage === 'subjects' ? currentTheme.colors.accent : 'transparent',
+                  background: isActive('/') ? currentTheme.colors.accent : 'transparent',
                   border: 'none',
                   color: '#fff',
                   cursor: 'pointer',
@@ -800,23 +766,21 @@ export function HomePage() {
                   gap: '12px',
                 }}
                 onMouseOver={(e) =>
-                  !currentPage.includes('subjects') &&
-                  (e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)')
+                  !isActive('/') && (e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)')
                 }
                 onMouseOut={(e) =>
-                  !currentPage.includes('subjects') &&
-                  (e.currentTarget.style.background = 'transparent')
+                  !isActive('/') && (e.currentTarget.style.background = 'transparent')
                 }
               >
-                <i className="fas fa-book" style={{ width: '20px' }}></i>Subjects
+                <i className="fas fa-home" style={{ width: '20px' }}></i>Today
               </button>
 
               <button
-                onClick={() => navigateTo('chat')}
+                onClick={() => go('/community')}
                 style={{
                   width: '100%',
                   padding: '12px 16px',
-                  background: currentPage === 'chat' ? currentTheme.colors.accent : 'transparent',
+                  background: isActive('/community') ? currentTheme.colors.accent : 'transparent',
                   border: 'none',
                   color: '#fff',
                   cursor: 'pointer',
@@ -830,23 +794,51 @@ export function HomePage() {
                   gap: '12px',
                 }}
                 onMouseOver={(e) =>
-                  currentPage !== 'chat' &&
+                  !isActive('/community') &&
                   (e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)')
                 }
                 onMouseOut={(e) =>
-                  currentPage !== 'chat' && (e.currentTarget.style.background = 'transparent')
+                  !isActive('/community') && (e.currentTarget.style.background = 'transparent')
+                }
+              >
+                <i className="fas fa-book" style={{ width: '20px' }}></i>Community
+              </button>
+
+              <button
+                onClick={() => go('/chat')}
+                style={{
+                  width: '100%',
+                  padding: '12px 16px',
+                  background: isActive('/chat') ? currentTheme.colors.accent : 'transparent',
+                  border: 'none',
+                  color: '#fff',
+                  cursor: 'pointer',
+                  fontSize: '15px',
+                  fontWeight: '500',
+                  transition: currentTheme.transitions.default,
+                  borderRadius: currentTheme.borderRadius.md,
+                  textAlign: 'left',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '12px',
+                }}
+                onMouseOver={(e) =>
+                  !isActive('/chat') &&
+                  (e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)')
+                }
+                onMouseOut={(e) =>
+                  !isActive('/chat') && (e.currentTarget.style.background = 'transparent')
                 }
               >
                 <i className="fas fa-comments" style={{ width: '20px' }}></i>Chat
               </button>
 
               <button
-                onClick={() => navigateTo('leaderboard')}
+                onClick={() => go('/progress')}
                 style={{
                   width: '100%',
                   padding: '12px 16px',
-                  background:
-                    currentPage === 'leaderboard' ? currentTheme.colors.accent : 'transparent',
+                  background: isActive('/progress') ? currentTheme.colors.accent : 'transparent',
                   border: 'none',
                   color: '#fff',
                   cursor: 'pointer',
@@ -860,26 +852,22 @@ export function HomePage() {
                   gap: '12px',
                 }}
                 onMouseOver={(e) =>
-                  currentPage !== 'leaderboard' &&
+                  !isActive('/progress') &&
                   (e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)')
                 }
                 onMouseOut={(e) =>
-                  currentPage !== 'leaderboard' &&
-                  (e.currentTarget.style.background = 'transparent')
+                  !isActive('/progress') && (e.currentTarget.style.background = 'transparent')
                 }
               >
-                <i className="fas fa-trophy" style={{ width: '20px' }}></i>Leaderboard
+                <i className="fas fa-trophy" style={{ width: '20px' }}></i>Progress
               </button>
 
               <button
-                onClick={() => {
-                  closeMobileMenu();
-                  window.location.href = '/review';
-                }}
+                onClick={() => go('/quiz')}
                 style={{
                   width: '100%',
                   padding: '12px 16px',
-                  background: 'transparent',
+                  background: isActive('/quiz') ? currentTheme.colors.accent : 'transparent',
                   border: 'none',
                   color: '#fff',
                   cursor: 'pointer',
@@ -892,20 +880,53 @@ export function HomePage() {
                   alignItems: 'center',
                   gap: '12px',
                 }}
-                onMouseOver={(e) => (e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)')}
-                onMouseOut={(e) => (e.currentTarget.style.background = 'transparent')}
+                onMouseOver={(e) =>
+                  !isActive('/quiz') &&
+                  (e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)')
+                }
+                onMouseOut={(e) =>
+                  !isActive('/quiz') && (e.currentTarget.style.background = 'transparent')
+                }
+              >
+                <i className="fas fa-clipboard-list" style={{ width: '20px' }}></i>Tests
+              </button>
+
+              <button
+                onClick={() => go('/review')}
+                style={{
+                  width: '100%',
+                  padding: '12px 16px',
+                  background: isActive('/review') ? currentTheme.colors.accent : 'transparent',
+                  border: 'none',
+                  color: '#fff',
+                  cursor: 'pointer',
+                  fontSize: '15px',
+                  fontWeight: '500',
+                  transition: currentTheme.transitions.default,
+                  borderRadius: currentTheme.borderRadius.md,
+                  textAlign: 'left',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '12px',
+                }}
+                onMouseOver={(e) =>
+                  !isActive('/review') &&
+                  (e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)')
+                }
+                onMouseOut={(e) =>
+                  !isActive('/review') && (e.currentTarget.style.background = 'transparent')
+                }
               >
                 <i className="fas fa-graduation-cap" style={{ width: '20px' }}></i>Review
               </button>
 
               {canModerate(user) && (
                 <button
-                  onClick={() => navigateTo('admin')}
+                  onClick={() => go('/admin')}
                   style={{
                     width: '100%',
                     padding: '12px 16px',
-                    background:
-                      currentPage === 'admin' ? currentTheme.colors.accent : 'transparent',
+                    background: isActive('/admin') ? currentTheme.colors.accent : 'transparent',
                     border: 'none',
                     color: '#fff',
                     cursor: 'pointer',
@@ -919,11 +940,11 @@ export function HomePage() {
                     gap: '12px',
                   }}
                   onMouseOver={(e) =>
-                    currentPage !== 'admin' &&
+                    !isActive('/admin') &&
                     (e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)')
                   }
                   onMouseOut={(e) =>
-                    currentPage !== 'admin' && (e.currentTarget.style.background = 'transparent')
+                    !isActive('/admin') && (e.currentTarget.style.background = 'transparent')
                   }
                 >
                   <i className="fas fa-cog" style={{ width: '20px' }}></i>Admin
@@ -932,11 +953,11 @@ export function HomePage() {
 
               {canOps(user) && (
                 <button
-                  onClick={() => navigateTo('ops')}
+                  onClick={() => go('/ops')}
                   style={{
                     width: '100%',
                     padding: '12px 16px',
-                    background: currentPage === 'ops' ? currentTheme.colors.accent : 'transparent',
+                    background: isActive('/ops') ? currentTheme.colors.accent : 'transparent',
                     border: 'none',
                     color: '#fff',
                     cursor: 'pointer',
@@ -950,11 +971,11 @@ export function HomePage() {
                     gap: '12px',
                   }}
                   onMouseOver={(e) =>
-                    currentPage !== 'ops' &&
+                    !isActive('/ops') &&
                     (e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)')
                   }
                   onMouseOut={(e) =>
-                    currentPage !== 'ops' && (e.currentTarget.style.background = 'transparent')
+                    !isActive('/ops') && (e.currentTarget.style.background = 'transparent')
                   }
                 >
                   <i className="fas fa-chart-line" style={{ width: '20px' }}></i>Ops
@@ -972,10 +993,7 @@ export function HomePage() {
 
               {/* My Notes Button */}
               <button
-                onClick={() => {
-                  closeMobileMenu();
-                  window.location.href = '/my-notes';
-                }}
+                onClick={() => go('/my-notes')}
                 style={{
                   width: '100%',
                   padding: '12px 16px',
@@ -1040,11 +1058,7 @@ export function HomePage() {
                 transition: currentTheme.transitions.default,
                 marginTop: 'auto',
               }}
-              onClick={() => {
-                navigateTo('subjects');
-                setCurrentSubject(null);
-                closeMobileMenu();
-              }}
+              onClick={() => go('/')}
               onMouseOver={(e) => {
                 e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
               }}
@@ -1092,35 +1106,11 @@ export function HomePage() {
           </div>
         )}
 
-        {/* Main Content */}
+        {/* Main Content — rendered by the router */}
         <main
           style={{ marginTop: isMobile ? '78px' : '92px', padding: isMobile ? '16px' : '32px' }}
         >
-          {currentPage === 'subjects' && (
-            <SubjectsPage
-              onSelectSubject={handleSelectSubject}
-              isLoading={loading}
-              setIsLoading={setLoading}
-            />
-          )}
-
-          {currentPage === 'subject-notes' && (
-            <SubjectNotesPage
-              subject={currentSubject}
-              onBack={handleBackToSubjects}
-              isLoading={loading}
-              setIsLoading={setLoading}
-            />
-          )}
-
-          {currentPage === 'leaderboard' && (
-            <LeaderboardPage isLoading={loading} setIsLoading={setLoading} />
-          )}
-
-          {currentPage === 'chat' && <ChatPage />}
-
-          {currentPage === 'admin' && canModerate(user) && <AdminPage />}
-          {currentPage === 'ops' && canOps(user) && <OpsDashboard />}
+          <Outlet />
         </main>
 
         {/* Profile Stats Modal - Mobile only */}
