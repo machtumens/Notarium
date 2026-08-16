@@ -33,12 +33,21 @@ Files actually modified:
 
 ## Phase 2 — My Library + Process Inbox
 
-Status: PLANNED (stub)
-Claimed files:
+Status: DONE
+EVL: ALL GATES PASS (2026-08-16) — frontend 28/28 (was 26/26), backend 187/187 (was 184/184), tsc clean x2
+Browser check (agent-probe rows: already-processed card, full capture→OCR→confirm→redirect, summary-never-empty-content, quiz-caching): NOT run this closeout — no live dev-server/browser session available; recorded as verification-pending in `phase-2-library-process_REPORT_25-07-26.md` (backlog NOTEs)
+Claimed files (corrected + expanded during PLAN-SUPPLEMENT; original stub claimed only 3 files) — all actually modified as claimed, no deviations:
 
 - src/pages/ProcessPage.tsx (CREATE)
-- src/app/AppRoutes.tsx (MODIFY — add /notes/:id/process route; sequenced AFTER Phase 1)
-- src/app/lazyPages.ts (MODIFY — ProcessPage export; sequenced AFTER Phase 1)
+- src/pages/CaptureNotePage.tsx (CREATE — added during supplement; capture entry route)
+- src/app/AppRoutes.tsx (MODIFY — add /notes/capture and /notes/:id/process routes, both standalone outside AppShell; sequenced AFTER Phase 1)
+- src/app/lazyPages.ts (MODIFY — ProcessPage + CaptureNotePage exports; sequenced AFTER Phase 1)
+- src/app/**tests**/appshell-routing.test.tsx (MODIFY — added during supplement; routing smoke tests for both new standalone routes; sequenced AFTER Phase 1's CREATE)
+- src/lib/api.ts (MODIFY — added during supplement; new `notes.getNote(id)` client method + `NoteDetail` local type)
+- backend/src/routes/notes.ts (MODIFY — added during supplement; new `getNote` handler, inserted after `getNotesBySubject`)
+- backend/src/index.ts (MODIFY — added during supplement; new `GET /api/notes/:id` if-block; sequenced BEFORE Phase 4's chat-removal/quiz-route edits and Phase 5's primer-route edit to the same file)
+- backend/test/red-team/G-idor.test.ts (MODIFY — added during supplement; 2 new ownership cases for GET /api/notes/:id)
+- backend/test/red-team/I-chat-study.test.ts (MODIFY — added during supplement; 1 new case proving note_id-scoped study_items upsert; sequenced BEFORE Phase 4's SPLIT of this file — the new case stays in the "study half" Phase 4 keeps)
 
 ---
 
@@ -67,8 +76,8 @@ Claimed files:
 - src/components/AppShell.tsx (MODIFY — remove chat tab, add Tests tab; sequenced AFTER Phase 3)
 - backend/src/routes/chat.ts (DELETE)
 - backend/src/routes/ai.ts (MODIFY — remove chatWithGemini; add generateQuiz endpoint)
-- backend/src/index.ts (MODIFY — remove chat if-blocks; add /api/ai/quiz if-block)
-- backend/test/red-team/I-chat-study.test.ts (SPLIT — keep study half)
+- backend/src/index.ts (MODIFY — remove chat if-blocks; add /api/ai/quiz if-block; sequenced AFTER Phase 2's GET /api/notes/:id if-block addition to the same file)
+- backend/test/red-team/I-chat-study.test.ts (SPLIT — keep study half; must preserve Phase 2's note_id/study_items case in the retained half)
 
 ---
 
@@ -93,6 +102,10 @@ src/components/AppShell.tsx claimed by Phase 1 (CREATE), Phase 3 (MODIFY label),
 
 backend/src/routes/ai.ts claimed by Phase 4 (remove chat) and Phase 5 (add primer). Sequential execution required.
 
-backend/src/index.ts claimed by Phase 4 (chat removal + quiz route) and Phase 5 (primer route). Sequential execution required.
+backend/src/index.ts claimed by Phase 2 (new GET /api/notes/:id if-block), Phase 4 (chat removal + quiz route) and Phase 5 (primer route). Sequential execution required — Phase 2 executes first in program order, so its if-block addition is safely in place before Phase 4/5 touch the same file.
+
+backend/test/red-team/I-chat-study.test.ts claimed by Phase 2 (MODIFY — add note_id/study_items case) and Phase 4 (SPLIT — keep study half). Sequential execution required; Phase 4's split must preserve Phase 2's new case in the retained "study half."
+
+src/app/**tests**/appshell-routing.test.tsx claimed by Phase 1 (CREATE) and Phase 2 (MODIFY — add 2 new standalone-route smoke tests). Sequential execution prevents conflicts.
 
 No conflicts within any single phase. All multi-phase conflicts are resolved by sequential execution order.

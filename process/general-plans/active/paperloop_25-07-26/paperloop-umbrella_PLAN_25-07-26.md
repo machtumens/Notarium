@@ -229,13 +229,13 @@ This inner loop SKIPS SPEC — SPEC runs once in the outer program loop only.
 
 ## Program Status Table
 
-| Phase                           | Status                                                            |
-| ------------------------------- | ----------------------------------------------------------------- |
-| 01 — Shell + Today              | ✅ COMPLETE — EVL PASS (browser C8/C9 waived, accepted known-gap) |
-| 02 — My Library + Process Inbox | ⏳ PLANNED (stub)                                                 |
-| 03 — Community + Progress       | ⏳ PLANNED (stub)                                                 |
-| 04 — Quiz + Test Simulator      | ⏳ PLANNED (stub)                                                 |
-| 05 — Primer                     | ⏳ PLANNED (stub)                                                 |
+| Phase                           | Status                                                                                              |
+| ------------------------------- | --------------------------------------------------------------------------------------------------- |
+| 01 — Shell + Today              | ✅ COMPLETE — EVL PASS (browser C8/C9 waived, accepted known-gap)                                   |
+| 02 — My Library + Process Inbox | ✅ COMPLETE — EVL PASS (4 agent-probe browser rows verification-pending, accepted as backlog NOTEs) |
+| 03 — Community + Progress       | ⏳ PLANNED (stub)                                                                                   |
+| 04 — Quiz + Test Simulator      | ⏳ PLANNED (stub)                                                                                   |
+| 05 — Primer                     | ⏳ PLANNED (stub)                                                                                   |
 
 Status values: ⏳ PLANNED | 🔨 PLAN WRITTEN | 🧪 TESTING | ✅ VERIFIED (user confirmed working) | 🚧 BLOCKED | ✅ COMPLETE
 
@@ -349,17 +349,21 @@ Phase 1 adds the first routing smoke tests for AppShell and AppRoutes. This is t
 
 ## Current Execution State
 
-Last updated: 2026-07-26
-Current phase: Phase 2 of 5 — My Library + Process Inbox
+Last updated: 2026-08-16
+Current phase: Phase 3 of 5 — Community + Progress
 Phase 1 name: Shell + Today
 Phase 1 status: ✅ COMPLETE
 Phase 1 EVL: ALL GATES PASS — frontend 26/26, backend 184/184, tsc clean x2; browser C8/C9 waived by user (accepted known-gap)
 Phase 1 report: process/general-plans/active/paperloop_25-07-26/phase-1-shell-today_REPORT_25-07-26.md
-Next phase: Phase 2 — My Library + Process Inbox — Step 0 RESEARCH
-Validate-contract status: Phase 1 = CONDITIONAL (accepted, inner-pvl: phase-1); Phases 2–5 = pending
+Phase 2 name: My Library + Process Inbox
+Phase 2 status: ✅ COMPLETE
+Phase 2 EVL: ALL GATES PASS — frontend 28/28 (was 26/26), backend 187/187 (was 184/184), tsc clean x2; 4 agent-probe browser rows verification-pending (accepted, backlog NOTEs — see report)
+Phase 2 report: process/general-plans/active/paperloop_25-07-26/phase-2-library-process_REPORT_25-07-26.md
+Next phase: Phase 3 — Community + Progress — Step 0 RESEARCH
+Validate-contract status: Phase 1 = CONDITIONAL (accepted, inner-pvl: phase-1); Phase 2 = CONDITIONAL (accepted, inner-pvl: phase-2); Phases 3–5 = pending
 
 Loop step values: RESEARCH | INNOVATE | PLAN-SUPPLEMENT | PVL | EXECUTE | EVL | UPDATE-PROCESS
-Orchestrator rule: Phase 1 is DONE. Spawn vc-research-agent for Phase 2. Pass `phase-2-library-process_PLAN_25-07-26.md` explicitly. Phase 1 execution commit is pending (separate from this process commit — see hard safety constraint: keep process and execution commits separate).
+Orchestrator rule: Phase 1 and Phase 2 are DONE. Spawn vc-research-agent for Phase 3. Pass `phase-3-community-progress_PLAN_25-07-26.md` explicitly. Phase 1 execution commit is ALREADY MADE (172c7ca — corrected 2026-08-16; the prior note claiming it was "pending" was stale). Phase 2 execution commit is pending (separate from this process commit — see hard safety constraint: keep process and execution commits separate).
 
 ---
 
