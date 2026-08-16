@@ -41,6 +41,30 @@ describe('G. IDOR / object security (111-120)', () => {
     expect(res.status).toBe(403);
   });
 
+  it('114. GET /api/notes/:id returns 200 with the note body for its owner', async () => {
+    const owner = await seedUser();
+    const subj = await seedSubject();
+    const noteId = await seedNote(owner.id, subj, { title: 'My Private Note' });
+    const res = await call(`/api/notes/${noteId}`, { token: owner.token });
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as any;
+    expect(json.note).toBeDefined();
+    expect(json.note.id).toBe(noteId);
+    expect(json.note.title).toBe('My Private Note');
+    expect(json.note.subject_id).toBe(subj);
+    // author_id must never leak — ownership is checked server-side then stripped.
+    expect(json.note.author_id).toBeUndefined();
+  });
+
+  it('115. GET /api/notes/:id returns 403 for a non-owner (IDOR)', async () => {
+    const owner = await seedUser();
+    const attacker = await seedUser();
+    const subj = await seedSubject();
+    const noteId = await seedNote(owner.id, subj);
+    const res = await call(`/api/notes/${noteId}`, { token: attacker.token });
+    expect(res.status).toBe(403);
+  });
+
   it('117. a non-numeric note id does not match the route (404)', async () => {
     const u = await seedUser();
     const res = await call('/api/notes/not-a-number', { method: 'DELETE', token: u.token });

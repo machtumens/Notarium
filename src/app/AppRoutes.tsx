@@ -21,6 +21,8 @@ import {
   ChatPage,
   AdminPage,
   OpsDashboard,
+  ProcessPage,
+  CaptureNotePage,
 } from './lazyPages';
 
 // Placeholder route for the upcoming Tests/quiz feature. Renders a "Coming soon"
@@ -98,6 +100,22 @@ export function AppRoutes() {
           element={
             <ProtectedRoute>
               <ReviewPageRoute />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/notes/capture"
+          element={
+            <ProtectedRoute>
+              <CaptureNotePage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/notes/:id/process"
+          element={
+            <ProtectedRoute>
+              <ProcessPage />
             </ProtectedRoute>
           }
         />

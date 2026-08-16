@@ -55,6 +55,20 @@ const setToken = (token: string) => {
   }
 };
 
+// Single-note detail shape returned by GET /api/notes/:id. Kept local to the
+// api/process surface (not added to the shared `Note` type) because it carries
+// `status` and nullable fields the community-facing `Note` does not model.
+export interface NoteDetail {
+  id: number;
+  title: string;
+  extracted_text: string | null;
+  description: string | null;
+  image_path: string | null;
+  summary: string | null;
+  status: string | null;
+  subject_id: number;
+}
+
 export const api = {
   // ponytail: default T = any so the many legacy untyped callers (response.foo)
   // keep working; typed callers still pass an explicit <T> and get full safety.
@@ -214,6 +228,8 @@ export const api = {
         method: 'POST',
         body: note,
       }),
+    getNote: (id: number): Promise<{ note: NoteDetail }> =>
+      api.request<{ note: NoteDetail }>(`/api/notes/${id}`, { method: 'GET' }),
   },
 
   getNotes: (): Promise<NotesResponse> => api.request<NotesResponse>('/api/notes'),

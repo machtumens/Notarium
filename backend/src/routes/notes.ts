@@ -70,6 +70,46 @@ export async function getNotesBySubject(subjectId: string, request: Request, env
   return jsonResponse({ notes: results });
 }
 
+export async function getNote(noteId: string, request: Request, env: Env) {
+  try {
+    const user = await getOrCreateUser(request, env);
+
+    // Select author_id alongside the returned fields so ownership can be checked
+    // without a second query; it is stripped before the note is returned.
+    const note = (await env.DB.prepare(
+      'SELECT id, title, extracted_text, description, image_path, summary, status, subject_id, author_id FROM notes WHERE id = ?',
+    )
+      .bind(noteId)
+      .first()) as any;
+
+    if (!note) {
+      return jsonResponse({ error: 'Note not found' }, 404);
+    }
+
+    // IDOR guard: ownership MUST short-circuit before any note data is returned.
+    if (note.author_id !== user.id) {
+      return jsonResponse({ error: 'Unauthorized - You can only view your own notes' }, 403);
+    }
+
+    return jsonResponse({
+      note: {
+        id: note.id,
+        title: note.title,
+        extracted_text: note.extracted_text,
+        description: note.description,
+        image_path: note.image_path,
+        summary: note.summary,
+        status: note.status,
+        subject_id: note.subject_id,
+      },
+    });
+  } catch (error: any) {
+    console.error('getNote error:', error);
+    if (error?.message === 'Unauthorized') return jsonResponse({ error: 'Unauthorized' }, 401);
+    return jsonResponse({ error: 'Internal server error' }, 500);
+  }
+}
+
 export async function searchNotes(query: string, request: Request, env: Env) {
   // Requires auth (matches the app's login-gated model); class-visibility
   // scoping uses the authenticated user's class.

@@ -52,6 +52,16 @@ vi.mock('../../pages/ReviewPage', () => ({
 vi.mock('../../pages/Login', () => ({
   default: () => <div>LOGIN PAGE CONTENT</div>,
 }));
+// Paperloop Phase 2 standalone routes. Sentinel-mock the page bodies themselves
+// (not just api.notes.getNote) — ProcessPage self-fetches a note and
+// CaptureNotePage mounts CameraCapture (navigator.mediaDevices, absent in jsdom),
+// neither of which this pure routing test should exercise.
+vi.mock('../../pages/ProcessPage', () => ({
+  default: () => <div>PROCESS PAGE CONTENT</div>,
+}));
+vi.mock('../../pages/CaptureNotePage', () => ({
+  default: () => <div>CAPTURE PAGE CONTENT</div>,
+}));
 
 import { AppRoutes } from '../AppRoutes';
 import { AuthContext } from '../AuthContext';
@@ -115,5 +125,15 @@ describe('AppShell routing (Paperloop Phase 1)', () => {
     expect(await screen.findByText('LOGIN PAGE CONTENT')).toBeInTheDocument();
     // The protected TodayPage greeting must never appear for an unauthed visitor.
     expect(screen.queryByText(/welcome back/i)).not.toBeInTheDocument();
+  });
+
+  it('renders CaptureNotePage at /notes/capture (standalone, no AppShell)', async () => {
+    renderAt('/notes/capture', { user: AUTHED_USER, loading: false });
+    expect(await screen.findByText('CAPTURE PAGE CONTENT')).toBeInTheDocument();
+  });
+
+  it('renders ProcessPage at /notes/:id/process (standalone, no AppShell)', async () => {
+    renderAt('/notes/123/process', { user: AUTHED_USER, loading: false });
+    expect(await screen.findByText('PROCESS PAGE CONTENT')).toBeInTheDocument();
   });
 });

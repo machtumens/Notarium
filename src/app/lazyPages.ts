@@ -19,3 +19,5 @@ export const ProfileStats = lazy(() => import('../components/ProfileStats'));
 export const FoundersModal = lazy(() => import('../components/FoundersModal'));
 export const AuthCallback = lazy(() => import('../pages/AuthCallback'));
 export const SettingsPage = lazy(() => import('../pages/SettingsPage'));
+export const ProcessPage = lazy(() => import('../pages/ProcessPage'));
+export const CaptureNotePage = lazy(() => import('../pages/CaptureNotePage'));

@@ -35,6 +35,7 @@ import {
   getNotesBySubject,
   searchNotes,
   createNote,
+  getNote,
   updateNoteSummary,
   toggleNoteLike,
   userUpdateNote,
@@ -765,6 +766,11 @@ export default {
 
       if (path === '/api/notes' && request.method === 'POST') {
         return await createNote(request, env);
+      }
+
+      if (path.match(/^\/api\/notes\/\d+$/) && request.method === 'GET') {
+        const noteId = path.split('/')[3];
+        return await getNote(noteId, request, env);
       }
 
       if (path.match(/^\/api\/notes\/\d+$/) && request.method === 'PUT') {

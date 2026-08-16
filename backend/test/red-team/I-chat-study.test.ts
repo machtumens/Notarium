@@ -3,10 +3,22 @@
 // every row to user.id. Cross-user session access must 404. AI-dependent replies
 // are not asserted (no keys); we assert ownership isolation + persistence + gating.
 import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
-import { applySchema, resetData, call, seedUser, env } from './helpers';
+import { applySchema, resetData, call, seedUser, seedSubject, seedNote, env } from './helpers';
 
 beforeAll(applySchema);
 beforeEach(resetData);
+
+// Mirror of backend/src/routes/study.ts hashQuestion (djb2-xor → base36). Kept in
+// sync here so the SRS test can assert the EXACT study_items.question_hash written
+// by the upsert path, not just that some row exists.
+function hashQuestion(text: string): string {
+  let h = 5381;
+  const s = text.trim().toLowerCase();
+  for (let i = 0; i < s.length; i++) {
+    h = ((h << 5) + h) ^ s.charCodeAt(i);
+  }
+  return (h >>> 0).toString(36);
+}
 
 async function makeSession(token: string) {
   const res = await call('/api/chat/sessions', {
@@ -70,6 +82,34 @@ describe('I. Chat & study (131-140)', () => {
       .bind(u.id)
       .first()) as any;
     expect(row.c).toBeGreaterThanOrEqual(1);
+  });
+
+  it('137. a note_id-scoped quiz attempt upserts a study_items row for that note (the real SRS write)', async () => {
+    const u = await seedUser();
+    const subj = await seedSubject();
+    const noteId = await seedNote(u.id, subj);
+    // Fresh, unique question_text → fresh question_hash → the INSERT path fires
+    // (which stores note_id), not the note_id-agnostic UPDATE path.
+    const questionText = `SRS write check for note ${noteId}: what is the capital of France?`;
+
+    const res = await call('/api/quiz/attempt', {
+      method: 'POST',
+      token: u.token,
+      body: { note_id: noteId, question_text: questionText, is_correct: true, confidence: 3 },
+    });
+    expect(res.status).toBeLessThan(300);
+
+    // The actual SRS card write: a study_items row keyed to (user, note_id) must
+    // now exist with the expected question_hash. This is stronger than the
+    // pre-existing quiz_attempts assertion in "136 & auth".
+    const row = (await env.DB.prepare(
+      'SELECT note_id, question_hash FROM study_items WHERE user_id = ? AND note_id = ?',
+    )
+      .bind(u.id, noteId)
+      .first()) as any;
+    expect(row, 'a study_items row was created for this note').toBeTruthy();
+    expect(row.note_id).toBe(noteId);
+    expect(row.question_hash).toBe(hashQuestion(questionText));
   });
 
   it('138. due reviews are scoped to the caller and return a due_count', async () => {
