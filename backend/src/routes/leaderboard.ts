@@ -12,10 +12,11 @@ export async function getLeaderboard(env: Env) {
       total_likes,
       total_admin_upvotes,
       learning_points,
+      current_streak,
       (notes_uploaded + total_likes + total_admin_upvotes) as points
     FROM users
     WHERE role != 'admin'
-    ORDER BY (notes_uploaded + total_likes + total_admin_upvotes) DESC, notes_uploaded DESC, total_likes DESC
+    ORDER BY learning_points DESC, current_streak DESC
     LIMIT 100
   `,
   ).all();

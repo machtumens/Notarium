@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
+import { Flame, Trophy, CalendarClock } from 'lucide-react';
 import api from '../lib/api';
 import { logger } from '../lib/logger';
 import { safePhotoUrl } from '../lib/safeUrl';
@@ -10,14 +11,21 @@ interface LeaderboardEntry {
   name?: string;
   display_name?: string;
   class?: string;
-  points?: number;
-  score?: number;
-  total_likes?: number;
   learning_points?: number;
   photo_url?: string;
 }
 
-type LeaderboardTab = 'contributors' | 'learners';
+interface PersonalStats {
+  current_streak: number;
+  learning_points: number;
+  due_count: number;
+}
+
+const EMPTY_PERSONAL_STATS: PersonalStats = {
+  current_streak: 0,
+  learning_points: 0,
+  due_count: 0,
+};
 
 interface LeaderboardPageProps {
   isLoading: boolean;
@@ -26,19 +34,17 @@ interface LeaderboardPageProps {
 
 export default function LeaderboardPage({ isLoading, setIsLoading }: LeaderboardPageProps) {
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
-  const [activeTab, setActiveTab] = useState<LeaderboardTab>('contributors');
-
-  const getContributionPoints = (entry: LeaderboardEntry): number =>
-    Math.max(0, entry.points || entry.score || entry.total_likes || 0);
+  // Personal study snapshot is fetched independently of the ranked list and has
+  // its OWN loading flag — the isLoading/setIsLoading props gate only the ranking.
+  const [personalStats, setPersonalStats] = useState<PersonalStats>(EMPTY_PERSONAL_STATS);
+  const [statsLoading, setStatsLoading] = useState(true);
 
   const getLearningPoints = (entry: LeaderboardEntry): number =>
     Math.max(0, entry.learning_points || 0);
 
-  const rankedLeaderboard = [...leaderboard].sort((a, b) =>
-    activeTab === 'learners'
-      ? getLearningPoints(b) - getLearningPoints(a)
-      : getContributionPoints(b) - getContributionPoints(a),
-  );
+  // Backend now returns the list already ordered by learning_points DESC, so no
+  // client-side re-sort is needed — render the server order directly, top 20.
+  const topEntries = leaderboard.slice(0, 20);
 
   useEffect(() => {
     const loadLeaderboard = async () => {
@@ -64,77 +70,147 @@ export default function LeaderboardPage({ isLoading, setIsLoading }: Leaderboard
     loadLeaderboard();
   }, [setIsLoading]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadStats = async () => {
+      try {
+        setStatsLoading(true);
+        const stats = await api.getStudyStats().catch(() => EMPTY_PERSONAL_STATS);
+        if (cancelled) return;
+        setPersonalStats({
+          current_streak: stats.current_streak || 0,
+          learning_points: stats.learning_points || 0,
+          due_count: stats.due_count || 0,
+        });
+      } catch (err) {
+        if (cancelled) return;
+        logger.error('leaderboard', 'Failed to load personal study stats', err);
+        setPersonalStats(EMPTY_PERSONAL_STATS);
+      } finally {
+        if (!cancelled) setStatsLoading(false);
+      }
+    };
+
+    loadStats();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const personalChips = [
+    {
+      key: 'streak',
+      icon: <Flame size={20} />,
+      value: personalStats.current_streak,
+      label: 'day streak',
+      color: '#f97316',
+    },
+    {
+      key: 'learning',
+      icon: <Trophy size={20} />,
+      value: personalStats.learning_points,
+      label: 'learning points',
+      color: '#22c55e',
+    },
+    {
+      key: 'due',
+      icon: <CalendarClock size={20} />,
+      value: personalStats.due_count,
+      label: 'cards due',
+      color: darkTheme.colors.accent,
+    },
+  ];
+
   return (
     <div>
       <h2
         style={{
           fontSize: '28px',
           fontWeight: 'bold',
-          marginBottom: '24px',
+          marginBottom: '8px',
           color: darkTheme.colors.textPrimary,
         }}
       >
-        Leaderboard
+        Progress
       </h2>
 
-      {/* Dimension toggle: contribution vs retrieval-based learning */}
-      <div
+      <p
         style={{
-          display: 'inline-flex',
-          gap: '4px',
-          padding: '4px',
-          marginBottom: '24px',
-          background: darkTheme.colors.bgSecondary,
-          border: `1px solid ${darkTheme.colors.borderColor}`,
-          borderRadius: darkTheme.borderRadius.lg,
+          margin: '0 0 20px 0',
+          fontSize: '13px',
+          color: darkTheme.colors.textSecondary,
         }}
       >
-        {(
-          [
-            { key: 'contributors', label: '🪙 Contributors' },
-            { key: 'learners', label: '🧠 Top Learners' },
-          ] as const
-        ).map((tab) => {
-          const isActive = activeTab === tab.key;
-          return (
-            <button
-              key={tab.key}
-              onClick={() => setActiveTab(tab.key)}
+        Peringkat berdasarkan poin belajar dari kuis & review — bukan sekadar unggah catatan.
+      </p>
+
+      {/* Personal study snapshot — reuses the existing /api/study/stats endpoint */}
+      <div
+        style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          gap: '12px',
+          marginBottom: '28px',
+        }}
+      >
+        {personalChips.map((chip) => (
+          <div
+            key={chip.key}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '12px',
+              padding: '12px 16px',
+              background: darkTheme.colors.bgSecondary,
+              border: `1px solid ${darkTheme.colors.borderColor}`,
+              borderRadius: darkTheme.borderRadius.md,
+              minWidth: '140px',
+            }}
+          >
+            <div
               style={{
-                padding: '8px 18px',
-                border: 'none',
-                borderRadius: darkTheme.borderRadius.md,
-                cursor: 'pointer',
-                fontSize: '14px',
-                fontWeight: '600',
-                transition: darkTheme.transitions.default,
-                background: isActive
-                  ? `linear-gradient(135deg, ${darkTheme.colors.accent}, #8b5cf6)`
-                  : 'transparent',
-                color: isActive ? '#fff' : darkTheme.colors.textSecondary,
+                width: '38px',
+                height: '38px',
+                borderRadius: '10px',
+                background: `${chip.color}22`,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: chip.color,
+                flexShrink: 0,
               }}
             >
-              {tab.label}
-            </button>
-          );
-        })}
+              {chip.icon}
+            </div>
+            <div>
+              <div
+                style={{
+                  fontSize: '22px',
+                  fontWeight: '800',
+                  lineHeight: 1,
+                  color: darkTheme.colors.textPrimary,
+                }}
+              >
+                {statsLoading ? '…' : chip.value}
+              </div>
+              <div
+                style={{
+                  fontSize: '12px',
+                  color: darkTheme.colors.textSecondary,
+                  marginTop: '4px',
+                }}
+              >
+                {chip.label}
+              </div>
+            </div>
+          </div>
+        ))}
       </div>
-
-      {activeTab === 'learners' && (
-        <p
-          style={{
-            margin: '-12px 0 20px 0',
-            fontSize: '13px',
-            color: darkTheme.colors.textSecondary,
-          }}
-        >
-          Peringkat berdasarkan poin belajar dari kuis & review — bukan sekadar unggah catatan.
-        </p>
-      )}
 
       {isLoading ? (
         <LoadingSpinner message="Loading leaderboard..." />
-      ) : leaderboard.length === 0 ? (
+      ) : topEntries.length === 0 ? (
         <div
           style={{
             textAlign: 'center',
@@ -154,13 +230,13 @@ export default function LeaderboardPage({ isLoading, setIsLoading }: Leaderboard
             } as React.CSSProperties
           }
         >
-          {rankedLeaderboard.slice(0, 20).map((entry, index) => (
+          {topEntries.map((entry, index) => (
             <div
               key={index}
               style={{
                 padding: '16px 20px',
                 borderBottom:
-                  index < rankedLeaderboard.length - 1
+                  index < topEntries.length - 1
                     ? `1px solid ${darkTheme.colors.borderColor}`
                     : 'none',
                 display: 'flex',
@@ -226,18 +302,16 @@ export default function LeaderboardPage({ isLoading, setIsLoading }: Leaderboard
                     justifyContent: 'flex-end',
                   }}
                 >
-                  <span style={{ fontSize: '18px' }}>{activeTab === 'learners' ? '🧠' : '🪙'}</span>
+                  <span style={{ fontSize: '18px' }}>🧠</span>
                   <p
                     style={{
                       margin: 0,
                       fontSize: '18px',
                       fontWeight: 'bold',
-                      color: activeTab === 'learners' ? '#22c55e' : darkTheme.colors.accent,
+                      color: '#22c55e',
                     }}
                   >
-                    {activeTab === 'learners'
-                      ? getLearningPoints(entry)
-                      : getContributionPoints(entry)}
+                    {getLearningPoints(entry)}
                   </p>
                 </div>
                 <p
@@ -247,20 +321,7 @@ export default function LeaderboardPage({ isLoading, setIsLoading }: Leaderboard
                     color: darkTheme.colors.textSecondary,
                   }}
                 >
-                  {activeTab === 'learners' ? 'learning points' : 'points'}
-                </p>
-                {/* Secondary dimension badge so both are always visible */}
-                <p
-                  style={{
-                    margin: '2px 0 0 0',
-                    fontSize: '11px',
-                    color: darkTheme.colors.textSecondary,
-                    opacity: 0.75,
-                  }}
-                >
-                  {activeTab === 'learners'
-                    ? `🪙 ${getContributionPoints(entry)} pts`
-                    : `🧠 ${getLearningPoints(entry)} LP`}
+                  learning points
                 </p>
               </div>
             </div>

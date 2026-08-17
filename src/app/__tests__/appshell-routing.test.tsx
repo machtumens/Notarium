@@ -37,6 +37,7 @@ const api = vi.hoisted(() => ({
     }),
   ),
   getDueReviews: vi.fn(() => Promise.resolve({ items: [], due_count: 0 })),
+  getLeaderboard: vi.fn(() => Promise.resolve({ leaderboard: [] })),
   request: vi.fn(() => Promise.resolve({ notes: [] })),
   notifications: {
     getUnreadCount: vi.fn(() => Promise.resolve({ count: 0 })),
@@ -99,6 +100,7 @@ beforeEach(() => {
     due_count: 0,
   });
   api.getDueReviews.mockResolvedValue({ items: [], due_count: 0 });
+  api.getLeaderboard.mockResolvedValue({ leaderboard: [] });
   api.request.mockResolvedValue({ notes: [] });
   api.notifications.getUnreadCount.mockResolvedValue({ count: 0 });
 });
@@ -135,5 +137,17 @@ describe('AppShell routing (Paperloop Phase 1)', () => {
   it('renders ProcessPage at /notes/:id/process (standalone, no AppShell)', async () => {
     renderAt('/notes/123/process', { user: AUTHED_USER, loading: false });
     expect(await screen.findByText('PROCESS PAGE CONTENT')).toBeInTheDocument();
+  });
+
+  it('renders ProgressRoute (LeaderboardPage) at /progress with the Progress heading and no Contributors/Learners toggle', async () => {
+    renderAt('/progress', { user: AUTHED_USER, loading: false });
+    // Assert the PAGE heading specifically (role-scoped). A plain findByText('Progress')
+    // would also match the AppShell sidebar's "Progress" nav <button>, which mounts
+    // inside the same shell layout — the heading role uniquely targets the <h2>.
+    expect(await screen.findByRole('heading', { name: 'Progress' })).toBeInTheDocument();
+    // The Contributors/Top Learners toggle was deleted — a single learning-ranked
+    // list renders, so neither toggle label is present anywhere on the page.
+    expect(screen.queryByText(/contributors/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/top learners/i)).not.toBeInTheDocument();
   });
 });
