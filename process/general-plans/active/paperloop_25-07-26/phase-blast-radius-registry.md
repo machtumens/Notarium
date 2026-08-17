@@ -94,14 +94,19 @@ Explicitly NOT touched (verified during PLAN-SUPPLEMENT, 17-08-26): `backend/tes
 
 ## Phase 5 — Primer
 
-Status: PLANNED (stub)
-Claimed files:
+Status: PLAN-SUPPLEMENT complete (17-08-26) — ready for PVL. EXECUTE transitively gated: sequenced AFTER Phase 4 EXECUTE commits (6 shared files below), and Phase 4 EXECUTE is itself HELD on its own separate concurrent-session pre-condition (see Phase 4 section above / umbrella `## Current Execution State`).
+Claimed files (corrected + expanded during PLAN-SUPPLEMENT 17-08-26 — original stub claimed 5 files and missed 4: `src/types/index.ts`, `backend/test/red-team/H-ai.test.ts`, `src/app/__tests__/appshell-routing.test.tsx` were entirely absent from the stub, and `backend/src/routes/ai.ts`'s claim was expanded from "add generatePrimer" to also cover `generatePrimerEndpoint`):
 
-- src/pages/PrimerPage.tsx (CREATE)
-- src/app/AppRoutes.tsx (MODIFY — add /primer route; sequenced AFTER Phase 3)
-- src/app/lazyPages.ts (MODIFY — PrimerPage export; sequenced AFTER Phase 3)
-- backend/src/routes/ai.ts (MODIFY — add generatePrimer; sequenced AFTER Phase 4 if same session)
-- backend/src/index.ts (MODIFY — add /api/ai/primer if-block; sequenced AFTER Phase 4)
+- src/pages/PrimerPage.tsx (CREATE — topic-input form, calls api.ai.generatePrimer, renders overview/key_concepts/questions, ephemeral)
+- src/pages/TodayPage.tsx (MODIFY — NEW claim, missed by original stub: add "Prep for class" card linking to /primer; placement TBD at EXECUTE, no new API call)
+- src/app/AppRoutes.tsx (MODIFY — add /primer route nested inside the AppShell layout-route block; sequenced AFTER Phase 4, SHARED file)
+- src/app/lazyPages.ts (MODIFY — PrimerPage lazy export; sequenced AFTER Phase 4, SHARED file)
+- src/lib/api.ts (MODIFY — NEW claim, missed by original stub: add `ai.generatePrimer` method inside the existing `ai: {...}` object; sequenced AFTER Phase 4, SHARED file — Phase 4 also modifies this same object with `generateStructuredQuiz`)
+- src/types/index.ts (MODIFY — NEW claim, missed by original stub: add `PrimerResponse` interface; sequenced AFTER Phase 4, SHARED file — Phase 4 also modifies this file, deleting Chat\* interfaces)
+- backend/src/routes/ai.ts (MODIFY — expanded claim: add `generatePrimer` (DeepSeek fetch, mirrors generateStudyPlan/explainConcept + generateQuiz's JSON-parse shape) AND `generatePrimerEndpoint` (mirrors generateStudyPlanEndpoint); sequenced AFTER Phase 4, SHARED file — Phase 4 also modifies this file, removing 3 chat helpers and adding generateStructuredQuiz/generateStructuredQuizEndpoint)
+- backend/src/index.ts (MODIFY — add /api/ai/primer if-block with requireUser+checkRateLimit wrapper, inserted after the existing /api/concept-explain if-block; sequenced AFTER Phase 4, SHARED file — Phase 4 also modifies this file, removing the chat import+5 if-blocks and adding /api/ai/quiz)
+- backend/test/red-team/H-ai.test.ts (MODIFY — NEW claim, missed by original stub: add /api/ai/primer to the '125 & auth' 401-path array + new 400-missing-topic test case; NOT shared with Phase 4 — Phase 4 does not touch this file)
+- src/app/**tests**/appshell-routing.test.tsx (MODIFY — NEW claim, missed by original stub: add /primer routing smoke test (sentinel-mock PrimerPage) + extend the existing `/` TodayPage case with a "Prep for class" card assertion; NOT shared with Phase 4's own edits to this file — Phase 4 does not touch appshell-routing.test.tsx either)
 
 ---
 
@@ -109,14 +114,20 @@ Claimed files:
 
 AppRoutes.tsx and lazyPages.ts are claimed by Phases 1, 2, 4, and 5. Sequencing rules enforce no concurrent writes — each phase executes after the previous one verifies. Phase 3 does NOT claim either file (verified during Phase 3 PLAN-SUPPLEMENT, 16-08-26: /progress already routes via Phase 1's ShellPageRoutes.tsx wrapper — no new route or lazy export needed). Phases 2 and 3 are fully parallel-safe (disjoint file sets).
 
-src/components/AppShell.tsx claimed by Phase 1 (CREATE) and Phase 4 (MODIFY tabs) — Phase 3 no longer claims this file (nav labels already landed in Phase 1; verified during Phase 3 PLAN-SUPPLEMENT, 16-08-26). Sequential execution prevents conflicts.
+src/components/AppShell.tsx claimed by Phase 1 (CREATE) and Phase 4 (MODIFY tabs) — Phase 3 no longer claims this file (nav labels already landed in Phase 1; verified during Phase 3 PLAN-SUPPLEMENT, 16-08-26). Phase 5 explicitly does NOT claim this file (Locked Decision 2 — Primer is a TodayPage card, not a nav tab; adding a second concurrent editor to AppShell's positionally-indexed tabs/paths arrays alongside Phase 4's own edit there was deliberately avoided). Sequential execution prevents conflicts.
 
-backend/src/routes/ai.ts claimed by Phase 4 (remove chat) and Phase 5 (add primer). Sequential execution required.
+backend/src/routes/ai.ts claimed by Phase 4 (remove chat, add generateStructuredQuiz/generateStructuredQuizEndpoint) and Phase 5 (add generatePrimer/generatePrimerEndpoint). Sequential execution required — Phase 5 sequenced AFTER Phase 4.
 
-backend/src/index.ts claimed by Phase 2 (new GET /api/notes/:id if-block), Phase 4 (chat removal + quiz route) and Phase 5 (primer route). Sequential execution required — Phase 2 executes first in program order, so its if-block addition is safely in place before Phase 4/5 touch the same file.
+backend/src/index.ts claimed by Phase 2 (new GET /api/notes/:id if-block), Phase 4 (chat removal + quiz route) and Phase 5 (primer route, inserted after the existing /api/concept-explain if-block). Sequential execution required — Phase 2 executes first in program order, so its if-block addition is safely in place before Phase 4/5 touch the same file; Phase 5 sequenced AFTER Phase 4.
 
-backend/test/red-team/I-chat-study.test.ts claimed by Phase 2 (MODIFY — add note_id/study_items case) and Phase 4 (SPLIT — keep study half). Sequential execution required; Phase 4's split must preserve Phase 2's new case in the retained "study half."
+src/lib/api.ts claimed by Phase 2 (notes.getNote), Phase 4 (delete chat block, add ai.generateStructuredQuiz), and Phase 5 (add ai.generatePrimer to the same `ai: {...}` object Phase 4 modifies). Sequential execution required — Phase 5 sequenced AFTER Phase 4 so both new `ai.*` methods land without a merge conflict on the same object literal.
 
-src/app/**tests**/appshell-routing.test.tsx claimed by Phase 1 (CREATE), Phase 2 (MODIFY — add 2 new standalone-route smoke tests), and Phase 3 (MODIFY — add getLeaderboard mock + new /progress routing test). Sequential execution prevents conflicts.
+src/types/index.ts claimed by Phase 4 (delete Chat\* interfaces) and Phase 5 (add PrimerResponse). Sequential execution required — Phase 5 sequenced AFTER Phase 4; the two edits are in disjoint regions of the file (Chat\* interfaces vs. the StudyPlanResponse/ConceptExplanationResponse response-interface group) so no line-level conflict is expected, only ordering discipline.
 
-No conflicts within any single phase. All multi-phase conflicts are resolved by sequential execution order.
+backend/test/red-team/I-chat-study.test.ts claimed by Phase 2 (MODIFY — add note_id/study_items case) and Phase 4 (SPLIT — keep study half). Sequential execution required; Phase 4's split must preserve Phase 2's new case in the retained "study half." Phase 5 does NOT touch this file.
+
+src/app/**tests**/appshell-routing.test.tsx claimed by Phase 1 (CREATE), Phase 2 (MODIFY — add 2 new standalone-route smoke tests), Phase 3 (MODIFY — add getLeaderboard mock + new /progress routing test), and Phase 5 (MODIFY — add /primer smoke test + extend the `/` TodayPage case). Phase 4 does NOT claim this file (its own routing smoke test, T3, was placed in this same file per its Implementation Checklist — **note for EXECUTE**: Phase 4's checklist T3 item does in fact target `appshell-routing.test.tsx` even though this registry's Phase 4 entry above did not list it explicitly as a claimed file; re-verify at EXECUTE whether Phase 4 or Phase 5 lands first in this file and merge additively, not overwrite). Sequential execution prevents conflicts for all confirmed claimants.
+
+backend/test/red-team/H-ai.test.ts claimed by Phase 5 only (add /api/ai/primer to the 401-path array + new 400 test). No other phase claims this file — no conflict.
+
+No conflicts within any single phase. All multi-phase conflicts are resolved by sequential execution order; Phase 5 is sequenced to EXECUTE after Phase 4 on every shared file.
