@@ -229,13 +229,13 @@ This inner loop SKIPS SPEC — SPEC runs once in the outer program loop only.
 
 ## Program Status Table
 
-| Phase                           | Status                                                                                              |
-| ------------------------------- | --------------------------------------------------------------------------------------------------- |
-| 01 — Shell + Today              | ✅ COMPLETE — EVL PASS (browser C8/C9 waived, accepted known-gap)                                   |
-| 02 — My Library + Process Inbox | ✅ COMPLETE — EVL PASS (4 agent-probe browser rows verification-pending, accepted as backlog NOTEs) |
-| 03 — Community + Progress       | ⏳ PLANNED (stub)                                                                                   |
-| 04 — Quiz + Test Simulator      | ⏳ PLANNED (stub)                                                                                   |
-| 05 — Primer                     | ⏳ PLANNED (stub)                                                                                   |
+| Phase                           | Status                                                                                                                                  |
+| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| 01 — Shell + Today              | ✅ COMPLETE — EVL PASS (browser C8/C9 waived, accepted known-gap)                                                                       |
+| 02 — My Library + Process Inbox | ✅ COMPLETE — EVL PASS (4 agent-probe browser rows verification-pending, accepted as backlog NOTEs)                                     |
+| 03 — Community + Progress       | ✅ COMPLETE — EVL PASS (independently confirmed), committed `85cb8e0`; C4 browser waived (accepted known-gap)                           |
+| 04 — Quiz + Test Simulator      | 🧪 PLAN + PVL COMPLETE — Gate: CONDITIONAL (user-accepted 17-08-26); EXECUTE HELD pending two concurrent uncommitted streams committing |
+| 05 — Primer                     | ⏳ PLANNED (stub)                                                                                                                       |
 
 Status values: ⏳ PLANNED | 🔨 PLAN WRITTEN | 🧪 TESTING | ✅ VERIFIED (user confirmed working) | 🚧 BLOCKED | ✅ COMPLETE
 
@@ -258,11 +258,13 @@ Status values: ⏳ PLANNED | 🔨 PLAN WRITTEN | 🧪 TESTING | ✅ VERIFIED (us
 - `src/app/AppRoutes.tsx` — add /notes/:id/process route
 - `src/app/lazyPages.ts` — ProcessPage lazy export
 
-**Phase 3 (stub):**
+**Phase 3 (DONE — actual, corrected 17-08-26; original stub listed AppShell.tsx, dropped during PLAN-SUPPLEMENT):**
 
-- `src/pages/LeaderboardPage.tsx` — "Leaderboard" → "Progress" label
-- `src/components/AppShell.tsx` — nav label "Subjects" → "Community" (Phase 3 owns)
-- `backend/src/routes/leaderboard.ts` — ORDER BY learning_points swap
+- `src/pages/LeaderboardPage.tsx` — heading "Leaderboard" → "Progress", Contributors/Learners toggle deleted, personal-stats header added
+- `backend/src/routes/leaderboard.ts` — ORDER BY swapped to `learning_points DESC, current_streak DESC` (additive `current_streak` SELECT column)
+- `backend/test/red-team/leaderboard-ranking.test.ts` — CREATE
+- `src/app/__tests__/appshell-routing.test.tsx` — MODIFY (`/progress` routing test)
+- NOT touched: `src/components/AppShell.tsx` — the "Subjects"→"Community"/"Leaderboard"→"Progress" nav-label swap already landed in Phase 1 (verified during Phase 3 PLAN-SUPPLEMENT, 16-08-26); Phase 3 does not touch this file. `src/app/lazyPages.ts` also not touched — `/progress` already routes via Phase 1's `ShellPageRoutes.tsx` wrapper.
 
 **Phase 4 (stub):**
 
@@ -339,18 +341,18 @@ Phase 1 adds the first routing smoke tests for AppShell and AppRoutes. This is t
 ## Resume and Execution Handoff
 
 - Selected plan file path: `process/general-plans/active/paperloop_25-07-26/paperloop-umbrella_PLAN_25-07-26.md`
-- Last completed phase: Phase 0 (this umbrella plan = planning artifact)
-- Validate-contract status: pending (per-phase contracts written by vc-validate-agent)
+- Last completed phase: Phase 3 (Community + Progress) — EVL-green, committed `85cb8e0`
+- Validate-contract status: Phase 1-4 written (Gate: CONDITIONAL, all accepted); Phase 5 pending
 - Supporting context files loaded: `process/context/all-context.md`, `process/context/tests/all-tests.md`
-- Next step for a fresh agent: Read this umbrella plan + the Phase 1 plan. Phase 1 is at loop step PVL. Spawn vc-validate-agent for `phase-1-shell-today_PLAN_25-07-26.md`.
-- Execute-agent start instruction: ENTER EXECUTE MODE only after vc-validate-agent has written the Phase 1 validate-contract. The ## Validate Contract section in the Phase 1 plan must NOT read "(placeholder)" before EXECUTE starts.
+- Next step for a fresh agent: Read this umbrella plan + `phase-4-quiz-simulator_PLAN_25-07-26.md`. Phase 4 is HELD at loop step EXECUTE on the blocking pre-condition documented in `## Current Execution State` above — verify both concurrent work-streams have committed, re-read the two colliding test files fresh, then ENTER EXECUTE MODE.
+- Execute-agent start instruction: do NOT spawn vc-execute-agent for Phase 4 until the pre-condition is confirmed resolved. Phase 4's own plan `## Validate Contract` is already written (Gate: CONDITIONAL, accepted) — the block is the concurrent-session file collision, not a missing contract.
 
 ---
 
 ## Current Execution State
 
-Last updated: 2026-08-16
-Current phase: Phase 3 of 5 — Community + Progress
+Last updated: 2026-08-17
+Current phase: Phase 4 of 5 — Quiz + Test Simulator
 Phase 1 name: Shell + Today
 Phase 1 status: ✅ COMPLETE
 Phase 1 EVL: ALL GATES PASS — frontend 26/26, backend 184/184, tsc clean x2; browser C8/C9 waived by user (accepted known-gap)
@@ -359,11 +361,28 @@ Phase 2 name: My Library + Process Inbox
 Phase 2 status: ✅ COMPLETE
 Phase 2 EVL: ALL GATES PASS — frontend 28/28 (was 26/26), backend 187/187 (was 184/184), tsc clean x2; 4 agent-probe browser rows verification-pending (accepted, backlog NOTEs — see report)
 Phase 2 report: process/general-plans/active/paperloop_25-07-26/phase-2-library-process_REPORT_25-07-26.md
-Next phase: Phase 3 — Community + Progress — Step 0 RESEARCH
-Validate-contract status: Phase 1 = CONDITIONAL (accepted, inner-pvl: phase-1); Phase 2 = CONDITIONAL (accepted, inner-pvl: phase-2); Phases 3–5 = pending
+Phase 3 name: Community + Progress
+Phase 3 status: ✅ COMPLETE — EVL PASS (independently confirmed), committed `85cb8e0`
+Phase 3 EVL: ALL GATES PASS — frontend 29/29 (was 28/28), backend 192/192 (was 187/187), tsc clean x2; C4 browser agent-probe waived (accepted known-gap, matches Phase 1/2 precedent)
+Phase 3 report: process/general-plans/active/paperloop_25-07-26/phase-3-community-progress_REPORT_25-07-26.md
+Phase 4 name: Quiz + Test Simulator
+Phase 4 status: 🧪 PLAN + PVL COMPLETE — Gate: CONDITIONAL, user-accepted 2026-08-17. EXECUTE HELD (see below).
+Phase 4 EVL: not yet run — EXECUTE has not started
+Phase 4 report: process/general-plans/active/paperloop_25-07-26/phase-4-quiz-simulator_REPORT_25-07-26.md (not yet written)
+Next phase: Phase 4 — Quiz + Test Simulator — Step 5 EXECUTE, HELD on the blocking pre-condition below
+Validate-contract status: Phase 1 = CONDITIONAL (accepted, inner-pvl: phase-1); Phase 2 = CONDITIONAL (accepted, inner-pvl: phase-2); Phase 3 = CONDITIONAL (accepted, inner-pvl: phase-3); Phase 4 = CONDITIONAL (accepted 2026-08-17, inner-pvl: phase-4); Phase 5 = pending
 
 Loop step values: RESEARCH | INNOVATE | PLAN-SUPPLEMENT | PVL | EXECUTE | EVL | UPDATE-PROCESS
-Orchestrator rule: Phase 1 and Phase 2 are DONE. Spawn vc-research-agent for Phase 3. Pass `phase-3-community-progress_PLAN_25-07-26.md` explicitly. Phase 1 execution commit is ALREADY MADE (172c7ca — corrected 2026-08-16; the prior note claiming it was "pending" was stale). Phase 2 execution commit is pending (separate from this process commit — see hard safety constraint: keep process and execution commits separate).
+
+**Phase 4 EXECUTE HELD — blocking pre-condition (recorded 2026-08-17):**
+Phase 4's own plan carries a Fork G pre-condition: two concurrent, uncommitted work-streams touch files inside Phase 4's declared blast radius and collide on two shared test files. EXECUTE must NOT start until both streams are committed:
+
+- (a) **SRS-hardening session** — uncommitted changes to `backend/src/routes/study.ts`, `backend/test/red-team/I-chat-study.test.ts`, `backend/test/red-team/G-idor.test.ts`, and new migration `backend/migrations/0016_study_items_note_scoped_dedup.sql`.
+- (b) **firebase-auth session** (`process/general-plans/active/firebase-auth-migration_24-07-26/`) — uncommitted changes to `backend/test/red-team/provider-mocks.test.ts`, `backend/src/lib/auth.ts`, `backend/src/lib/db.ts`, `backend/src/lib/env.ts`, `backend/schema.sql`.
+- **Collision:** `backend/test/red-team/I-chat-study.test.ts` (stream a) and `backend/test/red-team/provider-mocks.test.ts` (stream b) are BOTH claimed by Phase 4's G2.1/G2.2 demolition steps (see Phase 4 plan's Pre-Condition section + `## Implementation Checklist`).
+- **Next action on resume:** verify both streams (a) and (b) have committed; re-read `I-chat-study.test.ts` and `provider-mocks.test.ts` fresh against the committed state (per Phase 4 plan's own instruction — do not trust prior line citations verbatim); then ENTER EXECUTE MODE for `phase-4-quiz-simulator_PLAN_25-07-26.md`.
+
+Orchestrator rule: Phases 1-3 are DONE and committed (172c7ca / 964f729 / 85cb8e0). Phase 4 PLAN+PVL are done (validate-contract written, Gate: CONDITIONAL, user-accepted this session) — do NOT spawn vc-execute-agent for Phase 4 until the pre-condition above is resolved.
 
 ---
 
