@@ -5,7 +5,7 @@
 // CREATE a user from it — so those endpoints work with no JWT at all, and let a
 // caller act as an arbitrary identity by choosing the header value.
 import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
-import { applySchema, resetData, call, seedUser, seedSubject, seedNote } from './helpers';
+import { applySchema, resetData, call, seedUser, seedSubject, seedNote, env } from './helpers';
 
 beforeAll(applySchema);
 beforeEach(resetData);
@@ -89,6 +89,48 @@ describe('G. IDOR / object security (111-120)', () => {
     // The header is no longer trusted for identity and no ghost user is created;
     // an unauthenticated write must be rejected with 401.
     expect(res.status, 'note create must require a real JWT, not a header').toBe(401);
+  });
+
+  it('FIXED: POST /api/quiz/attempt rejects a note_id the caller does not own (403)', async () => {
+    // Confused deputy: the handler used to check only that the note EXISTS, so a
+    // caller could bind its quiz_attempts + SRS cards to another user's note id.
+    const owner = await seedUser();
+    const attacker = await seedUser();
+    const subj = await seedSubject();
+    const noteId = await seedNote(owner.id, subj);
+
+    const res = await call('/api/quiz/attempt', {
+      method: 'POST',
+      token: attacker.token,
+      body: { note_id: noteId, question_text: 'borrowed note question', is_correct: true },
+    });
+    expect(res.status, 'existence is not ownership').toBe(403);
+
+    // Nothing may be written on the rejected path.
+    const attempts = (await env.DB.prepare(
+      'SELECT COUNT(*) AS c FROM quiz_attempts WHERE user_id = ?',
+    )
+      .bind(attacker.id)
+      .first()) as any;
+    expect(attempts.c, 'no attempt row written for a rejected note_id').toBe(0);
+    const items = (await env.DB.prepare(
+      'SELECT COUNT(*) AS c FROM study_items WHERE note_id = ? AND user_id = ?',
+    )
+      .bind(noteId, attacker.id)
+      .first()) as any;
+    expect(items.c, 'no SRS card bound to another user’s note').toBe(0);
+  });
+
+  it('the owner of a note can still log a quiz attempt against it (the fix is not over-broad)', async () => {
+    const owner = await seedUser();
+    const subj = await seedSubject();
+    const noteId = await seedNote(owner.id, subj);
+    const res = await call('/api/quiz/attempt', {
+      method: 'POST',
+      token: owner.token,
+      body: { note_id: noteId, question_text: 'own note question', is_correct: true },
+    });
+    expect(res.status).toBeLessThan(300);
   });
 
   it('120. ownership is by author_id, so it is stable across a note’s lifecycle', async () => {

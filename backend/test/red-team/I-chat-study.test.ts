@@ -112,6 +112,59 @@ describe('I. Chat & study (131-140)', () => {
     expect(row.question_hash).toBe(hashQuestion(questionText));
   });
 
+  it('137b. the SAME question asked from two different notes yields two separate study_items cards', async () => {
+    const u = await seedUser();
+    const subj = await seedSubject();
+    const noteA = await seedNote(u.id, subj, { title: 'Note A' });
+    const noteB = await seedNote(u.id, subj, { title: 'Note B' });
+    // Identical wording on purpose: this is the cross-note collision case. The
+    // dedup key must be (user, note, question) — keyed on (user, question) alone
+    // both notes collapse into ONE row permanently stuck on noteA's note_id.
+    const questionText = 'Shared wording: what is the powerhouse of the cell?';
+
+    for (const noteId of [noteA, noteB]) {
+      const res = await call('/api/quiz/attempt', {
+        method: 'POST',
+        token: u.token,
+        body: { note_id: noteId, question_text: questionText, is_correct: true, confidence: 3 },
+      });
+      expect(res.status, `attempt for note ${noteId} succeeded`).toBeLessThan(300);
+    }
+
+    const { results } = await env.DB.prepare(
+      'SELECT note_id FROM study_items WHERE user_id = ? AND question_hash = ? ORDER BY note_id',
+    )
+      .bind(u.id, hashQuestion(questionText))
+      .all();
+
+    expect(results, 'one SRS card per note, not one shared card').toHaveLength(2);
+    expect((results as any[]).map((r) => r.note_id)).toEqual([noteA, noteB].sort((x, y) => x - y));
+  });
+
+  it('137c. a note-less quiz attempt repeated does NOT create a duplicate study_items row', async () => {
+    // Regression guard for the null-handling half of the dedup fix: `note_id = ?`
+    // bound to NULL is never true in SQLite, so an `=` lookup would re-INSERT a
+    // fresh card on every attempt. `note_id IS ?` matches null-to-null.
+    const u = await seedUser();
+    const questionText = 'Note-less repeat: what is the boiling point of water?';
+
+    for (let i = 0; i < 2; i++) {
+      const res = await call('/api/quiz/attempt', {
+        method: 'POST',
+        token: u.token,
+        body: { question_text: questionText, is_correct: true, confidence: 3 },
+      });
+      expect(res.status).toBeLessThan(300);
+    }
+
+    const row = (await env.DB.prepare(
+      'SELECT COUNT(*) AS c FROM study_items WHERE user_id = ? AND note_id IS NULL AND question_hash = ?',
+    )
+      .bind(u.id, hashQuestion(questionText))
+      .first()) as any;
+    expect(row.c, 'the second attempt updated the existing card, not inserted a new one').toBe(1);
+  });
+
   it('138. due reviews are scoped to the caller and return a due_count', async () => {
     const u = await seedUser();
     const res = await call('/api/reviews/due', { token: u.token });

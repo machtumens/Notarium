@@ -169,7 +169,9 @@ CREATE TABLE IF NOT EXISTS study_items (
   due_at TEXT,
   created_at TEXT DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE(user_id, question_hash)
+  -- note_id is part of the key: the same question wording asked from two
+  -- different notes is two separate SRS cards. See migration 0016.
+  UNIQUE(user_id, note_id, question_hash)
 );
 
 CREATE INDEX IF NOT EXISTS idx_notes_subject_id ON notes(subject_id);

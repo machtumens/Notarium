@@ -120,10 +120,14 @@ async function upsertStudyItem(
   isCorrect: boolean,
   confidence?: number | null,
 ): Promise<string> {
+  // Dedup key is (user, note, question) — NOT (user, question). The same wording
+  // asked from two different notes is two different cards. `IS` (not `=`) so a
+  // null note_id matches a null note_id; `= NULL` is never true in SQLite and
+  // would re-INSERT a fresh row on every note-less attempt.
   const existing = (await env.DB.prepare(
-    `SELECT ease_factor, interval_days, repetitions FROM study_items WHERE user_id = ? AND question_hash = ?`,
+    `SELECT ease_factor, interval_days, repetitions FROM study_items WHERE user_id = ? AND note_id IS ? AND question_hash = ?`,
   )
-    .bind(userId, questionHash)
+    .bind(userId, noteId, questionHash)
     .first()) as any;
 
   const prev: Sm2State = existing
@@ -142,7 +146,7 @@ async function upsertStudyItem(
     await env.DB.prepare(
       `UPDATE study_items
          SET ease_factor = ?, interval_days = ?, repetitions = ?, due_at = ?, updated_at = ?
-       WHERE user_id = ? AND question_hash = ?`,
+       WHERE user_id = ? AND note_id IS ? AND question_hash = ?`,
     )
       .bind(
         next.ease_factor,
@@ -151,6 +155,7 @@ async function upsertStudyItem(
         next.due_at,
         now,
         userId,
+        noteId,
         questionHash,
       )
       .run();
@@ -201,7 +206,9 @@ export async function logQuizAttempt(request: Request, env: Env) {
       return jsonResponse({ error: 'question_text too long' }, 400, env);
     }
 
-    // Verify note_id belongs to this user if provided (prevents cross-user score inflation)
+    // IDOR guard: existence alone is not enough — the caller must OWN the note,
+    // or any client can bind its SRS cards and quiz_attempts to someone else's
+    // note id. Mirrors the author_id === user.id / 403 convention in notes.ts.
     if (noteId !== null) {
       if (!Number.isFinite(noteId) || noteId <= 0) {
         return jsonResponse({ error: 'Invalid note_id' }, 400, env);
@@ -211,6 +218,13 @@ export async function logQuizAttempt(request: Request, env: Env) {
         .first()) as any;
       if (!noteOwner) {
         return jsonResponse({ error: 'Note not found' }, 404, env);
+      }
+      if (noteOwner.author_id !== user.id) {
+        return jsonResponse(
+          { error: 'Unauthorized - You can only study your own notes' },
+          403,
+          env,
+        );
       }
     }
 
