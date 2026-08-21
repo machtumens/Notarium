@@ -22,159 +22,6 @@ export async function logAiUsage(
   }
 }
 
-export async function getUserNotes(userId: number, subject?: string, env?: Env): Promise<any[]> {
-  if (!env) return [];
-
-  let query =
-    'SELECT id, title, description, subject_id, extracted_text, summary FROM notes WHERE author_id = ?';
-  const params: any[] = [userId];
-
-  if (subject) {
-    query += ' AND subject_id = (SELECT id FROM subjects WHERE name = ?)';
-    params.push(subject);
-  }
-
-  query += ' LIMIT 10';
-
-  try {
-    const { results } = await env.DB.prepare(query)
-      .bind(...params)
-      .all();
-    return results || [];
-  } catch (e) {
-    return [];
-  }
-}
-
-export function formatNotesForContext(notes: any[]): string {
-  if (notes.length === 0) {
-    return '';
-  }
-
-  const notesSummary = notes
-    .map((note, idx) => {
-      const content = note.extracted_text || note.description || note.title;
-      return `[Note ${idx + 1}] ${note.title}\n${content?.substring(0, 1200) || '(No content)'}`;
-    })
-    .join('\n\n---\n\n');
-
-  return `\n\n📚 KNOWLEDGE BASE (User's Study Materials - PRIMARY SOURCE):\n${notesSummary}\n\n⚠️ CRITICAL INSTRUCTIONS:
-- You MUST derive AT LEAST 60% of your answer directly from the Knowledge Base above
-- Quote and reference specific information from the notes when available
-- Only use general knowledge to supplement or clarify when the notes don't fully cover the question
-- If the answer is in the notes, cite it explicitly
-- Use the exact terminology and concepts from the user's study materials`;
-}
-
-export async function chatWithGemini(
-  sessionId: string,
-  userMessage: string,
-  subject: string,
-  userId: number,
-  request: Request,
-  env: Env,
-) {
-  try {
-    const userNotes = await getUserNotes(userId, subject, env);
-    const notesContext = formatNotesForContext(userNotes);
-
-    const { results: messages } = await env.DB.prepare(
-      `
-      SELECT role, content FROM chat_messages
-      WHERE session_id = ?
-      ORDER BY created_at DESC
-      LIMIT 8
-    `,
-    )
-      .bind(sessionId)
-      .all();
-
-    const reverseMessages = (messages || []).reverse();
-
-    const conversationHistory = reverseMessages.map((msg: any) => ({
-      role: msg.role === 'user' ? 'user' : 'assistant',
-      content: msg.content,
-    }));
-
-    const allMessages = [
-      {
-        role: 'system',
-        content: `You are a helpful study assistant. Respond concisely and clearly.
-
-FORMAT:
-- Use markdown: **bold**, *italic*, \`code\`
-- Add emojis for engagement: ✅ ❌ 📚 💡 🎯
-- Use bullet points and numbered lists
-- Keep responses focused and brief
-
-CONTENT:
-- Prioritize user's study materials when available
-- Reference notes with "berdasarkan catatan kamu"
-- Be concise - quality over quantity
-- Respond in Indonesian (Bahasa Indonesia)`,
-      },
-      ...conversationHistory,
-    ];
-
-    const contextualMessage = notesContext ? `${userMessage}${notesContext}` : userMessage;
-
-    allMessages.push({
-      role: 'user',
-      content: contextualMessage,
-    });
-
-    const deepseekApiKey = env.DEEPSEEK_API_KEY;
-    if (!deepseekApiKey) {
-      throw new Error('AI service not configured');
-    }
-
-    const aiStart = Date.now();
-    const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${deepseekApiKey}`,
-      },
-      body: JSON.stringify({
-        model: 'deepseek-chat',
-        messages: allMessages,
-        max_tokens: 1024, // Reduced from 2048 for faster responses
-        temperature: 0.8, // Slightly higher for faster generation
-      }),
-    });
-
-    const data = (await response.json()) as any;
-    const aiOk = response.ok && !!data.choices && data.choices.length > 0;
-    await logAiUsage(
-      env,
-      'deepseek',
-      'chat',
-      aiOk,
-      Date.now() - aiStart,
-      data?.usage?.total_tokens ?? null,
-    );
-
-    if (!aiOk) {
-      throw new Error(data.error?.message || 'DeepSeek API error');
-    }
-
-    const aiResponse = data.choices[0].message.content.trim();
-
-    await env.DB.prepare(
-      `
-      INSERT INTO chat_messages (session_id, role, content)
-      VALUES (?, ?, ?)
-    `,
-    )
-      .bind(sessionId, 'assistant', aiResponse)
-      .run();
-
-    return aiResponse;
-  } catch (error: any) {
-    throw new Error(`Failed to get AI response: ${error.message}`);
-  }
-}
-
 export async function performOCR(imageBase64: string, mimeType: string, env: Env) {
   try {
     const apiKey = env.GOOGLE_CLOUD_VISION_API_KEY || env.GEMINI_API_KEY;
@@ -550,6 +397,224 @@ export async function generateQuizEndpoint(noteId: string, request: Request, env
     const quiz = await generateQuiz(content, title || 'Untitled', env);
 
     return jsonResponse({ quiz });
+  } catch (error: any) {
+    return jsonResponse({ error: error.message }, 500);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Structured multi-type quiz generation (POST /api/ai/quiz) — Paperloop Phase 4.
+// Distinct from the MCQ-only generateQuiz above: supports MCQ / True-False /
+// Short-answer, calibrated to a difficulty, sourced from either a single owned
+// note or the caller's OWN notes within a subject (author_id-scoped — never
+// community-scoped, so no other user's note content can leak into a quiz).
+// ---------------------------------------------------------------------------
+
+type QuizSourceType = 'note' | 'subject';
+type QuizDifficulty = 'easy' | 'medium' | 'hard';
+type QuizQuestionType = 'mcq' | 'true_false' | 'short_answer';
+
+// Aggregate multiple notes' text into one bounded context string. Ported (not
+// imported) from the deleted chat formatNotesForContext truncation pattern: a
+// per-note cap stops any single note dominating; a total cap bounds the prompt.
+function truncateAndJoinNoteContent(
+  notes: Array<{ title?: string; extracted_text?: string | null }>,
+  perNoteCap = 1200,
+  totalCap = 7000,
+): string {
+  const parts: string[] = [];
+  let used = 0;
+  for (const note of notes) {
+    const raw = (note.extracted_text || '').trim();
+    if (!raw) continue;
+    const block = `[${note.title || 'Untitled'}]\n${raw.substring(0, perNoteCap)}`;
+    if (used + block.length > totalCap) {
+      const remaining = totalCap - used;
+      if (remaining > 0) parts.push(block.substring(0, remaining));
+      break;
+    }
+    parts.push(block);
+    used += block.length;
+  }
+  return parts.join('\n\n---\n\n');
+}
+
+// Resolve the requested source into { title, content }, enforcing ownership.
+// 'forbidden' → a note owned by someone else; null → no owned content exists
+// (missing note, or a subject with zero notes for this user).
+async function resolveQuizSourceContent(
+  sourceType: QuizSourceType,
+  sourceId: number,
+  userId: number,
+  env: Env,
+): Promise<{ title: string; content: string } | 'forbidden' | null> {
+  if (sourceType === 'note') {
+    const row = (await env.DB.prepare(
+      'SELECT extracted_text, title, author_id FROM notes WHERE id = ?',
+    )
+      .bind(sourceId)
+      .first()) as { extracted_text: string | null; title: string; author_id: number } | null;
+    if (!row) return null;
+    // Ownership gate runs BEFORE any content is used in the AI prompt.
+    if (row.author_id !== userId) return 'forbidden';
+    return { title: row.title, content: (row.extracted_text || '').trim() };
+  }
+
+  // subject: author_id-scoped — personal-only. Do NOT reuse getNotesBySubject
+  // (community-scoped, no author filter — using it here would be an IDOR).
+  const { results } = await env.DB.prepare(
+    'SELECT extracted_text, title FROM notes WHERE subject_id = ? AND author_id = ?',
+  )
+    .bind(sourceId, userId)
+    .all();
+  const notes = (results || []) as Array<{ extracted_text: string | null; title: string }>;
+  if (notes.length === 0) return null;
+  const content = truncateAndJoinNoteContent(notes);
+  const subjectRow = (await env.DB.prepare('SELECT name FROM subjects WHERE id = ?')
+    .bind(sourceId)
+    .first()) as { name: string } | null;
+  const title = subjectRow?.name || notes[0].title || 'Subject';
+  return { title, content };
+}
+
+export async function generateStructuredQuiz(
+  sourceContent: { title: string; content: string },
+  count: number,
+  difficulty: QuizDifficulty,
+  types: QuizQuestionType[],
+  env: Env,
+) {
+  try {
+    const deepseekApiKey = env.DEEPSEEK_API_KEY;
+    if (!deepseekApiKey) {
+      throw new Error('AI service not configured');
+    }
+
+    const typeList = types.join(', ');
+    const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${deepseekApiKey}`,
+      },
+      body: JSON.stringify({
+        model: 'deepseek-chat',
+        messages: [
+          {
+            role: 'user',
+            content: `Create a ${difficulty}-difficulty quiz with EXACTLY ${count} questions based on the study material titled "${sourceContent.title}". Distribute the questions across these types: ${typeList}.
+
+Return ONLY a JSON object with this exact structure (no extra text):
+{
+  "questions": [
+    {
+      "type": "mcq",
+      "question": "Question text?",
+      "options": ["option 1", "option 2", "option 3", "option 4"],
+      "correct_answer": 0,
+      "explanation": "Why this is correct"
+    },
+    {
+      "type": "true_false",
+      "question": "Statement to judge.",
+      "options": ["True", "False"],
+      "correct_answer": 0,
+      "explanation": "Why"
+    },
+    {
+      "type": "short_answer",
+      "question": "Open question?",
+      "model_answer": "The reference answer with the key points a correct response must contain.",
+      "explanation": "Grading notes / rubric"
+    }
+  ]
+}
+
+Rules:
+- "type" MUST be one of: ${typeList}.
+- For "mcq": provide 4 "options" and "correct_answer" as the 0-based index of the correct option.
+- For "true_false": "options" is ["True", "False"] and "correct_answer" is 0 (True) or 1 (False).
+- For "short_answer": provide a "model_answer" (the reference answer used for grading) and NO options.
+- Every question has an "explanation".
+- Write all questions, options, answers, and explanations in Indonesian (Bahasa Indonesia).
+
+Study material:
+${sourceContent.content}`,
+          },
+        ],
+        max_tokens: 3000,
+        temperature: 0.5,
+      }),
+    });
+
+    const data = (await response.json()) as any;
+
+    if (!response.ok || !data.choices || data.choices.length === 0) {
+      throw new Error(data.error?.message || 'DeepSeek API error');
+    }
+
+    const responseText = data.choices[0].message.content;
+    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      return JSON.parse(jsonMatch[0]);
+    }
+    throw new Error('Invalid quiz format');
+  } catch (error: any) {
+    throw new Error(`Failed to generate quiz: ${error.message}`);
+  }
+}
+
+export async function generateStructuredQuizEndpoint(request: Request, env: Env) {
+  try {
+    const user = await getUserFromToken(request, env);
+    if (!user) return jsonResponse({ error: 'Unauthorized' }, 401, env);
+
+    const body = (await request.json()) as any;
+    const sourceType = body.source_type;
+    const sourceId = Number(body.source_id);
+    const count = Number(body.count);
+    const difficulty = body.difficulty;
+    const types = body.types;
+
+    if (sourceType !== 'note' && sourceType !== 'subject') {
+      return jsonResponse({ error: 'source_type must be "note" or "subject"' }, 400, env);
+    }
+    if (!Number.isInteger(sourceId) || sourceId <= 0) {
+      return jsonResponse({ error: 'source_id must be a positive integer' }, 400, env);
+    }
+    if (!Number.isInteger(count) || count <= 0 || count > 20) {
+      return jsonResponse({ error: 'count must be an integer between 1 and 20' }, 400, env);
+    }
+    if (difficulty !== 'easy' && difficulty !== 'medium' && difficulty !== 'hard') {
+      return jsonResponse({ error: 'difficulty must be easy, medium, or hard' }, 400, env);
+    }
+    const allowedTypes = ['mcq', 'true_false', 'short_answer'];
+    if (
+      !Array.isArray(types) ||
+      types.length === 0 ||
+      !types.every((t: unknown) => typeof t === 'string' && allowedTypes.includes(t))
+    ) {
+      return jsonResponse(
+        { error: 'types must be a non-empty array of: mcq, true_false, short_answer' },
+        400,
+        env,
+      );
+    }
+
+    const source = await resolveQuizSourceContent(sourceType, sourceId, user.id, env);
+    if (source === 'forbidden') {
+      return jsonResponse(
+        { error: 'Unauthorized - You can only generate quizzes from your own notes' },
+        403,
+        env,
+      );
+    }
+    if (source === null || !source.content) {
+      return jsonResponse({ error: 'No content found for this source' }, 404, env);
+    }
+
+    const quiz = await generateStructuredQuiz(source, count, difficulty, types, env);
+    return jsonResponse(quiz);
   } catch (error: any) {
     return jsonResponse({ error: error.message }, 500);
   }

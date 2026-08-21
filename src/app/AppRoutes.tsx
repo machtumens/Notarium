@@ -18,38 +18,12 @@ import {
   SettingsPage,
   MyNotesPage,
   SubjectNotesPage,
-  ChatPage,
   AdminPage,
   OpsDashboard,
   ProcessPage,
   CaptureNotePage,
+  QuizBuilderPage,
 } from './lazyPages';
-
-// Placeholder route for the upcoming Tests/quiz feature. Renders a "Coming soon"
-// panel rather than a blank screen (Paperloop Phase 1; the real quiz/test
-// simulator lands in a later phase).
-function ComingSoonPage() {
-  return (
-    <div
-      style={{
-        maxWidth: '640px',
-        margin: '0 auto',
-        padding: '80px 24px',
-        textAlign: 'center',
-        color: '#94a3b8',
-      }}
-    >
-      <div style={{ fontSize: '56px', marginBottom: '16px' }}>🧪</div>
-      <h1 style={{ fontSize: '26px', fontWeight: 'bold', margin: '0 0 8px 0', color: '#f1f5f9' }}>
-        Tests are coming soon
-      </h1>
-      <p style={{ fontSize: '15px', margin: 0 }}>
-        Quizzes and the test simulator are on the way. Keep your streak alive with Review in the
-        meantime.
-      </p>
-    </div>
-  );
-}
 
 export function AppRoutes() {
   return (
@@ -132,8 +106,7 @@ export function AppRoutes() {
           <Route path="/community" element={<CommunityRoute />} />
           <Route path="/community/:subjectId" element={<SubjectNotesPage />} />
           <Route path="/progress" element={<ProgressRoute />} />
-          <Route path="/chat" element={<ChatPage />} />
-          <Route path="/quiz" element={<ComingSoonPage />} />
+          <Route path="/quiz" element={<QuizBuilderPage />} />
           <Route
             path="/admin"
             element={

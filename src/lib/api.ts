@@ -304,68 +304,6 @@ export const api = {
     }
   },
 
-  chat: {
-    createSession: async (subject: string, topic: string) => {
-      const response = await api.request('/api/chat/sessions', {
-        method: 'POST',
-        body: { subject, topic },
-      });
-      return { session: response.session };
-    },
-    getSessions: async () => {
-      try {
-        const response = await api.request('/api/chat/sessions', {
-          method: 'GET',
-        });
-        return { sessions: response.sessions || [] };
-      } catch (error) {
-        return { sessions: [] };
-      }
-    },
-    getMessages: async (sessionId: number) => {
-      try {
-        const response = await api.request(`/api/chat/sessions/${sessionId}/messages`, {
-          method: 'GET',
-        });
-        return { messages: response.messages || [] };
-      } catch (error) {
-        return { messages: [] };
-      }
-    },
-    addMessage: async (sessionId: number, role: string, content: string) => {
-      const response = await api.request(`/api/chat/sessions/${sessionId}/messages`, {
-        method: 'POST',
-        body: { role, content },
-      });
-      return { message: response.message };
-    },
-    getAIResponse: async (message: string, subject: string) => {
-      const response = await api.request('/api/chat/ai-response', {
-        method: 'POST',
-        body: { message, subject },
-      });
-      return { response: response.response || '' };
-    },
-    uploadDocument: async (documentBase64: string, fileName: string, sessionId: number) => {
-      const response = await api.request('/api/chat/upload-document', {
-        method: 'POST',
-        body: { documentBase64, fileName, sessionId },
-      });
-      return {
-        success: true,
-        document: response.document || { fileName },
-        message: response.message || '',
-      };
-    },
-    analyzeNotes: async (subject: string, topic?: string) => {
-      const response = await api.request('/api/chat/analyze-notes', {
-        method: 'POST',
-        body: { subject, topic },
-      });
-      return { analysis: response.analysis || '', keyConcepts: response.keyConcepts || [] };
-    },
-  },
-
   ai: {
     generateSummary: async (noteId: number, content: string = '') => {
       const response = await api.request(`/api/notes/${noteId}/summary`, {
@@ -380,6 +318,21 @@ export const api = {
         body: { content },
       });
       return { quiz: response.quiz || { questions: [] } };
+    },
+    // Structured multi-type quiz (POST /api/ai/quiz). Source is a single owned
+    // note or the caller's own notes within a subject (author-scoped server-side).
+    generateStructuredQuiz: async (params: {
+      source_type: 'note' | 'subject';
+      source_id: number;
+      count: number;
+      difficulty: 'easy' | 'medium' | 'hard';
+      types: Array<'mcq' | 'true_false' | 'short_answer'>;
+    }) => {
+      const response = await api.request('/api/ai/quiz', {
+        method: 'POST',
+        body: params,
+      });
+      return { questions: response.questions || [] };
     },
     generateStudyPlan: async (subject: string, topic: string) => {
       const response = await api.request('/api/study-plan', {

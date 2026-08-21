@@ -9,7 +9,6 @@ import { ExpandableTabs } from './ui/expandable-tabs';
 import { BeamsBackground } from './ui/beams-background';
 import {
   Book,
-  MessageSquare,
   Trophy,
   Settings,
   LogOut,
@@ -220,7 +219,6 @@ export function AppShell() {
                   { title: 'Today', icon: Home },
                   { title: 'Community', icon: Book },
                   { title: 'Progress', icon: Trophy },
-                  { title: 'Chat', icon: MessageSquare },
                   { title: 'Tests', icon: ClipboardList },
                   { title: 'Review', icon: GraduationCap },
                   ...(canModerate(user) ? [{ title: 'Admin', icon: Settings }] : []),
@@ -233,8 +231,8 @@ export function AppShell() {
                   if (index === null) return;
 
                   // Fixed leading tabs (indices 0..5).
-                  const paths = ['/', '/community', '/progress', '/chat', '/quiz', '/review'];
-                  let cursor = paths.length; // 6
+                  const paths = ['/', '/community', '/progress', '/quiz', '/review'];
+                  let cursor = paths.length; // 5
                   const adminIndex = canModerate(user) ? cursor++ : -1;
                   const opsIndex = canOps(user) ? cursor++ : -1;
                   // cursor now points at the separator; My Notes is one past it.
@@ -802,35 +800,6 @@ export function AppShell() {
                 }
               >
                 <i className="fas fa-book" style={{ width: '20px' }}></i>Community
-              </button>
-
-              <button
-                onClick={() => go('/chat')}
-                style={{
-                  width: '100%',
-                  padding: '12px 16px',
-                  background: isActive('/chat') ? currentTheme.colors.accent : 'transparent',
-                  border: 'none',
-                  color: '#fff',
-                  cursor: 'pointer',
-                  fontSize: '15px',
-                  fontWeight: '500',
-                  transition: currentTheme.transitions.default,
-                  borderRadius: currentTheme.borderRadius.md,
-                  textAlign: 'left',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '12px',
-                }}
-                onMouseOver={(e) =>
-                  !isActive('/chat') &&
-                  (e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)')
-                }
-                onMouseOut={(e) =>
-                  !isActive('/chat') && (e.currentTarget.style.background = 'transparent')
-                }
-              >
-                <i className="fas fa-comments" style={{ width: '20px' }}></i>Chat
               </button>
 
               <button

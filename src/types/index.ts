@@ -185,29 +185,6 @@ export interface SummaryRequest {
   title: string;
 }
 
-export interface ChatSession {
-  id: number;
-  subject: string;
-  topic: string;
-  created_at: string;
-  updated_at?: string;
-}
-
-export interface ChatMessage {
-  id: number;
-  session_id: number;
-  role: 'user' | 'assistant' | 'system';
-  content: string;
-  created_at: string;
-}
-
-export interface ChatDocument {
-  id?: number;
-  fileName: string;
-  documentBase64?: string;
-  session_id?: number;
-}
-
 export interface LeaderboardEntry {
   id?: number;
   name?: string;
@@ -237,14 +214,6 @@ export interface SubjectsResponse {
 
 export interface LeaderboardResponse {
   leaderboard: LeaderboardEntry[];
-}
-
-export interface ChatSessionsResponse {
-  sessions: ChatSession[];
-}
-
-export interface ChatMessagesResponse {
-  messages: ChatMessage[];
 }
 
 export interface SummaryResponse {

@@ -17,6 +17,7 @@ import {
   performOCREndpoint,
   generateNoteSummaryEndpoint,
   generateQuizEndpoint,
+  generateStructuredQuizEndpoint,
   generateStudyPlanEndpoint,
   explainConceptEndpoint,
 } from './routes/ai';
@@ -44,13 +45,6 @@ import {
   userDeleteNote,
 } from './routes/notes';
 import { getLeaderboard } from './routes/leaderboard';
-import {
-  createChatSession,
-  getChatSessions,
-  getChatMessages,
-  addChatMessage,
-  getAIResponse,
-} from './routes/chat';
 import { signupEndpoint, loginEndpoint, meEndpoint } from './routes/auth';
 import {
   setup2fa,
@@ -804,33 +798,6 @@ export default {
       if (path === '/api/leaderboard' && request.method === 'GET') {
         return await getLeaderboard(env);
       }
-      if (path === '/api/chat/sessions' && request.method === 'POST') {
-        return await createChatSession(request, env);
-      }
-
-      if (path === '/api/chat/sessions' && request.method === 'GET') {
-        return await getChatSessions(request, env);
-      }
-
-      if (path.match(/^\/api\/chat\/sessions\/\d+\/messages$/) && request.method === 'GET') {
-        const sessionId = path.split('/')[4];
-        return await getChatMessages(sessionId, request, env);
-      }
-
-      if (path.match(/^\/api\/chat\/sessions\/\d+\/messages$/) && request.method === 'POST') {
-        const sessionId = path.split('/')[4];
-        return await addChatMessage(sessionId, request, env);
-      }
-
-      if (path.match(/^\/api\/chat\/sessions\/\d+\/ai-response$/) && request.method === 'POST') {
-        const sessionId = path.split('/')[4];
-        if (!env.DB) {
-          const body = (await request.json()) as any;
-          const mockResponse = `That's a great question about ${body.message?.substring(0, 20) || 'this topic'}. Let me explain: This is an important concept in education. Understanding this will help you succeed in your studies. Feel free to ask follow-up questions!`;
-          return jsonResponse({ response: mockResponse });
-        }
-        return await getAIResponse(sessionId, request, env);
-      }
       if (path === '/api/gemini/quick-summary' && request.method === 'POST') {
         const _qsUser = await requireUser(request, env);
         if (!_qsUser) return jsonResponse({ error: 'Unauthorized' }, 401, env);
@@ -960,6 +927,15 @@ Tags:`,
       if (path.match(/^\/api\/notes\/\d+\/quiz$/) && request.method === 'POST') {
         const noteId = path.split('/')[3];
         return await generateQuizEndpoint(noteId, request, env);
+      }
+
+      if (path === '/api/ai/quiz' && request.method === 'POST') {
+        const _aiqUser = await requireUser(request, env);
+        if (!_aiqUser) return jsonResponse({ error: 'Unauthorized' }, 401, env);
+        if (!(await checkRateLimit(String(_aiqUser.id), 'ai', env))) {
+          return jsonResponse({ error: 'Too many requests. Try again later.' }, 429, env);
+        }
+        return await generateStructuredQuizEndpoint(request, env);
       }
 
       if (path === '/api/study-plan' && request.method === 'POST') {

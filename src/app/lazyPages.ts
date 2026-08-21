@@ -9,7 +9,6 @@ export const PasswordResetPage = lazy(() => import('../pages/PasswordResetPage')
 export const SubjectsPage = lazy(() => import('../pages/SubjectsPage'));
 export const SubjectNotesPage = lazy(() => import('../pages/SubjectNotesPage'));
 export const LeaderboardPage = lazy(() => import('../pages/LeaderboardPage'));
-export const ChatPage = lazy(() => import('../pages/ChatPage'));
 export const AdminPage = lazy(() => import('../pages/AdminPage'));
 export const OpsDashboard = lazy(() => import('../pages/OpsDashboard'));
 export const MyNotesPage = lazy(() => import('../pages/MyNotesPage'));
@@ -21,3 +20,6 @@ export const AuthCallback = lazy(() => import('../pages/AuthCallback'));
 export const SettingsPage = lazy(() => import('../pages/SettingsPage'));
 export const ProcessPage = lazy(() => import('../pages/ProcessPage'));
 export const CaptureNotePage = lazy(() => import('../pages/CaptureNotePage'));
+export const QuizBuilderPage = lazy(() => import('../pages/QuizBuilderPage'));
+export const TestSimulatorPage = lazy(() => import('../pages/TestSimulatorPage'));
+export const TestResultsPage = lazy(() => import('../pages/TestResultsPage'));

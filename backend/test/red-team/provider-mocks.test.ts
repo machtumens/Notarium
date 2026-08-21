@@ -204,3 +204,76 @@ describe('Journey 4: scanned image -> OCR -> auto-tags -> published note (multi-
     expect(row.content).toContain('Newton');
   });
 });
+
+describe('I136 — POST /api/ai/quiz generates a structured multi-type quiz', () => {
+  it('returns a multi-type question set for an owned note source', async () => {
+    enable('DEEPSEEK_API_KEY');
+    // The model returns a structured JSON quiz; generateStructuredQuiz extracts
+    // the {...} block and JSON.parses it into { questions: [...] }.
+    const quizJson = JSON.stringify({
+      questions: [
+        {
+          type: 'mcq',
+          question: 'Ibukota Prancis?',
+          options: ['Paris', 'Roma', 'Berlin', 'Madrid'],
+          correct_answer: 0,
+          explanation: 'Paris.',
+        },
+        {
+          type: 'true_false',
+          question: 'Air mendidih pada 100°C di permukaan laut.',
+          options: ['True', 'False'],
+          correct_answer: 0,
+          explanation: 'Benar.',
+        },
+        {
+          type: 'short_answer',
+          question: 'Jelaskan fotosintesis singkat.',
+          model_answer: 'Proses tumbuhan mengubah cahaya menjadi energi kimia.',
+          explanation: 'Rubrik.',
+        },
+      ],
+    });
+    stubProviders({ deepseek: deepseekText(quizJson) });
+
+    const u = await seedUser();
+    const subj = await seedSubject();
+    const noteId = await seedNote(u.id, subj, { title: 'Bio notes' });
+    // seedNote does not populate extracted_text and the endpoint 404s on empty
+    // content, so give the owned note real extracted text to quiz on.
+    await env.DB.prepare('UPDATE notes SET extracted_text = ? WHERE id = ?')
+      .bind('Fotosintesis adalah proses tumbuhan mengubah cahaya matahari menjadi energi.', noteId)
+      .run();
+
+    const res = await call('/api/ai/quiz', {
+      method: 'POST',
+      token: u.token,
+      body: {
+        source_type: 'note',
+        source_id: noteId,
+        count: 3,
+        difficulty: 'easy',
+        types: ['mcq', 'true_false', 'short_answer'],
+      },
+    });
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as any;
+    expect(Array.isArray(json.questions)).toBe(true);
+    expect(json.questions).toHaveLength(3);
+    const types = json.questions.map((q: any) => q.type);
+    expect(types).toEqual(expect.arrayContaining(['mcq', 'true_false', 'short_answer']));
+    const mcq = json.questions.find((q: any) => q.type === 'mcq');
+    expect(Array.isArray(mcq.options)).toBe(true);
+    expect(typeof mcq.correct_answer).toBe('number');
+  });
+
+  it('rejects an invalid types array with 400 (before any provider call)', async () => {
+    const u = await seedUser();
+    const res = await call('/api/ai/quiz', {
+      method: 'POST',
+      token: u.token,
+      body: { source_type: 'note', source_id: 1, count: 3, difficulty: 'easy', types: [] },
+    });
+    expect(res.status).toBe(400);
+  });
+});

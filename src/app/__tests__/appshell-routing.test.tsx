@@ -63,6 +63,11 @@ vi.mock('../../pages/ProcessPage', () => ({
 vi.mock('../../pages/CaptureNotePage', () => ({
   default: () => <div>CAPTURE PAGE CONTENT</div>,
 }));
+// Paperloop Phase 4: /quiz now renders QuizBuilderPage (replacing ComingSoonPage).
+// It self-fetches notes/subjects on mount, so sentinel-mock it like the others.
+vi.mock('../../pages/QuizBuilderPage', () => ({
+  default: () => <div>QUIZ BUILDER CONTENT</div>,
+}));
 
 import { AppRoutes } from '../AppRoutes';
 import { AuthContext } from '../AuthContext';
@@ -149,5 +154,20 @@ describe('AppShell routing (Paperloop Phase 1)', () => {
     // list renders, so neither toggle label is present anywhere on the page.
     expect(screen.queryByText(/contributors/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/top learners/i)).not.toBeInTheDocument();
+  });
+
+  it('renders QuizBuilderPage at /quiz (replaces the ComingSoon placeholder)', async () => {
+    renderAt('/quiz', { user: AUTHED_USER, loading: false });
+    expect(await screen.findByText('QUIZ BUILDER CONTENT')).toBeInTheDocument();
+    // The old "coming soon" placeholder copy must be gone.
+    expect(screen.queryByText(/coming soon/i)).not.toBeInTheDocument();
+  });
+
+  it('no longer exposes a /chat route (chat feature removed in Phase 4)', () => {
+    renderAt('/chat', { user: AUTHED_USER, loading: false });
+    // The /chat route was deleted, so nothing page-specific mounts at /chat —
+    // not the quiz page that took chat's nav slot, nor the Today dashboard.
+    expect(screen.queryByText('QUIZ BUILDER CONTENT')).not.toBeInTheDocument();
+    expect(screen.queryByText(/welcome back/i)).not.toBeInTheDocument();
   });
 });

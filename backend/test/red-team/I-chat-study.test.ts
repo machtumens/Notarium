@@ -1,7 +1,7 @@
-// I. Chat & Study System (131-140)
-// Chat/study handlers authenticate via getUserFromToken/getOrCreateUser and scope
-// every row to user.id. Cross-user session access must 404. AI-dependent replies
-// are not asserted (no keys); we assert ownership isolation + persistence + gating.
+// I. Study System (136-140)
+// Study handlers authenticate via getUserFromToken and scope every row to user.id.
+// The chat cluster (131-134) was removed with the chat feature in Paperloop Phase 4;
+// this file now covers the SRS/quiz-attempt + review + stats surface only.
 import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
 import { applySchema, resetData, call, seedUser, seedSubject, seedNote, env } from './helpers';
 
@@ -20,53 +20,7 @@ function hashQuestion(text: string): string {
   return (h >>> 0).toString(36);
 }
 
-async function makeSession(token: string) {
-  const res = await call('/api/chat/sessions', {
-    method: 'POST',
-    token,
-    body: { subject: 'Math', topic: 'Algebra' },
-  });
-  return { res, id: ((await res.clone().json()) as any)?.session?.id };
-}
-
-describe('I. Chat & study (131-140)', () => {
-  it('131 & 132. a user can create then retrieve their own chat session', async () => {
-    const u = await seedUser();
-    const { res } = await makeSession(u.token);
-    expect(res.status).toBeLessThan(300);
-    const list = await call('/api/chat/sessions', { token: u.token });
-    expect(list.status).toBe(200);
-  });
-
-  it('133. a user cannot read another user’s session messages (404)', async () => {
-    const a = await seedUser();
-    const b = await seedUser();
-    const { id } = await makeSession(a.token);
-    expect(id, 'session id was created').toBeDefined();
-    const res = await call(`/api/chat/sessions/${id}/messages`, { token: b.token });
-    expect(res.status).toBe(404);
-  });
-
-  it('134. message ordering: retrieved messages are non-decreasing by id', async () => {
-    const u = await seedUser();
-    const { id } = await makeSession(u.token);
-    await call(`/api/chat/sessions/${id}/messages`, {
-      method: 'POST',
-      token: u.token,
-      body: { content: 'first' },
-    });
-    await call(`/api/chat/sessions/${id}/messages`, {
-      method: 'POST',
-      token: u.token,
-      body: { content: 'second' },
-    });
-    const msgs = (
-      (await (await call(`/api/chat/sessions/${id}/messages`, { token: u.token })).json()) as any
-    ).messages;
-    const ids = msgs.map((m: any) => m.id);
-    expect([...ids].sort((x, y) => x - y)).toEqual(ids);
-  });
-
+describe('I. Study (136-140)', () => {
   it('136 & auth. quiz attempt requires auth (401) and stores a row when valid', async () => {
     expect(
       (await call('/api/quiz/attempt', { method: 'POST', body: { question_text: 'q' } })).status,
