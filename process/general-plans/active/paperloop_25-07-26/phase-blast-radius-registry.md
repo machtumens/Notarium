@@ -69,7 +69,15 @@ Dropped from the original stub claim: src/components/AppShell.tsx — verified d
 
 ## Phase 4 — Quiz + Test Simulator
 
-Status: PLAN + PVL complete (17-08-26) — Gate: CONDITIONAL, user-accepted 17-08-26. EXECUTE HELD — see Current Execution State in the umbrella plan for the blocking pre-condition (two concurrent uncommitted work-streams share files with this phase's blast radius: SRS-hardening session on `study.ts`/`I-chat-study.test.ts`/`G-idor.test.ts`/migration 0016; firebase-auth session on `provider-mocks.test.ts`/`auth.ts`/`db.ts`/`env.ts`/`schema.sql`).
+Status: DONE (EVL-green, 2026-08-21). EXECUTE completed 21-08-26; EVL independently re-confirmed
+195/195 BE (incl. 3 new chat-404 regression tests in `chat-removed.test.ts`), 31/31 FE, tsc clean
+x2. Gate: CONDITIONAL (user-accepted 17-08-26) confirmed still valid — remaining Agent-Probe rows
+are accepted known-gaps, not blockers. Pre-condition resolved: SRS-hardening stream committed
+separately at `e14e0b2` before EXECUTE ran (no collision, `I-chat-study.test.ts` re-verified fresh
+against the committed state per the plan's own instruction); firebase-auth stream remains
+uncommitted but never overlapped Phase 4's actual edits (zero Edit/Write to `auth.ts`/`db.ts`/
+`env.ts`/`schema.sql`/`gaps-*.test.ts`/the `firebase-auth-migration_24-07-26/` folder). Source
+commit pending (orchestrator's next action, outside this UPDATE PROCESS session).
 Claimed files (corrected + expanded during PLAN-SUPPLEMENT — original stub claimed 11 files and missed 3: `src/lib/api.ts`, `src/types/index.ts`, and `backend/test/red-team/provider-mocks.test.ts`; that last one is a genuine new-discovery, not a naming correction — see plan's Verified Source Facts):
 
 - src/pages/QuizBuilderPage.tsx (CREATE)

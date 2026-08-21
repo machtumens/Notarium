@@ -14,7 +14,7 @@ metadata:
 **Program:** paperloop
 **Umbrella plan:** `process/general-plans/active/paperloop_25-07-26/paperloop-umbrella_PLAN_25-07-26.md`
 **Date** 25-07-26 (supplemented 17-08-26)
-**Status** ✅ PVL COMPLETE (17-08-26) — Gate: CONDITIONAL. Ready for EXECUTE (pending explicit ENTER EXECUTE MODE and Pre-Condition re-verification at G2.1).
+**Status** ✅ COMPLETE (21-08-26) — EVL GATES-GREEN (195/195 BE, 31/31 FE, tsc clean x2). Ready for UPDATE PROCESS archival.
 **Complexity** COMPLEX
 **Report destination:** `process/general-plans/active/paperloop_25-07-26/phase-4-quiz-simulator_REPORT_25-07-26.md`
 
@@ -347,9 +347,21 @@ Manual/agent-probe verification:
 - [x] 2. INNOVATE — 5 forks locked by explicit user decisions this session (Forks A-F above); one correction applied to an earlier INNOVATE draft (Fork D: duration is user-configurable, not a fixed constant).
 - [x] 3. PLAN-SUPPLEMENT — this update. Every section of the stub rewritten with concrete file:line anchors, corrected + expanded blast radius (added `provider-mocks.test.ts` as a newly-discovered demolition target, added `src/types/index.ts` and `src/lib/api.ts` explicitly which the original stub only implied), an atomic consumer-first DEMOLITION→BUILD→TESTS checklist with per-group `tsc` checkpoints, REQ-TEST-LINK'd verification evidence, 4 accepted known-gaps, a dedicated Security Note, and the Fork G pre-condition prominently documented as a blocking gate on G2.1. Registry reconciled (see `phase-blast-radius-registry.md` Phase 4 section, updated alongside this plan).
 - [x] 4. PVL — inner-PVL complete 17-08-26 (this session). Gate: CONDITIONAL. T1/T2 test-placement resolved in-plan; 1 new harmless known-gap documented (stale Chat UI labels); Pre-Condition confirmed still live via `git status` — EXECUTE must re-verify before G2.1. See `## Validate Contract` below.
-- [ ] 5. EXECUTE
-- [ ] 6. EVL
-- [ ] 7. UPDATE PROCESS
+- [x] 5. EXECUTE — completed 2026-08-21. All checklist items (G1-G5, B1-B4, T1-T4) done; all four exit gates green (FE tsc 0, FE 31/31; BE tsc 0, BE 192/192). See phase report + ## Deviations (EXECUTE) below.
+- [x] 6. EVL — orchestrator-independent confirmation run, 2026-08-21. Re-ran all 4 validate-contract gate commands (not just trusted execute-agent's report). Added 3 chat-404 regression tests (`backend/test/red-team/chat-removed.test.ts`) closing the one residual coverage gap (positive quiz/IDOR/route-swap proof existed; no dedicated negative-assertion proof that `/api/chat/*` is actually unreachable). Final: FE tsc 0, FE 31/31; BE tsc 0, BE 195/195 (was 192/192). Gate: CONDITIONAL (user-accepted 17-08-26) confirmed still valid — all Fully-Automated/Hybrid criteria pass; remaining Agent-Probe rows (C1-C4, C8) are accepted known-gaps per the plan's own gap-resolution table, not blockers.
+- [x] 7. UPDATE PROCESS — this session, 2026-08-21. Phase report finalized; registry updated; umbrella `## Current Execution State` advanced to Phase 5; memory updated. See phase report Closeout Packet.
+
+---
+
+## Deviations (EXECUTE 2026-08-21)
+
+All within-blast-radius (no auth/billing/schema/API-contract/container hard-stop class). Full detail in the phase report's `## Plan Deviations`.
+
+1. **G4 before G3.** ChatPage is the sole consumer of `api.chat`/`Chat*` types; deleting the consumer first preserves the plan's own consumer-first + tsc-green-per-group invariant. Impact: none — same files/ops, reordered; every checkpoint stayed green.
+2. **Note picker → `/api/notes/my-notes?status=published`** (owned notes) instead of `api.notes.getAll()` (community). Impact: positive — the server-side ownership check always passes for a note source; no 403 surprise.
+3. **Short-answer grading reuses the existing `POST /api/recall/grade`** (`api.gradeRecall`) rather than a new endpoint. Impact: none — no new backend surface; realizes Locked Decision 5 (the frontend has no AI key).
+4. **Single-route architecture:** `QuizBuilderPage` owns the step machine and Suspense-renders `TestSimulatorPage`/`TestResultsPage` from `lazyPages` (circular-but-lazy-safe). Impact: none — explicitly EXECUTE's discretion per B3.2/B4.2.
+5. **+2 additive tests** (400-invalid-`types` in T1; owner-not-404 in T2). Impact: positive — stronger coverage, within the test-file blast radius.
 
 ---
 
@@ -360,11 +372,10 @@ Manual/agent-probe verification:
 ## Resume and Execution Handoff
 
 - Selected plan file path: `process/general-plans/active/paperloop_25-07-26/phase-4-quiz-simulator_PLAN_25-07-26.md`
-- Last completed step: Phase Loop Progress Step 4 (PVL) — validate-contract written, Gate: CONDITIONAL (user-accepted 2026-08-17)
-- Validate-contract status: written — Gate: CONDITIONAL (accepted, `inner-pvl: phase-4`). EXECUTE (Step 5) is HELD — see umbrella `## Current Execution State` for the blocking concurrent-session pre-condition.
+- Last completed step: Phase Loop Progress Step 7 (UPDATE PROCESS) — phase COMPLETE, 2026-08-21.
+- Validate-contract status: written — Gate: CONDITIONAL (accepted, `inner-pvl: phase-4`, 17-08-26). EVL independently re-confirmed all Fully-Automated/Hybrid gates green 21-08-26 (195/195 BE incl. 3 new chat-404 regression tests, 31/31 FE, tsc clean x2); remaining Agent-Probe rows carried as accepted known-gaps.
 - Supporting context files loaded: `process/context/all-context.md`, umbrella plan, `phase-blast-radius-registry.md`, `phase-2-library-process_PLAN_25-07-26.md` and `phase-3-community-progress_PLAN_25-07-26.md` (shape reference), direct source read of all files listed in Blast Radius/Touchpoints
-- Next step for a fresh agent: Spawn `vc-validate-agent` for this plan file. Note the Pre-Condition section is a hard PVL input — the validate pass should explicitly address T1/T2's final test-file placement (currently deferred) and re-confirm G2.1's line citations against the then-current state of `I-chat-study.test.ts` and the concurrent hardening session's commit status.
-- Execute-agent start instruction (once PVL passes): implement in checklist order G1 → G2 (re-verify Pre-Condition first) → G3 → G4 → G5, running the `tsc --noEmit` checkpoint after each group; then B1 → B2 → B3 → B4 (may interleave with demolition per the Overview note, but land B-group edits to `ai.ts`/`index.ts` as a separate pass from the G-group deletions in those same files); then T1-T4. Do not batch all Exit Gate commands to the end — checkpoint after each group as specified.
+- Phase closed. Next step for the program: commit Phase 4's execution changes (source commit, `vc-git-manager`), then `ENTER EXECUTE MODE` for `phase-5-primer_PLAN_25-07-26.md` (PLAN+VALIDATE already done, Gate CONDITIONAL accepted, committed `783f972`) — its Phase-4 dependency is now satisfied.
 
 ---
 
