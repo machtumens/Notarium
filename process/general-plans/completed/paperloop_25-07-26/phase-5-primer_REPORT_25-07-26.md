@@ -132,7 +132,7 @@ Scoring against the phase plan's own Acceptance Criteria (C1-C11, validate-contr
    196/196, tsc x2 clean, eslint 0 errors), EVL-independently-confirmed. Unverified — 3 Agent-Probe
    browser rows (C3, C6, C11 spot-check) pending `DEEPSEEK_API_KEY` + live browser session.
    4b. **Validate-contract compliance:** VALIDATE was run (inner-PVL, `generated-by: inner-pvl:
-   phase-5`). Gate: CONDITIONAL, accepted, committed `783f972`. Present in the plan file — see
+phase-5`). Gate: CONDITIONAL, accepted, committed `783f972`. Present in the plan file — see
    plan's `## Validate Contract` section.
 5. **Cleanup done vs still needed:** Done — this report written, phase plan Phase Loop Progress
    Steps 6-7 ticked, registry updated, umbrella program marked COMPLETE, memory updated. Still
