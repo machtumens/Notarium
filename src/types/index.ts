@@ -232,6 +232,12 @@ export interface ConceptExplanationResponse {
   explanation: string;
 }
 
+export interface PrimerResponse {
+  overview: string;
+  key_concepts: string[];
+  questions: string[];
+}
+
 export interface OCRResponse {
   text: string;
   success: boolean;

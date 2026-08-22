@@ -68,6 +68,12 @@ vi.mock('../../pages/CaptureNotePage', () => ({
 vi.mock('../../pages/QuizBuilderPage', () => ({
   default: () => <div>QUIZ BUILDER CONTENT</div>,
 }));
+// Paperloop Phase 5: /primer renders PrimerPage inside AppShell. Sentinel-mock it
+// so this routing test asserts only that the correct component mounts at /primer,
+// not PrimerPage's topic-input/generate internals.
+vi.mock('../../pages/PrimerPage', () => ({
+  default: () => <div>PRIMER PAGE CONTENT</div>,
+}));
 
 import { AppRoutes } from '../AppRoutes';
 import { AuthContext } from '../AuthContext';
@@ -119,6 +125,9 @@ describe('AppShell routing (Paperloop Phase 1)', () => {
     expect(await screen.findByText(/welcome back/i)).toBeInTheDocument();
     // The Community/Subjects WebGL page must NOT be what mounts at / anymore.
     expect(screen.queryByText(/loading your dashboard/i)).not.toBeInTheDocument();
+    // Paperloop Phase 5: the "Prep for class" card is the discoverability entry
+    // point to /primer and must render on the Today dashboard.
+    expect(screen.getByRole('button', { name: /prep for class/i })).toBeInTheDocument();
   });
 
   it('renders ReviewPageRoute at /review for an authenticated user (preserved route)', async () => {
@@ -161,6 +170,11 @@ describe('AppShell routing (Paperloop Phase 1)', () => {
     expect(await screen.findByText('QUIZ BUILDER CONTENT')).toBeInTheDocument();
     // The old "coming soon" placeholder copy must be gone.
     expect(screen.queryByText(/coming soon/i)).not.toBeInTheDocument();
+  });
+
+  it('renders PrimerPage at /primer for an authenticated user', async () => {
+    renderAt('/primer', { user: AUTHED_USER, loading: false });
+    expect(await screen.findByText('PRIMER PAGE CONTENT')).toBeInTheDocument();
   });
 
   it('no longer exposes a /chat route (chat feature removed in Phase 4)', () => {

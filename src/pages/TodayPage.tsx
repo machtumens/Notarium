@@ -6,7 +6,7 @@ import { logger } from '../lib/logger';
 import LoadingSpinner from '../components/LoadingSpinner';
 import { darkTheme } from '../theme';
 import { useAuth } from '../app/AuthContext';
-import { Flame, CalendarClock, ArrowRight, BookOpen } from 'lucide-react';
+import { Flame, CalendarClock, ArrowRight, BookOpen, GraduationCap } from 'lucide-react';
 
 // TodayPage — the personal study dashboard and the new default landing (/).
 // Uses only pre-existing study endpoints (zero new backend). Field names are the
@@ -245,6 +245,67 @@ export default function TodayPage() {
             Start Review <ArrowRight size={18} />
           </button>
         </div>
+
+        {/* Prep for class card — the discoverability entry point to /primer (Paperloop Phase 5) */}
+        <button
+          type="button"
+          onClick={() => navigate('/primer')}
+          style={{
+            textAlign: 'left',
+            background: darkTheme.colors.bgSecondary,
+            border: `1px solid ${darkTheme.colors.borderColor}`,
+            borderRadius: darkTheme.borderRadius.md,
+            padding: '24px',
+            boxShadow: darkTheme.shadows.default,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '18px',
+            cursor: 'pointer',
+            transition: darkTheme.transitions.default,
+            color: darkTheme.colors.textPrimary,
+          }}
+          onMouseOver={(e) => {
+            e.currentTarget.style.transform = 'translateY(-3px)';
+            e.currentTarget.style.boxShadow = darkTheme.shadows.lg;
+          }}
+          onMouseOut={(e) => {
+            e.currentTarget.style.transform = 'translateY(0)';
+            e.currentTarget.style.boxShadow = darkTheme.shadows.default;
+          }}
+        >
+          <div
+            style={{
+              width: '56px',
+              height: '56px',
+              borderRadius: '16px',
+              background:
+                'linear-gradient(135deg, rgba(139, 92, 246, 0.25), rgba(124, 58, 237, 0.15))',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: '#8b5cf6',
+              flexShrink: 0,
+            }}
+          >
+            <GraduationCap size={28} />
+          </div>
+          <div>
+            <div
+              style={{
+                fontSize: '18px',
+                fontWeight: '700',
+                color: darkTheme.colors.textPrimary,
+              }}
+            >
+              Prep for class
+            </div>
+            <div
+              style={{ fontSize: '13px', color: darkTheme.colors.textSecondary, marginTop: '4px' }}
+            >
+              Get a quick primer on any topic
+            </div>
+          </div>
+        </button>
       </div>
 
       {/* Due cards preview */}

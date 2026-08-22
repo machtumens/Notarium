@@ -30,6 +30,7 @@ describe('H. AI endpoint security (121-130)', () => {
       ['/api/gemini/auto-tags', { title: 't', content: 'c' }],
       ['/api/study-plan', { subject: 's', topic: 't' }],
       ['/api/concept-explain', { concept: 'x' }],
+      ['/api/ai/primer', { topic: 't' }],
     ] as const;
     for (const [p, body] of paths) {
       const res = await call(p, { method: 'POST', body });
@@ -63,5 +64,15 @@ describe('H. AI endpoint security (121-130)', () => {
     expect(
       (await call('/api/gemini/ocr', { method: 'POST', token: u.token, body: {} })).status,
     ).toBe(400);
+  });
+
+  it('131. primer endpoint rejects a valid-token request with no topic (400)', async () => {
+    const u = await seedUser();
+    const missing = await call('/api/ai/primer', {
+      method: 'POST',
+      token: u.token,
+      body: {},
+    });
+    expect(missing.status).toBe(400);
   });
 });

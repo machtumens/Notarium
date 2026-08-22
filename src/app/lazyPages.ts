@@ -21,5 +21,6 @@ export const SettingsPage = lazy(() => import('../pages/SettingsPage'));
 export const ProcessPage = lazy(() => import('../pages/ProcessPage'));
 export const CaptureNotePage = lazy(() => import('../pages/CaptureNotePage'));
 export const QuizBuilderPage = lazy(() => import('../pages/QuizBuilderPage'));
+export const PrimerPage = lazy(() => import('../pages/PrimerPage'));
 export const TestSimulatorPage = lazy(() => import('../pages/TestSimulatorPage'));
 export const TestResultsPage = lazy(() => import('../pages/TestResultsPage'));

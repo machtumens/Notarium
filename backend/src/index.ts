@@ -20,6 +20,7 @@ import {
   generateStructuredQuizEndpoint,
   generateStudyPlanEndpoint,
   explainConceptEndpoint,
+  generatePrimerEndpoint,
 } from './routes/ai';
 import { updateUserInfo, getCurrentUser, updateUserClass } from './routes/users';
 import {
@@ -954,6 +955,15 @@ Tags:`,
           return jsonResponse({ error: 'Too many requests. Try again later.' }, 429, env);
         }
         return await explainConceptEndpoint(request, env);
+      }
+
+      if (path === '/api/ai/primer' && request.method === 'POST') {
+        const _prUser = await requireUser(request, env);
+        if (!_prUser) return jsonResponse({ error: 'Unauthorized' }, 401, env);
+        if (!(await checkRateLimit(String(_prUser.id), 'ai', env))) {
+          return jsonResponse({ error: 'Too many requests. Try again later.' }, 429, env);
+        }
+        return await generatePrimerEndpoint(request, env);
       }
       if (path === '/api/admin/verify' && request.method === 'POST') {
         return await verifyAdmin(request, env);

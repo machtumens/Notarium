@@ -26,6 +26,7 @@ import type {
   OpsTimeseries,
   OpsFlags,
   OpsCloudflare,
+  PrimerResponse,
 } from '../types';
 
 const baseURL =
@@ -347,6 +348,19 @@ export const api = {
         body: { concept },
       });
       return { explanation: response.explanation || '' };
+    },
+    // Stateless class primer (POST /api/ai/primer). Topic string only — no note,
+    // no DB read, no persistence. Returns the flat 3-field PrimerResponse shape.
+    generatePrimer: async (topic: string): Promise<PrimerResponse> => {
+      const response = await api.request('/api/ai/primer', {
+        method: 'POST',
+        body: { topic },
+      });
+      return {
+        overview: response.overview || '',
+        key_concepts: response.key_concepts || [],
+        questions: response.questions || [],
+      };
     },
     performOCR: async (imageBase64: string, mimeType: string = 'image/jpeg') => {
       const response = await api.request('/api/gemini/ocr', {

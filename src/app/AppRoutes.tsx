@@ -23,6 +23,7 @@ import {
   ProcessPage,
   CaptureNotePage,
   QuizBuilderPage,
+  PrimerPage,
 } from './lazyPages';
 
 export function AppRoutes() {
@@ -107,6 +108,7 @@ export function AppRoutes() {
           <Route path="/community/:subjectId" element={<SubjectNotesPage />} />
           <Route path="/progress" element={<ProgressRoute />} />
           <Route path="/quiz" element={<QuizBuilderPage />} />
+          <Route path="/primer" element={<PrimerPage />} />
           <Route
             path="/admin"
             element={

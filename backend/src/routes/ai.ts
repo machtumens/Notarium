@@ -338,6 +338,89 @@ Make it engaging and suitable for high school students. Write the entire explana
   }
 }
 
+// ---------------------------------------------------------------------------
+// Class primer generation (POST /api/ai/primer) — Paperloop Phase 5.
+// Stateless: the ONLY input is a free-text topic string. No note is read, no
+// DB row is touched, nothing is persisted — a fresh primer is generated on
+// every call. Mirrors the DeepSeek fetch/error shape of generateStudyPlan /
+// explainConcept, but returns STRUCTURED JSON (like generateQuiz /
+// generateStructuredQuiz) so PrimerPage can render it as three sections.
+// ---------------------------------------------------------------------------
+
+export async function generatePrimer(
+  topic: string,
+  env: Env,
+): Promise<{ overview: string; key_concepts: string[]; questions: string[] }> {
+  try {
+    const deepseekApiKey = env.DEEPSEEK_API_KEY;
+    if (!deepseekApiKey) {
+      throw new Error('AI service not configured');
+    }
+
+    const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${deepseekApiKey}`,
+      },
+      body: JSON.stringify({
+        model: 'deepseek-chat',
+        messages: [
+          {
+            role: 'user',
+            content: `A student wants to catch up before a class on "${topic}". Create a concise pre-class primer.
+
+Return ONLY a JSON object with this exact structure (no extra text before or after):
+{
+  "overview": "A short 2-3 sentence overview of the topic.",
+  "key_concepts": ["concept 1", "concept 2", "concept 3"],
+  "questions": ["priming question 1", "priming question 2", "priming question 3"]
+}
+
+Rules:
+- "overview": 2-3 sentences introducing the topic at a high-school level.
+- "key_concepts": 4-6 short strings, each a key idea to know before class.
+- "questions": 3-5 priming questions to think about before class.
+- Write everything in Indonesian (Bahasa Indonesia).
+
+Topic: ${topic}`,
+          },
+        ],
+        max_tokens: 1500,
+        temperature: 0.5,
+      }),
+    });
+
+    const data = (await response.json()) as any;
+
+    if (!response.ok || !data.choices || data.choices.length === 0) {
+      throw new Error(data.error?.message || 'DeepSeek API error');
+    }
+
+    const responseText = data.choices[0].message.content;
+    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      throw new Error('Invalid primer format');
+    }
+    const parsed = JSON.parse(jsonMatch[0]) as {
+      overview?: unknown;
+      key_concepts?: unknown;
+      questions?: unknown;
+    };
+    return {
+      overview: typeof parsed.overview === 'string' ? parsed.overview : '',
+      key_concepts: Array.isArray(parsed.key_concepts)
+        ? parsed.key_concepts.filter((c): c is string => typeof c === 'string')
+        : [],
+      questions: Array.isArray(parsed.questions)
+        ? parsed.questions.filter((q): q is string => typeof q === 'string')
+        : [],
+    };
+  } catch (error: any) {
+    throw new Error(`Failed to generate primer: ${error.message}`);
+  }
+}
+
 export async function performOCREndpoint(request: Request, env: Env) {
   try {
     const user = await getUserFromToken(request, env);
@@ -655,6 +738,26 @@ export async function explainConceptEndpoint(request: Request, env: Env) {
     const explanation = await explainConcept(concept, subject || 'General', env);
 
     return jsonResponse({ explanation });
+  } catch (error: any) {
+    return jsonResponse({ error: error.message }, 500);
+  }
+}
+
+export async function generatePrimerEndpoint(request: Request, env: Env) {
+  try {
+    const user = await getUserFromToken(request, env);
+    if (!user) return jsonResponse({ error: 'Unauthorized' }, 401, env);
+
+    const body = (await request.json()) as any;
+    const { topic } = body;
+
+    if (!topic) {
+      return jsonResponse({ error: 'Topic is required' }, 400);
+    }
+
+    const { overview, key_concepts, questions } = await generatePrimer(topic, env);
+
+    return jsonResponse({ overview, key_concepts, questions });
   } catch (error: any) {
     return jsonResponse({ error: error.message }, 500);
   }
