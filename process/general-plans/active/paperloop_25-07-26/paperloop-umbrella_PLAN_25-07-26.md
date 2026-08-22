@@ -12,7 +12,7 @@ metadata:
 # Paperloop — Umbrella Plan
 
 **Date** 25-07-26
-**Status** ⏳ PLANNED
+**Status** ✅ PROGRAM COMPLETE (2026-08-21) — all 5 phases delivered, EVL-green. Phase 5's source commit is the only outstanding execution-commit action (bookkeeping-only this session).
 **Complexity:** COMPLEX
 
 - Program type: PHASE PROGRAM (5 phases, sequential with gated joins; Phase 3 parallelizable with Phase 2)
@@ -82,6 +82,52 @@ Hard safety constraints (non-negotiable, per phase):
 - Commit each phase's execution changes before starting the next phase
 - Keep process/plan/context commits separate from execution commits
 ```
+
+### Definition of Done — Assessment (2026-08-21, program closeout)
+
+All 5 items **MET**:
+
+1. **MET** — TodayPage is the default landing (`/`), delivered Phase 1 (`172c7ca`): streak, due
+   count, due-card previews, recent notes.
+2. **MET** — `/notes/:id/process` OCR→summary→quiz→SRS pipeline delivered Phase 2 (`964f729`) +
+   `GET /api/notes/:id` backend support.
+3. **MET** — Subjects reframed as Community; leaderboard ranked by `learning_points DESC,
+current_streak DESC` delivered Phase 3 (`85cb8e0`).
+4. **MET** — QuizBuilder + TestSimulator pages, `/api/ai/quiz` (IDOR-scoped), chat code removed
+   (D1 tables preserved per hard constraint) delivered Phase 4 (`ce67399`+`575c7ec`).
+5. **MET** — Primer generation from a topic string at `/primer`, `/api/ai/primer` (DeepSeek)
+   delivered Phase 5 (this session's closeout; source commit outstanding).
+
+**Hard safety constraints — all held across all 5 phases:** no destructive D1 migrations were run
+without approval; auth/billing surfaces were never touched by any Paperloop phase; SRS cards
+(`study_items`) remain personal-only throughout; `chat_sessions`/`chat_messages` D1 tables were
+preserved (Phase 4 removed code only, confirmed no `DROP TABLE`); each phase's execution changes
+were committed before the next phase started (Phase 5's source commit is the sole outstanding
+exception, explicitly deferred this session per instruction — not yet "before starting the next
+phase" because there is no next phase); process/plan/context commits were kept separate from
+execution commits throughout (Phase 1-4 precedent: `172c7ca`/`964f729`/`85cb8e0`/`ce67399` are
+execution commits, `984bb9f`/`f54e365`/`575c7ec`/`783f972` are process commits).
+
+**Program-wide accepted known-gaps (carried to backlog, not blocking closeout):**
+
+- Agent-probe browser verification rows across all 5 phases (C1-C4/C8 style rows) remain
+  unexercised — need a manual pass with a live dev server/browser session and, for Phases 4-5,
+  `DEEPSEEK_API_KEY` in the dev env.
+- `sanitizeAIInput` (`backend/src/lib/ratelimit.ts:45`) is exported/unit-tested but wired into
+  zero AI-generation endpoints (`generateStudyPlanEndpoint`, `explainConceptEndpoint`,
+  `generateQuizEndpoint`, `generatePrimerEndpoint`) — self-inflicted-risk-only, not IDOR. A
+  systemic hardening pass across all 4 endpoints is recommended as a follow-up plan.
+- Refresh-loss on ephemeral surfaces (Phase 2 process pipeline, Phase 4 quiz/timer, Phase 5
+  primer) — accepted by design across the program, no persistence layer added for any of them.
+- No `test_sessions`-style table exists anywhere in the program (consistent with the "no schema
+  beyond leaderboard SQL swap" scope decision).
+
+### Program Folder Archival Recommendation
+
+`process/general-plans/active/paperloop_25-07-26/` is functionally complete and is a strong
+candidate for `active/` → `completed/` archival in a follow-up UPDATE PROCESS pass, once Phase 5's
+source commit lands (archival should happen after the commit that the plan/report describe, not
+before). Not moved in this session per the explicit "do not commit" scope — recommending only.
 
 ---
 
@@ -229,15 +275,17 @@ This inner loop SKIPS SPEC — SPEC runs once in the outer program loop only.
 
 ## Program Status Table
 
-| Phase                           | Status                                                                                                                                                              |
-| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 01 — Shell + Today              | ✅ COMPLETE — EVL PASS (browser C8/C9 waived, accepted known-gap)                                                                                                   |
-| 02 — My Library + Process Inbox | ✅ COMPLETE — EVL PASS (4 agent-probe browser rows verification-pending, accepted as backlog NOTEs)                                                                 |
-| 03 — Community + Progress       | ✅ COMPLETE — EVL PASS (independently confirmed), committed `85cb8e0`; C4 browser waived (accepted known-gap)                                                       |
-| 04 — Quiz + Test Simulator      | ✅ COMPLETE — EVL PASS (independently confirmed 21-08-26: BE 195/195, FE 31/31, tsc clean x2); Agent-Probe browser rows accepted known-gap, per Phase 1-3 precedent |
-| 05 — Primer                     | 🔨 PLAN + VALIDATE COMPLETE — Gate: CONDITIONAL (accepted), committed `783f972`. EXECUTE now READY (Phase-4 dependency satisfied).                                  |
+| Phase                           | Status                                                                                                                                                                                                                                |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 01 — Shell + Today              | ✅ COMPLETE — EVL PASS (browser C8/C9 waived, accepted known-gap)                                                                                                                                                                     |
+| 02 — My Library + Process Inbox | ✅ COMPLETE — EVL PASS (4 agent-probe browser rows verification-pending, accepted as backlog NOTEs)                                                                                                                                   |
+| 03 — Community + Progress       | ✅ COMPLETE — EVL PASS (independently confirmed), committed `85cb8e0`; C4 browser waived (accepted known-gap)                                                                                                                         |
+| 04 — Quiz + Test Simulator      | ✅ COMPLETE — EVL PASS (independently confirmed 21-08-26: BE 195/195, FE 31/31, tsc clean x2); Agent-Probe browser rows accepted known-gap, per Phase 1-3 precedent                                                                   |
+| 05 — Primer                     | ✅ COMPLETE — EVL PASS (independently confirmed 21-08-26: BE 196/196, FE 32/32, tsc clean x2, eslint 0 errors); Agent-Probe browser rows (C3, C6, C11 spot-check) accepted known-gap, per Phase 1-4 precedent. Source commit pending. |
 
 Status values: ⏳ PLANNED | 🔨 PLAN WRITTEN | 🧪 TESTING | ✅ VERIFIED (user confirmed working) | 🚧 BLOCKED | ✅ COMPLETE
+
+**ALL 5 PHASES COMPLETE (2026-08-21). Program reaches its Definition of Done — see `## Program Goal Charter` assessment below.**
 
 ---
 
@@ -341,18 +389,18 @@ Phase 1 adds the first routing smoke tests for AppShell and AppRoutes. This is t
 ## Resume and Execution Handoff
 
 - Selected plan file path: `process/general-plans/active/paperloop_25-07-26/paperloop-umbrella_PLAN_25-07-26.md`
-- Last completed phase: Phase 4 (Quiz + Test Simulator) — EVL-green (independently confirmed 21-08-26), source commit pending
-- Validate-contract status: Phase 1-4 written (Gate: CONDITIONAL, all accepted); Phase 5 written (Gate: CONDITIONAL, accepted, committed `783f972`)
+- Last completed phase: Phase 5 (Primer) — EVL-green (independently confirmed 21-08-26). **This was the final phase — PROGRAM COMPLETE.**
+- Validate-contract status: Phase 1-5 all written (Gate: CONDITIONAL, all accepted). Phase 5 committed `783f972` (plan+validate); source pending.
 - Supporting context files loaded: `process/context/all-context.md`, `process/context/tests/all-tests.md`
-- Next step for a fresh agent: Commit Phase 4's execution changes (source commit via `vc-git-manager`), then read `phase-5-primer_PLAN_25-07-26.md` (PLAN+VALIDATE already done) and ENTER EXECUTE MODE for Phase 5.
-- Execute-agent start instruction: Phase 5's own plan `## Validate Contract` is already written (Gate: CONDITIONAL, accepted, committed `783f972`) and its sole dependency (Phase 4 complete) is now satisfied — no remaining pre-condition. The firebase-auth-migration stream remains uncommitted but is NOT a Phase 5 dependency (Phase 5 builds on Phase 4's now-settled `ai.ts`/`index.ts`/`api.ts`/`types/index.ts`, not on `auth.ts`/`db.ts`/`env.ts`).
+- Next step for a fresh agent: there is no next phase. (1) Commit Phase 5's 10 source files (`vc-git-manager`, execution commit — do NOT stage the unrelated firebase-auth-migration or gaps-\* files sitting in the same working tree). (2) Commit this UPDATE PROCESS session's process artifacts (this plan, the phase-5 report, the registry) separately. (3) Consider archiving `paperloop_25-07-26/` from `active/` to `completed/` as a follow-up. (4) Route the program-wide accepted known-gaps (see Definition of Done assessment above) to backlog.
+- Execute-agent start instruction: n/a — EXECUTE is done for all 5 phases. Any further Paperloop work (e.g. the deferred `sanitizeAIInput` hardening pass, or the agent-probe browser verification pass) is scoped follow-up work, not part of this program's Definition of Done — route it through a new plan/backlog entry, not by reopening this umbrella.
 
 ---
 
 ## Current Execution State
 
 Last updated: 2026-08-21
-Current phase: Phase 5 of 5 — Primer
+Current phase: PROGRAM COMPLETE — all 5 of 5 phases done
 Phase 1 name: Shell + Today
 Phase 1 status: ✅ COMPLETE
 Phase 1 EVL: ALL GATES PASS — frontend 26/26, backend 184/184, tsc clean x2; browser C8/C9 waived by user (accepted known-gap)
@@ -369,8 +417,12 @@ Phase 4 name: Quiz + Test Simulator
 Phase 4 status: ✅ COMPLETE — EVL PASS (independently confirmed 2026-08-21), chat demolished + quiz/simulator built + /api/ai/quiz IDOR-scoped. Source commit pending (orchestrator's next action).
 Phase 4 EVL: ALL GATES PASS — frontend 31/31 (was 29/29), backend 195/195 (was 192/192, +3 chat-404 regression tests added at EVL), tsc clean x2; Agent-Probe browser rows (C1-C4, C8) waived (accepted known-gap, matches Phase 1-3 precedent)
 Phase 4 report: process/general-plans/active/paperloop_25-07-26/phase-4-quiz-simulator_REPORT_25-07-26.md
-Next phase: Phase 5 — Primer — Step 5 EXECUTE, READY (Phase-4 dependency satisfied; PLAN+VALIDATE already committed at `783f972`). Next action: commit Phase 4 source, then ENTER EXECUTE MODE for `phase-5-primer_PLAN_25-07-26.md`.
-Validate-contract status: Phase 1 = CONDITIONAL (accepted, inner-pvl: phase-1); Phase 2 = CONDITIONAL (accepted, inner-pvl: phase-2); Phase 3 = CONDITIONAL (accepted, inner-pvl: phase-3); Phase 4 = CONDITIONAL (accepted 2026-08-17, inner-pvl: phase-4, EVL-confirmed 2026-08-21); Phase 5 = CONDITIONAL (accepted, inner-pvl: phase-5, committed 783f972)
+Phase 5 name: Primer
+Phase 5 status: ✅ COMPLETE — EVL PASS (independently confirmed 2026-08-21), DeepSeek-powered primer endpoint + PrimerPage delivered, "Prep for class" TodayPage entry point wired. Source commit pending (orchestrator's next action).
+Phase 5 EVL: ALL GATES PASS — frontend 32/32 (was 31/31), backend 196/196 (was 195/195), tsc clean x2, eslint 0 errors; Agent-Probe browser rows (C3, C6, C11 spot-check) waived (accepted known-gap, matches Phase 1-4 precedent)
+Phase 5 report: process/general-plans/active/paperloop_25-07-26/phase-5-primer_REPORT_25-07-26.md
+Next phase: NONE — this was the final phase. Program Goal Charter Definition of Done items 1-5 all MET (see assessment below). Next actions are follow-up housekeeping, not a new phase: (1) commit Phase 5's 10 source files, (2) commit this UPDATE PROCESS session's process artifacts separately, (3) archive this program folder `active/` → `completed/` as a follow-up UPDATE PROCESS action, (4) route program-wide known-gaps to backlog.
+Validate-contract status: Phase 1 = CONDITIONAL (accepted, inner-pvl: phase-1); Phase 2 = CONDITIONAL (accepted, inner-pvl: phase-2); Phase 3 = CONDITIONAL (accepted, inner-pvl: phase-3); Phase 4 = CONDITIONAL (accepted 2026-08-17, inner-pvl: phase-4, EVL-confirmed 2026-08-21); Phase 5 = CONDITIONAL (accepted, inner-pvl: phase-5, committed 783f972, EVL-confirmed 2026-08-21)
 
 Loop step values: RESEARCH | INNOVATE | PLAN-SUPPLEMENT | PVL | EXECUTE | EVL | UPDATE-PROCESS
 
@@ -379,13 +431,25 @@ Loop step values: RESEARCH | INNOVATE | PLAN-SUPPLEMENT | PVL | EXECUTE | EVL | 
 against the committed file per the plan's own Pre-Condition instruction, no collision. The
 firebase-auth stream (`process/general-plans/active/firebase-auth-migration_24-07-26/`) remains
 uncommitted but never overlapped Phase 4's actual edits — zero Edit/Write issued to `auth.ts`/
-`db.ts`/`env.ts`/`schema.sql`/`gaps-*.test.ts`/migration 0015 by Phase 4. It also does not block
-Phase 5 (Phase 5 depends only on Phase 4's now-settled `ai.ts`/`index.ts`/`api.ts`/`types/index.ts`).
+`db.ts`/`env.ts`/`schema.sql`/`gaps-*.test.ts`/migration 0015 by Phase 4 or Phase 5.
 
-Orchestrator rule: Phases 1-4 are DONE and EVL-green. Phases 1-3 committed (172c7ca / 964f729 /
-85cb8e0); Phase 4's execution commit is the immediate next action (outside this UPDATE PROCESS
-session). Phase 5's PLAN+VALIDATE are already committed (`783f972`) — spawn vc-execute-agent for
-Phase 5 once Phase 4's source commit lands.
+**Phase 5 EXECUTE completed 2026-08-21**, transitively unblocked once Phase 4's pre-condition
+resolved. All 10 claimed Blast Radius files delivered as planned, no deviations. EVL independently
+confirmed GATES-GREEN.
+
+**PROGRAM COMPLETE (2026-08-21):** All 5 phases are DONE and EVL-green. Commits so far: Phase 1
+`172c7ca`, Phase 2 `964f729`+`984bb9f`, Phase 3 `85cb8e0`+`f54e365`, SRS-hardening `e14e0b2`, Phase
+4 `ce67399`+`575c7ec`, Phase 5 plan+validate `783f972` (source commit still outstanding). This
+UPDATE PROCESS session performed bookkeeping only (report + plan/registry/umbrella/memory updates)
+— it did NOT stage or commit anything, per this session's explicit instruction. The orchestrator's
+next action is to commit Phase 5's source changes, then this session's process artifacts, then
+consider archiving `paperloop_25-07-26/` from `active/` to `completed/`.
+
+**Separate, unrelated stream still open:** the `firebase-auth-migration` stream
+(`process/general-plans/active/firebase-auth-migration_24-07-26/`) remains uncommitted
+(`auth.ts`/`db.ts`/`env.ts`, migration `0015`, `gaps-*.test.ts`, provider-mocks — incomplete). It
+is NOT part of Paperloop and was never touched by any Paperloop phase — it has its own plan folder
+and does not block this program's completion.
 
 ---
 

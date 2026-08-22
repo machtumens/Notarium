@@ -102,7 +102,11 @@ Explicitly NOT touched (verified during PLAN-SUPPLEMENT, 17-08-26): `backend/tes
 
 ## Phase 5 — Primer
 
-Status: PLAN-SUPPLEMENT complete (17-08-26) — ready for PVL. EXECUTE transitively gated: sequenced AFTER Phase 4 EXECUTE commits (6 shared files below), and Phase 4 EXECUTE is itself HELD on its own separate concurrent-session pre-condition (see Phase 4 section above / umbrella `## Current Execution State`).
+Status: DONE (EVL-green, 2026-08-21). EXECUTE completed 21-08-26 after Phase 4's pre-condition
+resolved; EVL independently confirmed FE 32/32 (was 31/31), BE 196/196 (was 195/195), tsc clean
+x2, eslint 0 errors. Gate: CONDITIONAL (accepted, committed `783f972` for plan+validate). Source
+commit for the 10 Phase 5 files pending (orchestrator's next action, outside this UPDATE PROCESS
+session). This is the FINAL phase of the paperloop program — all 5 phases now DONE.
 Claimed files (corrected + expanded during PLAN-SUPPLEMENT 17-08-26 — original stub claimed 5 files and missed 4: `src/types/index.ts`, `backend/test/red-team/H-ai.test.ts`, `src/app/__tests__/appshell-routing.test.tsx` were entirely absent from the stub, and `backend/src/routes/ai.ts`'s claim was expanded from "add generatePrimer" to also cover `generatePrimerEndpoint`):
 
 - src/pages/PrimerPage.tsx (CREATE — topic-input form, calls api.ai.generatePrimer, renders overview/key_concepts/questions, ephemeral)
