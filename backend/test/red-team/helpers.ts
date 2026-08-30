@@ -22,6 +22,11 @@ export const TEST_SECRETS = {
 
 // Tables the suites touch — cleared between tests so each starts clean.
 const TABLES = [
+  'tutor_bookings',
+  'tutor_sessions',
+  'tutor_availability',
+  'tutor_profiles',
+  'test_sessions',
   'note_likes',
   'admin_note_likes',
   'chat_messages',
@@ -44,10 +49,10 @@ export async function applySchema(): Promise<void> {
   if (schemaApplied) return;
   const statements = schemaSql
     .replace(/^\s*--.*$/gm, '') // strip line comments
-    // FAITHFULNESS FIX / FINDING: schema.sql marks encrypted_yw_id NOT NULL, but
-    // signupEndpoint never sets it. Production only works because the app's
-    // initializeDatabase() creates a laxer (nullable) users table. Match that
-    // reality so tests exercise the code path prod actually runs.
+    // HISTORICAL: schema.sql used to mark encrypted_yw_id NOT NULL while
+    // signupEndpoint never set it, so signup 500'd on any database built from
+    // that file. schema.sql was fixed on 27-08-26, making this replace a no-op.
+    // Kept as a cheap guard against the constraint being reintroduced.
     .replace(/encrypted_yw_id TEXT NOT NULL UNIQUE/g, 'encrypted_yw_id TEXT UNIQUE')
     // FINDING: schema.sql declares `email TEXT` (no UNIQUE), but the app's live
     // initializeDatabase() creates `email TEXT UNIQUE`. Match prod so the signup
@@ -56,12 +61,25 @@ export async function applySchema(): Promise<void> {
     .split(';')
     .map((s) => s.trim())
     .filter(Boolean);
+  const unexpected: string[] = [];
   for (const stmt of statements) {
     try {
       await env.DB.prepare(stmt).run();
     } catch (e) {
-      // Some CREATE INDEX / view statements may already exist — non-fatal.
+      const msg = e instanceof Error ? e.message : String(e);
+      // "already exists" is genuinely non-fatal — the schema is idempotent.
+      // Anything else (a SYNTAX ERROR, a missing table) is a real defect and
+      // must NOT be swallowed: doing so once turned one broken DEFAULT clause
+      // into ten confusing "no such table" failures several files away.
+      if (!/already exists/i.test(msg)) {
+        unexpected.push(`${msg} — in: ${stmt.slice(0, 90).replace(/\s+/g, ' ')}`);
+      }
     }
+  }
+  if (unexpected.length > 0) {
+    throw new Error(
+      `applySchema: ${unexpected.length} statement(s) failed:\n  ` + unexpected.join('\n  '),
+    );
   }
   schemaApplied = true;
 }
@@ -107,7 +125,7 @@ export async function seedUser(
   const hash = await hashPassword(password);
   const row = (await env.DB.prepare(
     `INSERT INTO users (encrypted_yw_id, display_name, email, password_hash, class, role, admin_role, suspended, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%SZ','now'))
      RETURNING id`,
   )
     .bind(
@@ -144,7 +162,7 @@ export async function seedNote(
 ): Promise<number> {
   const row = (await env.DB.prepare(
     `INSERT INTO notes (author_id, subject_id, title, content, status, visibility, likes, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now')) RETURNING id`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%SZ','now')) RETURNING id`,
   )
     .bind(
       authorId,

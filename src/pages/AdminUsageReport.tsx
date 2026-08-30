@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import api from '../lib/api';
 import LoadingSpinner from '../components/LoadingSpinner';
 import { darkTheme, cardStyle } from '../theme';
+import { formatCalendarDate } from '../lib/datetime';
 
 interface UsageStats {
   overview: {
@@ -113,7 +114,7 @@ export default function AdminUsageReport() {
           fontSize: '28px',
           fontWeight: 'bold',
           marginBottom: '24px',
-          color: 'white',
+          color: '#1c2a22',
         }}
       >
         Usage Report
@@ -129,65 +130,81 @@ export default function AdminUsageReport() {
         }}
       >
         <div style={{ ...cardStyle, padding: '20px' }}>
-          <div style={{ fontSize: '32px', fontWeight: '700', color: 'white', marginBottom: '8px' }}>
+          <div
+            style={{ fontSize: '32px', fontWeight: '700', color: '#1c2a22', marginBottom: '8px' }}
+          >
             {overview.totalUsers}
           </div>
-          <div style={{ fontSize: '14px', color: 'white' }}>Total Users</div>
+          <div style={{ fontSize: '14px', color: '#1c2a22' }}>Total Users</div>
         </div>
 
         <div style={{ ...cardStyle, padding: '20px' }}>
-          <div style={{ fontSize: '32px', fontWeight: '700', color: 'white', marginBottom: '8px' }}>
+          <div
+            style={{ fontSize: '32px', fontWeight: '700', color: '#1c2a22', marginBottom: '8px' }}
+          >
             {overview.activeUsers7d}
           </div>
-          <div style={{ fontSize: '14px', color: 'white' }}>Active (7d)</div>
+          <div style={{ fontSize: '14px', color: '#1c2a22' }}>Active (7d)</div>
         </div>
 
         <div style={{ ...cardStyle, padding: '20px' }}>
-          <div style={{ fontSize: '32px', fontWeight: '700', color: 'white', marginBottom: '8px' }}>
+          <div
+            style={{ fontSize: '32px', fontWeight: '700', color: '#1c2a22', marginBottom: '8px' }}
+          >
             {overview.activeUsers30d}
           </div>
-          <div style={{ fontSize: '14px', color: 'white' }}>Active (30d)</div>
+          <div style={{ fontSize: '14px', color: '#1c2a22' }}>Active (30d)</div>
         </div>
 
         <div style={{ ...cardStyle, padding: '20px' }}>
-          <div style={{ fontSize: '32px', fontWeight: '700', color: 'white', marginBottom: '8px' }}>
+          <div
+            style={{ fontSize: '32px', fontWeight: '700', color: '#1c2a22', marginBottom: '8px' }}
+          >
             {overview.totalNotes}
           </div>
-          <div style={{ fontSize: '14px', color: 'white' }}>Total Notes</div>
+          <div style={{ fontSize: '14px', color: '#1c2a22' }}>Total Notes</div>
         </div>
 
         <div style={{ ...cardStyle, padding: '20px' }}>
-          <div style={{ fontSize: '32px', fontWeight: '700', color: 'white', marginBottom: '8px' }}>
+          <div
+            style={{ fontSize: '32px', fontWeight: '700', color: '#1c2a22', marginBottom: '8px' }}
+          >
             {overview.totalLikes}
           </div>
-          <div style={{ fontSize: '14px', color: 'white' }}>Total Likes</div>
+          <div style={{ fontSize: '14px', color: '#1c2a22' }}>Total Likes</div>
         </div>
 
         <div style={{ ...cardStyle, padding: '20px' }}>
-          <div style={{ fontSize: '32px', fontWeight: '700', color: 'white', marginBottom: '8px' }}>
+          <div
+            style={{ fontSize: '32px', fontWeight: '700', color: '#1c2a22', marginBottom: '8px' }}
+          >
             {overview.totalAdminUpvotes}
           </div>
-          <div style={{ fontSize: '14px', color: 'white' }}>Admin Likes</div>
+          <div style={{ fontSize: '14px', color: '#1c2a22' }}>Admin Likes</div>
         </div>
 
         <div style={{ ...cardStyle, padding: '20px' }}>
-          <div style={{ fontSize: '32px', fontWeight: '700', color: 'white', marginBottom: '8px' }}>
+          <div
+            style={{ fontSize: '32px', fontWeight: '700', color: '#1c2a22', marginBottom: '8px' }}
+          >
             {overview.totalChatSessions}
           </div>
-          <div style={{ fontSize: '14px', color: 'white' }}>Chat Sessions</div>
+          <div style={{ fontSize: '14px', color: '#1c2a22' }}>Chat Sessions</div>
         </div>
 
         <div style={{ ...cardStyle, padding: '20px' }}>
-          <div style={{ fontSize: '32px', fontWeight: '700', color: 'white', marginBottom: '8px' }}>
+          <div
+            style={{ fontSize: '32px', fontWeight: '700', color: '#1c2a22', marginBottom: '8px' }}
+          >
             {overview.suspendedUsers}
           </div>
-          <div style={{ fontSize: '14px', color: 'white' }}>Suspended</div>
+          <div style={{ fontSize: '14px', color: '#1c2a22' }}>Suspended</div>
         </div>
       </div>
 
       {/* Recent Activity */}
       <div style={{ marginBottom: '32px' }}>
-        <h3 style={{ fontSize: '20px', fontWeight: '600', marginBottom: '16px', color: 'white' }}>
+        <h3 style={{ fontSize: '20px', fontWeight: '600', marginBottom: '16px', color: '#1c2a22' }}>
           Recent Activity (Last 7 Days)
         </h3>
         <div
@@ -198,16 +215,16 @@ export default function AdminUsageReport() {
           }}
         >
           <div style={{ ...cardStyle, padding: '20px' }}>
-            <div style={{ fontSize: '14px', color: 'white', marginBottom: '8px' }}>New Notes</div>
-            <div style={{ fontSize: '28px', fontWeight: '700', color: 'white' }}>
+            <div style={{ fontSize: '14px', color: '#1c2a22', marginBottom: '8px' }}>New Notes</div>
+            <div style={{ fontSize: '28px', fontWeight: '700', color: '#1c2a22' }}>
               {overview.notes7d}
             </div>
           </div>
           <div style={{ ...cardStyle, padding: '20px' }}>
-            <div style={{ fontSize: '14px', color: 'white', marginBottom: '8px' }}>
+            <div style={{ fontSize: '14px', color: '#1c2a22', marginBottom: '8px' }}>
               New Chat Sessions
             </div>
-            <div style={{ fontSize: '28px', fontWeight: '700', color: 'white' }}>
+            <div style={{ fontSize: '28px', fontWeight: '700', color: '#1c2a22' }}>
               {overview.chatSessions7d}
             </div>
           </div>
@@ -225,7 +242,9 @@ export default function AdminUsageReport() {
       >
         {/* Users by Class */}
         <div style={{ ...cardStyle, padding: '24px' }}>
-          <h3 style={{ fontSize: '18px', fontWeight: '600', marginBottom: '20px', color: 'white' }}>
+          <h3
+            style={{ fontSize: '18px', fontWeight: '600', marginBottom: '20px', color: '#1c2a22' }}
+          >
             Users by Class
           </h3>
           {usersByClass.length > 0 ? (
@@ -239,10 +258,10 @@ export default function AdminUsageReport() {
                       marginBottom: '4px',
                     }}
                   >
-                    <span style={{ fontSize: '14px', fontWeight: '500', color: 'white' }}>
+                    <span style={{ fontSize: '14px', fontWeight: '500', color: '#1c2a22' }}>
                       {item.class}
                     </span>
-                    <span style={{ fontSize: '14px', color: 'white' }}>{item.count}</span>
+                    <span style={{ fontSize: '14px', color: '#1c2a22' }}>{item.count}</span>
                   </div>
                   <div
                     style={{
@@ -273,7 +292,9 @@ export default function AdminUsageReport() {
 
         {/* Notes by Class */}
         <div style={{ ...cardStyle, padding: '24px' }}>
-          <h3 style={{ fontSize: '18px', fontWeight: '600', marginBottom: '20px', color: 'white' }}>
+          <h3
+            style={{ fontSize: '18px', fontWeight: '600', marginBottom: '20px', color: '#1c2a22' }}
+          >
             Notes by Class
           </h3>
           {notesByClass.length > 0 ? (
@@ -287,10 +308,10 @@ export default function AdminUsageReport() {
                       marginBottom: '4px',
                     }}
                   >
-                    <span style={{ fontSize: '14px', fontWeight: '500', color: 'white' }}>
+                    <span style={{ fontSize: '14px', fontWeight: '500', color: '#1c2a22' }}>
                       {item.class}
                     </span>
-                    <span style={{ fontSize: '14px', color: 'white' }}>{item.count}</span>
+                    <span style={{ fontSize: '14px', color: '#1c2a22' }}>{item.count}</span>
                   </div>
                   <div
                     style={{
@@ -322,7 +343,7 @@ export default function AdminUsageReport() {
 
       {/* Top Contributors */}
       <div style={{ marginBottom: '32px' }}>
-        <h3 style={{ fontSize: '20px', fontWeight: '600', marginBottom: '16px', color: 'white' }}>
+        <h3 style={{ fontSize: '20px', fontWeight: '600', marginBottom: '16px', color: '#1c2a22' }}>
           Top Contributors
         </h3>
         <div style={{ ...cardStyle, padding: 0, overflow: 'auto' }}>
@@ -338,7 +359,7 @@ export default function AdminUsageReport() {
                       textAlign: 'left',
                       fontWeight: '600',
                       fontSize: '13px',
-                      color: 'white',
+                      color: '#1c2a22',
                     }}
                   >
                     Rank
@@ -349,7 +370,7 @@ export default function AdminUsageReport() {
                       textAlign: 'left',
                       fontWeight: '600',
                       fontSize: '13px',
-                      color: 'white',
+                      color: '#1c2a22',
                     }}
                   >
                     User
@@ -360,7 +381,7 @@ export default function AdminUsageReport() {
                       textAlign: 'left',
                       fontWeight: '600',
                       fontSize: '13px',
-                      color: 'white',
+                      color: '#1c2a22',
                     }}
                   >
                     Class
@@ -371,7 +392,7 @@ export default function AdminUsageReport() {
                       textAlign: 'right',
                       fontWeight: '600',
                       fontSize: '13px',
-                      color: 'white',
+                      color: '#1c2a22',
                     }}
                   >
                     Notes
@@ -382,7 +403,7 @@ export default function AdminUsageReport() {
                       textAlign: 'right',
                       fontWeight: '600',
                       fontSize: '13px',
-                      color: 'white',
+                      color: '#1c2a22',
                     }}
                   >
                     Likes
@@ -393,7 +414,7 @@ export default function AdminUsageReport() {
                       textAlign: 'right',
                       fontWeight: '600',
                       fontSize: '13px',
-                      color: 'white',
+                      color: '#1c2a22',
                     }}
                   >
                     Admin Likes
@@ -439,12 +460,12 @@ export default function AdminUsageReport() {
                       </div>
                     </td>
                     <td style={{ padding: '12px 16px' }}>
-                      <div style={{ fontWeight: '500', fontSize: '14px', color: 'white' }}>
+                      <div style={{ fontWeight: '500', fontSize: '14px', color: '#1c2a22' }}>
                         {user.display_name}
                       </div>
-                      <div style={{ fontSize: '12px', color: 'white' }}>{user.email}</div>
+                      <div style={{ fontSize: '12px', color: '#1c2a22' }}>{user.email}</div>
                     </td>
-                    <td style={{ padding: '12px 16px', fontSize: '14px', color: 'white' }}>
+                    <td style={{ padding: '12px 16px', fontSize: '14px', color: '#1c2a22' }}>
                       {user.class}
                     </td>
                     <td
@@ -453,7 +474,7 @@ export default function AdminUsageReport() {
                         textAlign: 'right',
                         fontSize: '14px',
                         fontWeight: '600',
-                        color: 'white',
+                        color: '#1c2a22',
                       }}
                     >
                       {user.notes_uploaded}
@@ -464,7 +485,7 @@ export default function AdminUsageReport() {
                         textAlign: 'right',
                         fontSize: '14px',
                         fontWeight: '600',
-                        color: 'white',
+                        color: '#1c2a22',
                       }}
                     >
                       {user.total_likes}
@@ -475,7 +496,7 @@ export default function AdminUsageReport() {
                         textAlign: 'right',
                         fontSize: '14px',
                         fontWeight: '600',
-                        color: 'white',
+                        color: '#1c2a22',
                       }}
                     >
                       {user.total_admin_upvotes}
@@ -485,7 +506,7 @@ export default function AdminUsageReport() {
               </tbody>
             </table>
           ) : (
-            <div style={{ textAlign: 'center', color: 'white', padding: '40px' }}>
+            <div style={{ textAlign: 'center', color: '#1c2a22', padding: '40px' }}>
               No data available
             </div>
           )}
@@ -494,7 +515,7 @@ export default function AdminUsageReport() {
 
       {/* Daily Activity Chart */}
       <div style={{ marginBottom: '32px' }}>
-        <h3 style={{ fontSize: '20px', fontWeight: '600', marginBottom: '16px', color: 'white' }}>
+        <h3 style={{ fontSize: '20px', fontWeight: '600', marginBottom: '16px', color: '#1c2a22' }}>
           Daily Notes Activity (Last 14 Days)
         </h3>
         <div style={{ ...cardStyle, padding: '24px' }}>
@@ -511,7 +532,7 @@ export default function AdminUsageReport() {
                     gap: '8px',
                   }}
                 >
-                  <div style={{ fontSize: '12px', fontWeight: '600', color: 'white' }}>
+                  <div style={{ fontSize: '12px', fontWeight: '600', color: '#1c2a22' }}>
                     {day.count}
                   </div>
                   <div
@@ -533,16 +554,13 @@ export default function AdminUsageReport() {
                       whiteSpace: 'nowrap',
                     }}
                   >
-                    {new Date(day.date).toLocaleDateString('en-US', {
-                      month: 'short',
-                      day: 'numeric',
-                    })}
+                    {formatCalendarDate(day.date, { month: 'short', day: 'numeric' })}
                   </div>
                 </div>
               ))}
             </div>
           ) : (
-            <div style={{ textAlign: 'center', color: 'white', padding: '40px' }}>
+            <div style={{ textAlign: 'center', color: '#1c2a22', padding: '40px' }}>
               No activity data available
             </div>
           )}

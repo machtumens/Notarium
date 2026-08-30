@@ -13,6 +13,8 @@ export interface Env {
   GOOGLE_CLOUD_VISION_API_KEY?: string;
   GOOGLE_CLIENT_ID?: string;
   GOOGLE_CLIENT_SECRET?: string;
+  // Firebase Auth (Identity Platform). Enables RS256 ID-token verification.
+  FIREBASE_PROJECT_ID?: string;
   OAUTH_REDIRECT_URI?: string;
   OAUTH_TOKEN_AES_KEY?: string;
   FRONTEND_URL?: string;
@@ -35,6 +37,8 @@ export interface User {
   totp_enabled?: number;
   role: string;
   admin_role?: string;
+  /** IANA zone name. Undefined/null = fall back to the school default. */
+  timezone?: string | null;
   notes_uploaded?: number;
   total_likes?: number;
   total_admin_upvotes?: number;

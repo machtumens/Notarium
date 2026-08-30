@@ -37,7 +37,7 @@ export async function adminCreateNotification(request: Request, env: Env) {
   const row = await env.DB.prepare(
     `
     INSERT INTO notifications (sender_id, target_type, target_grade, target_class, target_user_id, notification_type, title, message, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%SZ','now'))
     RETURNING *
   `,
   )
@@ -120,7 +120,7 @@ export async function markNotificationRead(notificationId: string, request: Requ
   const user = await getOrCreateUser(request, env);
   try {
     await env.DB.prepare(
-      `INSERT OR IGNORE INTO notification_reads (notification_id, user_id, read_at) VALUES (?, ?, datetime('now'))`,
+      `INSERT OR IGNORE INTO notification_reads (notification_id, user_id, read_at) VALUES (?, ?, strftime('%Y-%m-%dT%H:%M:%SZ','now'))`,
     )
       .bind(Number(notificationId), user.id)
       .run();
@@ -133,7 +133,7 @@ export async function markAllNotificationsRead(request: Request, env: Env) {
   await env.DB.prepare(
     `
     INSERT OR IGNORE INTO notification_reads (notification_id, user_id, read_at)
-    SELECT n.id, ?, datetime('now') FROM notifications n
+    SELECT n.id, ?, strftime('%Y-%m-%dT%H:%M:%SZ','now') FROM notifications n
     WHERE (
       n.target_type = 'all'
       OR (n.target_type = 'grade' AND n.target_grade = ?)

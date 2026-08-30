@@ -2,6 +2,7 @@ import type { Env } from '../lib/env';
 import { jsonResponse } from '../lib/response';
 import { requireModerator, timingSafeEqualStr } from '../lib/auth';
 import { checkRateLimit } from '../lib/ratelimit';
+import { SQL_NOW_ISO } from '../lib/time';
 
 export async function logAdminActivity(
   env: Env,
@@ -54,37 +55,37 @@ export async function getUsageStatistics(request: Request, env: Env) {
       env.DB.prepare('SELECT COUNT(*) as count FROM users'),
       env.DB.prepare(`
       SELECT COUNT(DISTINCT user_id) as count FROM (
-        SELECT author_id as user_id FROM notes WHERE created_at >= datetime('now', '-7 days')
+        SELECT author_id as user_id FROM notes WHERE created_at >= strftime('%Y-%m-%dT%H:%M:%SZ','now','-7 days')
         UNION
-        SELECT user_id FROM chat_sessions WHERE created_at >= datetime('now', '-7 days')
+        SELECT user_id FROM chat_sessions WHERE created_at >= strftime('%Y-%m-%dT%H:%M:%SZ','now','-7 days')
         UNION
-        SELECT user_id FROM note_likes WHERE created_at >= datetime('now', '-7 days')
+        SELECT user_id FROM note_likes WHERE created_at >= strftime('%Y-%m-%dT%H:%M:%SZ','now','-7 days')
       )
     `),
       env.DB.prepare(`
       SELECT COUNT(DISTINCT user_id) as count FROM (
-        SELECT author_id as user_id FROM notes WHERE created_at >= datetime('now', '-30 days')
+        SELECT author_id as user_id FROM notes WHERE created_at >= strftime('%Y-%m-%dT%H:%M:%SZ','now','-30 days')
         UNION
-        SELECT user_id FROM chat_sessions WHERE created_at >= datetime('now', '-30 days')
+        SELECT user_id FROM chat_sessions WHERE created_at >= strftime('%Y-%m-%dT%H:%M:%SZ','now','-30 days')
         UNION
-        SELECT user_id FROM note_likes WHERE created_at >= datetime('now', '-30 days')
+        SELECT user_id FROM note_likes WHERE created_at >= strftime('%Y-%m-%dT%H:%M:%SZ','now','-30 days')
       )
     `),
       env.DB.prepare('SELECT COUNT(*) as count FROM notes'),
       env.DB.prepare(`
-      SELECT COUNT(*) as count FROM notes WHERE created_at >= datetime('now', '-7 days')
+      SELECT COUNT(*) as count FROM notes WHERE created_at >= strftime('%Y-%m-%dT%H:%M:%SZ','now','-7 days')
     `),
       env.DB.prepare(`
-      SELECT COUNT(*) as count FROM notes WHERE created_at >= datetime('now', '-30 days')
+      SELECT COUNT(*) as count FROM notes WHERE created_at >= strftime('%Y-%m-%dT%H:%M:%SZ','now','-30 days')
     `),
       env.DB.prepare('SELECT COUNT(*) as count FROM note_likes'),
       env.DB.prepare('SELECT COUNT(*) as count FROM admin_note_likes'),
       env.DB.prepare('SELECT COUNT(*) as count FROM chat_sessions'),
       env.DB.prepare(`
-      SELECT COUNT(*) as count FROM chat_sessions WHERE created_at >= datetime('now', '-7 days')
+      SELECT COUNT(*) as count FROM chat_sessions WHERE created_at >= strftime('%Y-%m-%dT%H:%M:%SZ','now','-7 days')
     `),
       env.DB.prepare(`
-      SELECT COUNT(*) as count FROM chat_sessions WHERE created_at >= datetime('now', '-30 days')
+      SELECT COUNT(*) as count FROM chat_sessions WHERE created_at >= strftime('%Y-%m-%dT%H:%M:%SZ','now','-30 days')
     `),
     ]);
 
@@ -163,7 +164,7 @@ export async function getUsageStatistics(request: Request, env: Env) {
         DATE(created_at) as date,
         COUNT(*) as count
       FROM notes
-      WHERE created_at >= datetime('now', '-14 days')
+      WHERE created_at >= strftime('%Y-%m-%dT%H:%M:%SZ','now','-14 days')
       GROUP BY DATE(created_at)
       ORDER BY date ASC
     `,
@@ -175,7 +176,7 @@ export async function getUsageStatistics(request: Request, env: Env) {
         DATE(created_at) as date,
         COUNT(*) as count
       FROM users
-      WHERE created_at >= datetime('now', '-14 days')
+      WHERE created_at >= strftime('%Y-%m-%dT%H:%M:%SZ','now','-14 days')
       GROUP BY DATE(created_at)
       ORDER BY date ASC
     `,
@@ -246,7 +247,7 @@ export async function adminUpvoteNote(noteId: string, request: Request, env: Env
   if (adminUser instanceof Response) return adminUser;
 
   await env.DB.prepare(
-    'UPDATE notes SET admin_upvotes = admin_upvotes + 1, updated_at = datetime("now") WHERE id = ?',
+    `UPDATE notes SET admin_upvotes = admin_upvotes + 1, updated_at = ${SQL_NOW_ISO} WHERE id = ?`,
   )
     .bind(noteId)
     .run();
@@ -441,7 +442,7 @@ export async function updateNote(noteId: string, request: Request, env: Env) {
       return jsonResponse({ error: 'No fields to update' }, 400);
     }
 
-    updates.push('updated_at = datetime("now")');
+    updates.push(`updated_at = ${SQL_NOW_ISO}`);
     values.push(noteId);
 
     const query = `UPDATE notes SET ${updates.join(', ')} WHERE id = ?`;
@@ -488,7 +489,7 @@ export async function suspendUser(userId: string, request: Request, env: Env) {
   const endDateISO = endDate.toISOString();
 
   await env.DB.prepare(
-    'UPDATE users SET suspended = 1, suspension_end_date = ?, suspension_reason = ?, updated_at = datetime("now") WHERE id = ?',
+    `UPDATE users SET suspended = 1, suspension_end_date = ?, suspension_reason = ?, updated_at = ${SQL_NOW_ISO} WHERE id = ?`,
   )
     .bind(endDateISO, reason || 'Suspended by admin', userId)
     .run();
@@ -523,7 +524,7 @@ export async function warnUser(userId: string, request: Request, env: Env) {
   const warningMessage = message || 'Warning issued by admin';
 
   await env.DB.prepare(
-    'UPDATE users SET warning = 1, warning_message = ?, warning_first_viewed = NULL, warning_view_count = 0, updated_at = datetime("now") WHERE id = ?',
+    `UPDATE users SET warning = 1, warning_message = ?, warning_first_viewed = NULL, warning_view_count = 0, updated_at = ${SQL_NOW_ISO} WHERE id = ?`,
   )
     .bind(warningMessage, userId)
     .run();
@@ -532,7 +533,7 @@ export async function warnUser(userId: string, request: Request, env: Env) {
     await env.DB.prepare(
       `
       INSERT INTO notifications (sender_id, target_type, target_user_id, notification_type, title, message, created_at)
-      VALUES (?, 'user', ?, 'warning', 'Admin Warning', ?, datetime('now'))
+      VALUES (?, 'user', ?, 'warning', 'Admin Warning', ?, strftime('%Y-%m-%dT%H:%M:%SZ','now'))
     `,
     )
       .bind(adminUser.id, userId, warningMessage)
@@ -611,7 +612,7 @@ export async function unsuspendUser(userId: string, request: Request, env: Env) 
   if (adminUser instanceof Response) return adminUser;
 
   await env.DB.prepare(
-    'UPDATE users SET suspended = 0, suspension_end_date = NULL, suspension_reason = NULL, updated_at = datetime("now") WHERE id = ?',
+    `UPDATE users SET suspended = 0, suspension_end_date = NULL, suspension_reason = NULL, updated_at = ${SQL_NOW_ISO} WHERE id = ?`,
   )
     .bind(userId)
     .run();
@@ -811,7 +812,7 @@ export async function updateUserProfile(userId: string, request: Request, env: E
       return jsonResponse({ error: 'No fields to update' }, 400, env);
     }
 
-    updates.push("updated_at = datetime('now')");
+    updates.push("updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now')");
     values.push(userId);
 
     await env.DB.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`)

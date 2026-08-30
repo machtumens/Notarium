@@ -244,7 +244,12 @@ export function useUploadForm({
             ? `Successfully created ${numberOfNotes} notes! (Auto-split due to size)`
             : saveAsDraft
               ? scheduledDate
-                ? `Note saved as draft and scheduled for ${new Date(scheduledDate).toLocaleString()}!`
+                ? // Deliberately device-local, not the student's display zone: this
+                  // echoes back the value they just typed into a datetime-local
+                  // input, and showing a different time than they entered would
+                  // read as a bug. (Separately: scheduled_publish_at is sent as a
+                  // zone-less local string — a real gap, but out of scope here.)
+                  `Note saved as draft and scheduled for ${new Date(scheduledDate).toLocaleString()}!`
                 : 'Note saved as draft!'
               : 'Note uploaded successfully!';
         alert(message);

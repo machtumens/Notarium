@@ -3,6 +3,7 @@ import { jsonResponse } from '../lib/response';
 import { requireModerator } from '../lib/auth';
 import { promoteClassesSchema } from '../lib/validation';
 import { currentAcademicYear, nextAcademicYear } from '../lib/academicYear';
+import { SQL_NOW_ISO } from '../lib/time';
 
 export async function getSubjects(_request: Request, env: Env) {
   // Public list — no auth needed and no per-user data. (Previously called
@@ -65,7 +66,7 @@ export async function adminCreateGradeClass(request: Request, env: Env) {
     return jsonResponse({ error: 'grade must be 10, 11, or 12' }, 400, env);
   try {
     const row = await env.DB.prepare(
-      `INSERT INTO grade_classes (grade, class_name, semester, is_active, created_at, updated_at) VALUES (?, ?, ?, 1, datetime('now'), datetime('now')) RETURNING *`,
+      `INSERT INTO grade_classes (grade, class_name, semester, is_active, created_at, updated_at) VALUES (?, ?, ?, 1, strftime('%Y-%m-%dT%H:%M:%SZ','now'), strftime('%Y-%m-%dT%H:%M:%SZ','now')) RETURNING *`,
     )
       .bind(Number(grade), String(class_name), semester)
       .first();
@@ -97,7 +98,7 @@ export async function adminUpdateGradeClass(id: string, request: Request, env: E
     params.push(body.is_active ? 1 : 0);
   }
   if (fields.length === 0) return jsonResponse({ error: 'No fields to update' }, 400, env);
-  fields.push("updated_at = datetime('now')");
+  fields.push("updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now')");
   params.push(Number(id));
   await env.DB.prepare(`UPDATE grade_classes SET ${fields.join(', ')} WHERE id = ?`)
     .bind(...params)
@@ -150,7 +151,7 @@ export async function adminPromoteClasses(request: Request, env: Env) {
 
     if (gc.grade >= 12) {
       const res = await env.DB.prepare(
-        `UPDATE users SET graduated = 1, academic_year = ?, updated_at = datetime('now') WHERE grade_class_id = ? AND graduated = 0`,
+        `UPDATE users SET graduated = 1, academic_year = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE grade_class_id = ? AND graduated = 0`,
       )
         .bind(targetYear, gc.id)
         .run();
@@ -172,7 +173,7 @@ export async function adminPromoteClasses(request: Request, env: Env) {
         continue;
       }
       const res = await env.DB.prepare(
-        `UPDATE users SET grade = ?, class = ?, grade_class_id = ?, academic_year = ?, updated_at = datetime('now') WHERE grade_class_id = ? AND graduated = 0`,
+        `UPDATE users SET grade = ?, class = ?, grade_class_id = ?, academic_year = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE grade_class_id = ? AND graduated = 0`,
       )
         .bind(gc.grade + 1, nextClassName, target.id, targetYear, gc.id)
         .run();
@@ -188,7 +189,7 @@ export async function adminPromoteClasses(request: Request, env: Env) {
   try {
     await env.DB.prepare(
       `INSERT INTO admin_activity_log (admin_id, admin_email, action_type, target_type, details, created_at)
-       VALUES (?, ?, 'promote_classes', 'grade_classes', ?, datetime('now'))`,
+       VALUES (?, ?, 'promote_classes', 'grade_classes', ?, strftime('%Y-%m-%dT%H:%M:%SZ','now'))`,
     )
       .bind(admin.id, admin.email, JSON.stringify({ targetYear, summary }))
       .run();
@@ -211,7 +212,7 @@ export async function adminReassignUserClass(request: Request, env: Env) {
     .first()) as any;
   if (!gradeClass) return jsonResponse({ error: 'Invalid class' }, 400, env);
   await env.DB.prepare(
-    'UPDATE users SET class = ?, grade = ?, grade_class_id = ?, updated_at = datetime("now") WHERE id = ?',
+    `UPDATE users SET class = ?, grade = ?, grade_class_id = ?, updated_at = ${SQL_NOW_ISO} WHERE id = ?`,
   )
     .bind(new_class, gradeClass.grade, gradeClass.id, user_id)
     .run();
@@ -220,7 +221,7 @@ export async function adminReassignUserClass(request: Request, env: Env) {
       await env.DB.prepare(
         `
         INSERT INTO notifications (sender_id, target_type, target_user_id, notification_type, title, message, created_at)
-        VALUES (?, 'user', ?, 'class_reassignment', 'Class Assignment Updated', ?, datetime('now'))
+        VALUES (?, 'user', ?, 'class_reassignment', 'Class Assignment Updated', ?, strftime('%Y-%m-%dT%H:%M:%SZ','now'))
       `,
       )
         .bind(admin.id, user_id, `You have been moved to class ${new_class}.`)

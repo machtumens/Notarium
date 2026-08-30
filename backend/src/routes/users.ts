@@ -1,6 +1,7 @@
 import type { Env } from '../lib/env';
 import { jsonResponse } from '../lib/response';
 import { getOrCreateUser } from '../lib/auth';
+import { SQL_NOW_ISO } from '../lib/time';
 
 export async function updateUserInfo(request: Request, env: Env) {
   const userId = request.headers.get('X-Encrypted-Yw-ID');
@@ -18,7 +19,7 @@ export async function updateUserInfo(request: Request, env: Env) {
       .run();
   } else {
     await env.DB.prepare(
-      'UPDATE users SET display_name = ?, photo_url = ?, email = ?, updated_at = datetime("now") WHERE encrypted_yw_id = ?',
+      `UPDATE users SET display_name = ?, photo_url = ?, email = ?, updated_at = ${SQL_NOW_ISO} WHERE encrypted_yw_id = ?`,
     )
       .bind(body.display_name, body.photo_url, body.email, userId)
       .run();
@@ -37,7 +38,7 @@ export async function updateUserClass(request: Request, env: Env) {
   const body = (await request.json()) as any;
 
   await env.DB.prepare(
-    'UPDATE users SET class = ?, updated_at = datetime("now") WHERE encrypted_yw_id = ?',
+    `UPDATE users SET class = ?, updated_at = ${SQL_NOW_ISO} WHERE encrypted_yw_id = ?`,
   )
     .bind(body.class, userId)
     .run();

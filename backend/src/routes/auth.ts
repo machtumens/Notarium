@@ -11,6 +11,7 @@ import { checkRateLimit, validateRequestSize } from '../lib/ratelimit';
 import { signupSchema, loginSchema } from '../lib/validation';
 import { createMfaChallenge } from '../lib/totp';
 import { currentAcademicYear } from '../lib/academicYear';
+import { SQL_NOW_ISO, isValidZone } from '../lib/time';
 
 export async function signupEndpoint(request: Request, env: Env) {
   try {
@@ -41,8 +42,12 @@ export async function signupEndpoint(request: Request, env: Env) {
       );
     }
 
-    const { name, email, password, class: userClass, academic_year } = validation.data;
+    const { name, email, password, class: userClass, academic_year, timezone } = validation.data;
     const academicYear = academic_year || currentAcademicYear();
+    // A browser-supplied zone that this runtime cannot format in is dropped
+    // rather than rejected: a bad zone is not a reason to fail a signup, and
+    // NULL already means "use the school default".
+    const userZone = isValidZone(timezone) ? timezone : null;
 
     if (!email.toLowerCase().endsWith('@sekolahkristencalvin.org')) {
       return jsonResponse(
@@ -79,12 +84,21 @@ export async function signupEndpoint(request: Request, env: Env) {
 
     const user = await env.DB.prepare(
       `
-      INSERT INTO users (display_name, email, password_hash, class, grade, grade_class_id, academic_year, role, notes_uploaded, total_likes, total_admin_upvotes, diamonds, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 'student', 0, 0, 0, 0, datetime('now'))
-      RETURNING id, email, display_name, class, grade, academic_year, role, notes_uploaded, total_likes, total_admin_upvotes, diamonds, description, photo_url
+      INSERT INTO users (display_name, email, password_hash, class, grade, grade_class_id, academic_year, timezone, role, notes_uploaded, total_likes, total_admin_upvotes, diamonds, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'student', 0, 0, 0, 0, strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+      RETURNING id, email, display_name, class, grade, academic_year, timezone, role, notes_uploaded, total_likes, total_admin_upvotes, diamonds, description, photo_url
     `,
     )
-      .bind(name, email, hashedPassword, userClass || null, gradeValue, gradeClassId, academicYear)
+      .bind(
+        name,
+        email,
+        hashedPassword,
+        userClass || null,
+        gradeValue,
+        gradeClassId,
+        academicYear,
+        userZone,
+      )
       .first();
 
     if (!user) {
@@ -114,6 +128,7 @@ export async function signupEndpoint(request: Request, env: Env) {
           class: (user as any).class,
           grade: (user as any).grade || null,
           academic_year: (user as any).academic_year || null,
+          timezone: (user as any).timezone || null,
           role: (user as any).role,
           notes_count: (user as any).notes_uploaded || 0,
           total_likes: (user as any).total_likes || 0,
@@ -243,7 +258,7 @@ export async function loginEndpoint(request: Request, env: Env) {
         adminUser = (await env.DB.prepare(
           `
           INSERT INTO users (encrypted_yw_id, display_name, email, password_hash, class, role, created_at)
-          VALUES (?, ?, ?, '', '10.1', 'admin', datetime('now'))
+          VALUES (?, ?, ?, '', '10.1', 'admin', strftime('%Y-%m-%dT%H:%M:%SZ','now'))
           RETURNING id, email, display_name, class, role
         `,
         )
@@ -251,7 +266,7 @@ export async function loginEndpoint(request: Request, env: Env) {
           .first()) as any;
       } else if (adminUser.role !== 'admin') {
         await env.DB.prepare(
-          `UPDATE users SET role = 'admin', updated_at = datetime('now') WHERE email = ?`,
+          `UPDATE users SET role = 'admin', updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE email = ?`,
         )
           .bind(email)
           .run();
@@ -295,7 +310,7 @@ export async function loginEndpoint(request: Request, env: Env) {
 
       if (suspensionEndDate && now > suspensionEndDate) {
         await env.DB.prepare(
-          'UPDATE users SET suspended = 0, suspension_end_date = NULL, suspension_reason = NULL, updated_at = datetime("now") WHERE id = ?',
+          `UPDATE users SET suspended = 0, suspension_end_date = NULL, suspension_reason = NULL, updated_at = ${SQL_NOW_ISO} WHERE id = ?`,
         )
           .bind((user as any).id)
           .run();
@@ -414,6 +429,7 @@ export async function meEndpoint(request: Request, env: Env) {
             warning_first_viewed,
             warning_view_count,
             totp_enabled,
+            timezone,
             (notes_uploaded + total_likes + total_admin_upvotes) as points
           FROM users WHERE id = ?
         `,
@@ -464,7 +480,7 @@ export async function meEndpoint(request: Request, env: Env) {
 
         if (suspensionEndDate && now > suspensionEndDate) {
           await env.DB.prepare(
-            'UPDATE users SET suspended = 0, suspension_end_date = NULL, suspension_reason = NULL, updated_at = datetime("now") WHERE id = ?',
+            `UPDATE users SET suspended = 0, suspension_end_date = NULL, suspension_reason = NULL, updated_at = ${SQL_NOW_ISO} WHERE id = ?`,
           )
             .bind(userId)
             .run();
@@ -482,7 +498,7 @@ export async function meEndpoint(request: Request, env: Env) {
           await env.DB.prepare(
             `
             UPDATE users
-            SET warning_first_viewed = ?, warning_view_count = 1, updated_at = datetime("now")
+            SET warning_first_viewed = ?, warning_view_count = 1, updated_at = ${SQL_NOW_ISO}
             WHERE id = ?
           `,
           )
@@ -505,7 +521,7 @@ export async function meEndpoint(request: Request, env: Env) {
               await env.DB.prepare(
                 `
                 UPDATE users
-                SET warning_view_count = ?, updated_at = datetime("now")
+                SET warning_view_count = ?, updated_at = ${SQL_NOW_ISO}
                 WHERE id = ?
               `,
               )
@@ -520,7 +536,7 @@ export async function meEndpoint(request: Request, env: Env) {
           await env.DB.prepare(
             `
             UPDATE users
-            SET warning = 0, warning_message = NULL, warning_first_viewed = NULL, warning_view_count = 0, updated_at = datetime("now")
+            SET warning = 0, warning_message = NULL, warning_first_viewed = NULL, warning_view_count = 0, updated_at = ${SQL_NOW_ISO}
             WHERE id = ?
           `,
           )
@@ -555,6 +571,8 @@ export async function meEndpoint(request: Request, env: Env) {
         grade: userData.grade || null,
         grade_class_id: userData.grade_class_id || null,
         totp_enabled: userData.totp_enabled || 0,
+        // null = no override; the client falls back to the school default.
+        timezone: userData.timezone || null,
       };
 
       return jsonResponse({ user });

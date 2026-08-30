@@ -103,15 +103,15 @@ export async function getOpsMetrics(request: Request, env: Env): Promise<Respons
   ] = await Promise.all([
     safeScalar(
       env,
-      `SELECT COUNT(*) AS v FROM users WHERE last_seen_at >= datetime('now','-5 minutes')`,
+      `SELECT COUNT(*) AS v FROM users WHERE last_seen_at >= strftime('%Y-%m-%dT%H:%M:%SZ','now','-5 minutes')`,
     ),
     safeScalar(
       env,
-      `SELECT COUNT(*) AS v FROM users WHERE last_seen_at >= datetime('now','-1 hour')`,
+      `SELECT COUNT(*) AS v FROM users WHERE last_seen_at >= strftime('%Y-%m-%dT%H:%M:%SZ','now','-1 hour')`,
     ),
     safeScalar(
       env,
-      `SELECT COUNT(*) AS v FROM users WHERE last_seen_at >= datetime('now','-1 day')`,
+      `SELECT COUNT(*) AS v FROM users WHERE last_seen_at >= strftime('%Y-%m-%dT%H:%M:%SZ','now','-1 day')`,
     ),
     safeScalar(env, `SELECT COUNT(*) AS v FROM users`),
     safeScalar(env, `SELECT COUNT(*) AS v FROM notes WHERE deleted_at IS NULL`),
@@ -190,7 +190,7 @@ export async function getOpsTimeseries(request: Request, env: Env): Promise<Resp
         env,
         `SELECT strftime('%Y-%m-%d', created_at) AS t, COUNT(*) AS v
          FROM users
-         WHERE created_at >= datetime('now', ?)
+         WHERE created_at >= strftime('%Y-%m-%dT%H:%M:%SZ','now', ?)
          GROUP BY t ORDER BY t`,
         [since],
       );
@@ -200,7 +200,7 @@ export async function getOpsTimeseries(request: Request, env: Env): Promise<Resp
         env,
         `SELECT strftime('%Y-%m-%d', created_at) AS t, COUNT(*) AS v
          FROM notes
-         WHERE created_at >= datetime('now', ?)
+         WHERE created_at >= strftime('%Y-%m-%dT%H:%M:%SZ','now', ?)
          GROUP BY t ORDER BY t`,
         [since],
       );
@@ -211,7 +211,7 @@ export async function getOpsTimeseries(request: Request, env: Env): Promise<Resp
           env,
           `SELECT strftime('%Y-%m-%d %H:00', ts) AS t, COUNT(*) AS v
            FROM request_metrics
-           WHERE ts >= datetime('now', '-24 hours')
+           WHERE ts >= strftime('%Y-%m-%dT%H:%M:%SZ','now','-24 hours')
            GROUP BY t ORDER BY t`,
         );
       } else {
@@ -219,7 +219,7 @@ export async function getOpsTimeseries(request: Request, env: Env): Promise<Resp
           env,
           `SELECT strftime('%Y-%m-%d', ts) AS t, COUNT(*) AS v
            FROM request_metrics
-           WHERE ts >= datetime('now', ?)
+           WHERE ts >= strftime('%Y-%m-%dT%H:%M:%SZ','now', ?)
            GROUP BY t ORDER BY t`,
           [since],
         );
@@ -230,7 +230,7 @@ export async function getOpsTimeseries(request: Request, env: Env): Promise<Resp
         env,
         `SELECT strftime('%Y-%m-%d', ts) AS t, COUNT(*) AS v
          FROM request_metrics
-         WHERE status >= 400 AND ts >= datetime('now', ?)
+         WHERE status >= 400 AND ts >= strftime('%Y-%m-%dT%H:%M:%SZ','now', ?)
          GROUP BY t ORDER BY t`,
         [since],
       );
@@ -240,7 +240,7 @@ export async function getOpsTimeseries(request: Request, env: Env): Promise<Resp
         env,
         `SELECT strftime('%Y-%m-%d', ts) AS t, COUNT(*) AS v
          FROM ai_usage
-         WHERE ts >= datetime('now', ?)
+         WHERE ts >= strftime('%Y-%m-%dT%H:%M:%SZ','now', ?)
          GROUP BY t ORDER BY t`,
         [since],
       );
@@ -532,7 +532,7 @@ export async function purgeDeletedNotes(request: Request, env: Env): Promise<Res
   try {
     const result = await env.DB.prepare(
       `DELETE FROM notes
-       WHERE deleted_at IS NOT NULL AND deleted_at < datetime('now', ?)`,
+       WHERE deleted_at IS NOT NULL AND deleted_at < strftime('%Y-%m-%dT%H:%M:%SZ','now', ?)`,
     )
       .bind(`-${olderThanDays} days`)
       .run();

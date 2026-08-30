@@ -10,6 +10,7 @@ import GradeClassFilter from '../components/GradeClassFilter';
 import { useAuth } from '../App';
 import type { Subject } from '../types';
 import { darkTheme } from '../theme';
+import { formatDate } from '../lib/datetime';
 
 export interface Note {
   id: number;
@@ -224,7 +225,7 @@ export default function SubjectNotesPage() {
         onMouseOver={(e) => (e.currentTarget.style.opacity = '0.8')}
         onMouseOut={(e) => (e.currentTarget.style.opacity = '1')}
       >
-        <i className="fas fa-arrow-left"></i>Back to Subjects
+        <i className="fas fa-arrow-left"></i>Back to Community
       </button>
 
       {/* Header with Upload Button */}
@@ -517,7 +518,7 @@ export default function SubjectNotesPage() {
                         position: 'absolute',
                         top: '12px',
                         left: '12px',
-                        background: 'rgba(0,0,0,0.7)',
+                        background: 'rgba(20, 44, 30, 0.7)',
                         backdropFilter: 'blur(4px)',
                         border: 'none',
                         borderRadius: '8px',
@@ -583,7 +584,7 @@ export default function SubjectNotesPage() {
                         position: 'absolute',
                         top: '12px',
                         right: '12px',
-                        background: 'rgba(0,0,0,0.6)',
+                        background: 'rgba(20, 44, 30, 0.6)',
                         backdropFilter: 'blur(4px)',
                         border: 'none',
                         borderRadius: '8px',
@@ -881,7 +882,7 @@ export default function SubjectNotesPage() {
                       color: darkTheme.colors.textSecondary,
                     }}
                   >
-                    {new Date(note.created_at).toLocaleDateString()}
+                    {formatDate(note.created_at)}
                   </span>
                 </div>
               </div>
@@ -917,7 +918,7 @@ export default function SubjectNotesPage() {
           style={{
             position: 'fixed',
             inset: 0,
-            background: 'rgba(0,0,0,0.95)',
+            background: 'rgba(255, 255, 255, 0.82)',
             backdropFilter: 'blur(8px)',
             zIndex: 2000,
             display: 'flex',
@@ -937,7 +938,7 @@ export default function SubjectNotesPage() {
               background: 'rgba(255,255,255,0.2)',
               backdropFilter: 'blur(4px)',
               border: 'none',
-              color: 'white',
+              color: '#1c2a22',
               fontSize: '32px',
               width: '50px',
               height: '50px',
@@ -982,7 +983,7 @@ export default function SubjectNotesPage() {
               bottom: '30px',
               left: '50%',
               transform: 'translateX(-50%)',
-              background: 'rgba(0,0,0,0.6)',
+              background: 'rgba(20, 44, 30, 0.6)',
               backdropFilter: 'blur(4px)',
               color: 'white',
               padding: '12px 24px',

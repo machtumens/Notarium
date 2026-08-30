@@ -10,6 +10,7 @@ import {
 } from './lib/auth';
 import { checkRateLimit } from './lib/ratelimit';
 import { initializeDatabase, MOCK_SUBJECTS, SCHEMA_VERSION } from './lib/db';
+import { isValidZone, isoUtc } from './lib/time';
 import { handleOAuthRoutes } from './routes/oauth';
 
 import {
@@ -94,6 +95,21 @@ import {
   gradeRecall,
   getStudyStats,
 } from './routes/study';
+import { completeTest, getBadges } from './routes/progress';
+import {
+  listTutors,
+  applyAsTutor,
+  getTutorEligibility,
+  reviewTutorApplication,
+  addAvailability,
+  deleteAvailability,
+  createSession,
+  listSessions,
+  bookSession,
+  cancelSession,
+  completeSession,
+  rateBooking,
+} from './routes/tutors';
 import {
   healthCheck,
   getOpsMetrics,
@@ -361,7 +377,7 @@ export default {
             const result = await env.DB.prepare(
               `
               INSERT INTO users (encrypted_yw_id, display_name, email, password_hash, class, role, created_at)
-              VALUES (?, ?, ?, ?, '10.1', 'admin', datetime('now'))
+              VALUES (?, ?, ?, ?, '10.1', 'admin', strftime('%Y-%m-%dT%H:%M:%SZ','now'))
               RETURNING id, email, display_name, class, role
             `,
             )
@@ -469,9 +485,20 @@ export default {
             updates.push('description = ?');
             values.push(body.description || null);
           }
+          if (body.timezone !== undefined) {
+            // Rejected rather than dropped here: unlike signup, this is a
+            // deliberate Settings change, so a bad value should tell the user
+            // instead of silently leaving them on the old zone. `null` clears
+            // the override and falls back to the school default.
+            if (body.timezone !== null && !isValidZone(body.timezone)) {
+              return jsonResponse({ error: 'Unknown timezone' }, 400);
+            }
+            updates.push('timezone = ?');
+            values.push(body.timezone || null);
+          }
 
           updates.push('updated_at = ?');
-          values.push(new Date().toISOString());
+          values.push(isoUtc());
 
           if (updates.length === 1) {
             return jsonResponse({ success: true, updated: false });
@@ -487,7 +514,7 @@ export default {
 
             const updated = (await env.DB.prepare(
               `
-              SELECT id, display_name, photo_url, email, class, description FROM users WHERE id = ?
+              SELECT id, display_name, photo_url, email, class, description, timezone FROM users WHERE id = ?
             `,
             )
               .bind(userId)
@@ -602,7 +629,7 @@ export default {
 
           await env.DB.prepare(
             `
-            UPDATE users SET password_hash = ?, updated_at = datetime('now') WHERE id = ?
+            UPDATE users SET password_hash = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?
           `,
           )
             .bind(hashedPassword, user.id)
@@ -665,7 +692,7 @@ export default {
 
           await env.DB.prepare(
             `
-            UPDATE users SET password_hash = ?, updated_at = datetime('now') WHERE id = ?
+            UPDATE users SET password_hash = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?
           `,
           )
             .bind(hashedNewPassword, userId)
@@ -724,7 +751,7 @@ export default {
           const hashedPassword = await hashPassword(newPassword);
           await env.DB.prepare(
             `
-            UPDATE users SET password_hash = ?, updated_at = datetime('now') WHERE id = ?
+            UPDATE users SET password_hash = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?
           `,
           )
             .bind(hashedPassword, user.id)
@@ -1121,6 +1148,69 @@ Tags:`,
       if (path === '/api/recall/grade' && request.method === 'POST') {
         if (!env.DB) return jsonResponse({ error: 'Database not available' }, 503);
         return await gradeRecall(request, env);
+      }
+      if (path === '/api/tests/complete' && request.method === 'POST') {
+        if (!env.DB) return jsonResponse({ error: 'Database not available' }, 503);
+        return await completeTest(request, env);
+      }
+      // ---- Tutor wing (T1: profiles + directory) ----
+      // Order matters: /eligibility must be matched before the generic
+      // /api/tutors handler, or it would be read as a tutor id.
+      if (path === '/api/tutors/eligibility' && request.method === 'GET') {
+        if (!env.DB) return jsonResponse({ error: 'Database not available' }, 503);
+        return await getTutorEligibility(request, env);
+      }
+      if (path === '/api/tutors/apply' && request.method === 'POST') {
+        if (!env.DB) return jsonResponse({ error: 'Database not available' }, 503);
+        return await applyAsTutor(request, env);
+      }
+      if (path === '/api/tutors' && request.method === 'GET') {
+        if (!env.DB) return jsonResponse({ error: 'Database not available' }, 503);
+        return await listTutors(request, env);
+      }
+      // T2 — group rooms. Specific paths first; /availability/:id must be
+      // matched before /tutors/:id/availability so the two do not collide.
+      if (path.match(/^\/api\/tutors\/availability\/\d+$/) && request.method === 'DELETE') {
+        if (!env.DB) return jsonResponse({ error: 'Database not available' }, 503);
+        return await deleteAvailability(path.split('/')[4], request, env);
+      }
+      if (path.match(/^\/api\/tutors\/\d+\/availability$/) && request.method === 'POST') {
+        if (!env.DB) return jsonResponse({ error: 'Database not available' }, 503);
+        return await addAvailability(path.split('/')[3], request, env);
+      }
+      if (path === '/api/sessions' && request.method === 'GET') {
+        if (!env.DB) return jsonResponse({ error: 'Database not available' }, 503);
+        return await listSessions(request, env);
+      }
+      if (path === '/api/sessions' && request.method === 'POST') {
+        if (!env.DB) return jsonResponse({ error: 'Database not available' }, 503);
+        return await createSession(request, env);
+      }
+      if (path.match(/^\/api\/sessions\/\d+\/book$/) && request.method === 'POST') {
+        if (!env.DB) return jsonResponse({ error: 'Database not available' }, 503);
+        return await bookSession(path.split('/')[3], request, env);
+      }
+      if (path.match(/^\/api\/sessions\/\d+\/complete$/) && request.method === 'POST') {
+        if (!env.DB) return jsonResponse({ error: 'Database not available' }, 503);
+        return await completeSession(path.split('/')[3], request, env);
+      }
+      if (path.match(/^\/api\/bookings\/\d+\/rate$/) && request.method === 'POST') {
+        if (!env.DB) return jsonResponse({ error: 'Database not available' }, 503);
+        return await rateBooking(path.split('/')[3], request, env);
+      }
+      if (path.match(/^\/api\/sessions\/\d+\/cancel$/) && request.method === 'POST') {
+        if (!env.DB) return jsonResponse({ error: 'Database not available' }, 503);
+        return await cancelSession(path.split('/')[3], request, env);
+      }
+
+      if (path.match(/^\/api\/admin\/tutors\/\d+\/approve$/) && request.method === 'POST') {
+        if (!env.DB) return jsonResponse({ error: 'Database not available' }, 503);
+        return await reviewTutorApplication(path.split('/')[4], request, env);
+      }
+
+      if (path === '/api/badges' && request.method === 'GET') {
+        if (!env.DB) return jsonResponse({ error: 'Database not available' }, 503);
+        return await getBadges(request, env);
       }
       if (path === '/api/study/stats' && request.method === 'GET') {
         if (!env.DB) return jsonResponse({ error: 'Database not available' }, 503);

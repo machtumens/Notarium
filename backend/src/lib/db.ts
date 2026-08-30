@@ -16,6 +16,7 @@ export async function initializeDatabase(env: Env) {
         display_name TEXT,
         email TEXT UNIQUE,
         password_hash TEXT,
+        firebase_uid TEXT,
         photo_url TEXT,
         class TEXT,
         role TEXT DEFAULT 'student',
@@ -24,8 +25,8 @@ export async function initializeDatabase(env: Env) {
         total_admin_upvotes INTEGER DEFAULT 0,
         suspended INTEGER DEFAULT 0,
         diamonds INTEGER DEFAULT 0,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        created_at DATETIME DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+        updated_at DATETIME DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
       )
     `,
     ).run();
@@ -55,6 +56,13 @@ export async function initializeDatabase(env: Env) {
     try {
       await env.DB.prepare(`ALTER TABLE users ADD COLUMN points INTEGER DEFAULT 0`).run();
     } catch (e) {}
+    try {
+      await env.DB.prepare(`ALTER TABLE users ADD COLUMN firebase_uid TEXT`).run();
+    } catch (e) {}
+    // NULLs are distinct in SQLite, so a unique index tolerates many not-yet-linked users.
+    await env.DB.prepare(
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_users_firebase_uid ON users(firebase_uid)`,
+    ).run();
     await env.DB.prepare(
       `
       CREATE TABLE IF NOT EXISTS subjects (
@@ -62,7 +70,7 @@ export async function initializeDatabase(env: Env) {
         name TEXT UNIQUE,
         icon TEXT,
         note_count INTEGER DEFAULT 0,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        created_at DATETIME DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
       )
     `,
     ).run();
@@ -85,8 +93,8 @@ export async function initializeDatabase(env: Env) {
         scheduled_publish_at TEXT,
         likes INTEGER DEFAULT 0,
         admin_upvotes INTEGER DEFAULT 0,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        created_at DATETIME DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+        updated_at DATETIME DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
         FOREIGN KEY (author_id) REFERENCES users(id),
         FOREIGN KEY (subject_id) REFERENCES subjects(id)
       )
@@ -164,7 +172,7 @@ export async function initializeDatabase(env: Env) {
         target_type TEXT,
         target_id INTEGER,
         details TEXT,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        created_at DATETIME DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
         FOREIGN KEY (admin_id) REFERENCES users(id)
       )
     `,
@@ -176,8 +184,8 @@ export async function initializeDatabase(env: Env) {
         user_id INTEGER,
         subject TEXT,
         topic TEXT,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        created_at DATETIME DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+        updated_at DATETIME DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
         FOREIGN KEY (user_id) REFERENCES users(id)
       )
     `,
@@ -189,7 +197,7 @@ export async function initializeDatabase(env: Env) {
         session_id INTEGER,
         role TEXT,
         content TEXT,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        created_at DATETIME DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
         FOREIGN KEY (session_id) REFERENCES chat_sessions(id)
       )
     `,
@@ -199,7 +207,7 @@ export async function initializeDatabase(env: Env) {
       CREATE TABLE IF NOT EXISTS note_likes (
         note_id INTEGER,
         user_id INTEGER,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        created_at DATETIME DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
         PRIMARY KEY (note_id, user_id),
         FOREIGN KEY (note_id) REFERENCES notes(id),
         FOREIGN KEY (user_id) REFERENCES users(id)
@@ -211,7 +219,7 @@ export async function initializeDatabase(env: Env) {
       CREATE TABLE IF NOT EXISTS admin_note_likes (
         note_id INTEGER,
         admin_id INTEGER,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        created_at DATETIME DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
         PRIMARY KEY (note_id, admin_id),
         FOREIGN KEY (note_id) REFERENCES notes(id),
         FOREIGN KEY (admin_id) REFERENCES users(id)
@@ -261,8 +269,8 @@ export async function initializeDatabase(env: Env) {
         class_name TEXT NOT NULL,
         semester TEXT NOT NULL DEFAULT '',
         is_active INTEGER NOT NULL DEFAULT 1,
-        created_at TEXT NOT NULL DEFAULT (datetime('now')),
-        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+        updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
         UNIQUE(grade, class_name, semester)
       )
     `,
@@ -280,7 +288,7 @@ export async function initializeDatabase(env: Env) {
         notification_type TEXT NOT NULL DEFAULT 'announcement',
         title TEXT NOT NULL,
         message TEXT NOT NULL,
-        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
       )
     `,
     ).run();
@@ -291,7 +299,7 @@ export async function initializeDatabase(env: Env) {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         notification_id INTEGER NOT NULL,
         user_id INTEGER NOT NULL,
-        read_at TEXT NOT NULL DEFAULT (datetime('now')),
+        read_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
         UNIQUE(notification_id, user_id)
       )
     `,
@@ -484,7 +492,7 @@ export async function initializeDatabase(env: Env) {
         question_hash TEXT NOT NULL,
         is_correct INTEGER NOT NULL,
         confidence INTEGER,
-        answered_at TEXT DEFAULT CURRENT_TIMESTAMP
+        answered_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
       )
     `,
     ).run();
@@ -509,9 +517,9 @@ export async function initializeDatabase(env: Env) {
         interval_days INTEGER DEFAULT 0,
         repetitions INTEGER DEFAULT 0,
         due_at TEXT,
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-        updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE(user_id, question_hash)
+        created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+        updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+        UNIQUE(user_id, note_id, question_hash)
       )
     `,
     ).run();
@@ -524,6 +532,11 @@ export async function initializeDatabase(env: Env) {
       ).run();
     } catch (e) {}
 
+    try {
+      // Nullable: NULL means "use the school default". See migration 0020 and
+      // schema.sql — all three must stay in step.
+      await env.DB.prepare(`ALTER TABLE users ADD COLUMN timezone TEXT`).run();
+    } catch (e) {}
     try {
       await env.DB.prepare(`ALTER TABLE users ADD COLUMN current_streak INTEGER DEFAULT 0`).run();
     } catch (e) {}

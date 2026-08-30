@@ -1,8 +1,89 @@
 import bcrypt from 'bcryptjs';
-import { SignJWT, jwtVerify } from 'jose';
+import { SignJWT, jwtVerify, createRemoteJWKSet } from 'jose';
 import type { Env, User } from './env';
 import { JWT_EXPIRATION } from './env';
 import { jsonResponse } from './response';
+
+type Identity = { id: number; email: string; role: string; admin_role?: string };
+
+// Firebase ID tokens are RS256, signed by Google's securetoken service. We verify
+// against Google's public JWKS with `jose` — no Firebase Admin SDK (it needs Node
+// APIs that don't run on Workers). The set is cached in-isolate by createRemoteJWKSet.
+const FIREBASE_JWKS = createRemoteJWKSet(
+  new URL(
+    'https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com',
+  ),
+);
+
+/**
+ * Verify a Firebase ID token and resolve it to a local D1 user. Roles live in the
+ * `users` row (not custom claims), so identity = verified token → local lookup.
+ * Linking an existing account by email is gated on `email_verified` to prevent
+ * hijack via an unverified Firebase signup. Unknown users are JIT-provisioned.
+ * Returns null for anything that isn't a valid Firebase token (caller falls back).
+ */
+async function verifyFirebaseToken(token: string, env: Env): Promise<Identity | null> {
+  const projectId = env.FIREBASE_PROJECT_ID;
+  if (!projectId) return null;
+  try {
+    const { payload } = await jwtVerify(token, FIREBASE_JWKS, {
+      issuer: `https://securetoken.google.com/${projectId}`,
+      audience: projectId,
+    });
+    const uid = typeof payload.sub === 'string' ? payload.sub : null;
+    if (!uid) return null;
+    const email = typeof payload.email === 'string' ? payload.email : '';
+    const emailVerified = payload.email_verified === true;
+
+    const byUid = await env.DB.prepare(
+      `SELECT id, email, role, admin_role FROM users WHERE firebase_uid = ?`,
+    )
+      .bind(uid)
+      .first();
+    if (byUid) return byUid as unknown as Identity;
+
+    // JIT-link an existing local account, but only on a verified email.
+    if (email && emailVerified) {
+      const byEmail = await env.DB.prepare(
+        `SELECT id, email, role, admin_role FROM users WHERE email = ?`,
+      )
+        .bind(email)
+        .first();
+      if (byEmail) {
+        await env.DB.prepare(`UPDATE users SET firebase_uid = ? WHERE id = ?`)
+          .bind(uid, (byEmail as { id: number }).id)
+          .run();
+        return byEmail as unknown as Identity;
+      }
+    }
+
+    // JIT-provision a brand-new Firebase signup. Profile enrichment (class, etc.)
+    // happens on the frontend sync call in Phase 2.
+    const name = typeof payload.name === 'string' ? payload.name : null;
+    const photo = typeof payload.picture === 'string' ? payload.picture : null;
+    const created = await env.DB.prepare(
+      `INSERT INTO users (firebase_uid, email, display_name, photo_url, role)
+       VALUES (?, ?, ?, ?, 'student')
+       RETURNING id, email, role, admin_role`,
+    )
+      .bind(uid, email || null, name, photo)
+      .first();
+    return (created as unknown as Identity) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Unified token resolver for the dual-auth window: try a Firebase ID token first,
+ * then fall back to the legacy HS256 JWT. ponytail: the legacy fallback is deleted
+ * at Phase 4 cutover once all clients issue Firebase tokens.
+ */
+async function resolveIdentity(token: string, env: Env): Promise<Identity | null> {
+  const fb = await verifyFirebaseToken(token, env);
+  if (fb) return fb;
+  return await verifyToken(token, env);
+}
 
 export async function hashPassword(password: string): Promise<string> {
   return await bcrypt.hash(password, 10);
@@ -51,7 +132,7 @@ export async function getUserIdFromToken(request: Request, env: Env): Promise<nu
     return null;
   }
 
-  const decoded = await verifyToken(token, env);
+  const decoded = await resolveIdentity(token, env);
   return decoded?.id || null;
 }
 
@@ -66,7 +147,7 @@ export async function getUserFromToken(
     return null;
   }
 
-  return await verifyToken(token, env);
+  return await resolveIdentity(token, env);
 }
 
 export async function requireAdmin(
@@ -76,7 +157,7 @@ export async function requireAdmin(
   const auth = request.headers.get('Authorization');
   const token = auth?.startsWith('Bearer ') ? auth.slice(7) : null;
   if (!token) return jsonResponse({ error: 'Unauthorized' }, 401, env);
-  const decoded = await verifyToken(token, env);
+  const decoded = await resolveIdentity(token, env);
   if (!decoded) return jsonResponse({ error: 'Invalid or expired token' }, 401, env);
   if (decoded.role !== 'admin') return jsonResponse({ error: 'Forbidden' }, 403, env);
   return decoded;
@@ -90,7 +171,7 @@ export async function requireRole(
   const auth = request.headers.get('Authorization');
   const token = auth?.startsWith('Bearer ') ? auth.slice(7) : null;
   if (!token) return jsonResponse({ error: 'Unauthorized' }, 401, env);
-  const decoded = await verifyToken(token, env);
+  const decoded = await resolveIdentity(token, env);
   if (!decoded) return jsonResponse({ error: 'Invalid or expired token' }, 401, env);
   if (decoded.role !== 'admin') return jsonResponse({ error: 'Forbidden' }, 403, env);
   // Least-privilege: a token without admin_role must NOT be treated as super.
@@ -144,7 +225,7 @@ const USER_COLUMNS =
   'grade_class_id, role, admin_role, notes_uploaded, total_likes, total_admin_upvotes, ' +
   'diamonds, suspended, suspension_end_date, suspension_reason, warning, ' +
   'warning_message, warning_first_viewed, warning_view_count, ' +
-  'last_seen_at, created_at, updated_at';
+  'last_seen_at, timezone, created_at, updated_at';
 
 /**
  * JWT-only identity resolver. Returns the full user row for a valid Bearer

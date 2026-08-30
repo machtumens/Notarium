@@ -284,7 +284,7 @@ async function handleCallback(url: URL, _request: Request, env: OAuthEnv): Promi
       const picture = (idPayload.picture as string | undefined) ?? null;
       user = (await env.DB.prepare(
         `INSERT INTO users (encrypted_yw_id, display_name, email, photo_url, google_id, oauth_provider, role, created_at)
-         VALUES (?, ?, ?, ?, ?, 'google', 'student', datetime('now'))
+         VALUES (?, ?, ?, ?, ?, 'google', 'student', strftime('%Y-%m-%dT%H:%M:%SZ','now'))
          RETURNING id, email, role`,
       )
         .bind(`google_${sub}`, name, email, picture, sub)

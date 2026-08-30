@@ -1,6 +1,7 @@
 import { darkTheme, cardStyle } from '../../theme';
 import type { AdminUser } from './types';
 import { safePhotoUrl } from '../../lib/safeUrl';
+import { formatDateTime } from '../../lib/datetime';
 
 interface UsersTabProps {
   users: AdminUser[];
@@ -439,7 +440,7 @@ export default function UsersTab({
                           color: darkTheme.colors.textSecondary,
                         }}
                       >
-                        {new Date(log.created_at).toLocaleString()}
+                        {formatDateTime(log.created_at)}
                       </td>
                       <td style={{ padding: '12px 16px', fontSize: '13px' }}>{log.admin_email}</td>
                       <td style={{ padding: '12px 16px', fontSize: '13px' }}>

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../lib/api';
+import { formatLongDate } from '../lib/datetime';
 
 export default function Suspended() {
   const navigate = useNavigate();
@@ -55,7 +56,7 @@ export default function Suspended() {
         left: 0,
         right: 0,
         bottom: 0,
-        backgroundColor: 'rgba(0, 0, 0, 0.95)',
+        backgroundColor: 'rgba(255, 255, 255, 0.82)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -105,7 +106,7 @@ export default function Suspended() {
         >
           <p
             style={{
-              color: '#fff',
+              color: '#1c2a22',
               fontSize: '18px',
               marginBottom: '16px',
               lineHeight: '1.6',
@@ -147,21 +148,14 @@ export default function Suspended() {
           }}
         >
           Your account will be automatically reactivated on{' '}
-          <strong style={{ color: '#fff' }}>
-            {new Date(suspensionData.endDate).toLocaleDateString('en-US', {
-              weekday: 'long',
-              year: 'numeric',
-              month: 'long',
-              day: 'numeric',
-            })}
-          </strong>
+          <strong style={{ color: '#1c2a22' }}>{formatLongDate(suspensionData.endDate)}</strong>
         </p>
 
         <button
           onClick={handleLogout}
           style={{
             backgroundColor: '#333',
-            color: '#fff',
+            color: '#1c2a22',
             border: '1px solid #555',
             borderRadius: '6px',
             padding: '12px 24px',

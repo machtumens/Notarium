@@ -1,4 +1,5 @@
 import { logger } from './logger';
+import { browserZone } from './datetime';
 import type {
   User,
   LoginResponse,
@@ -179,12 +180,16 @@ export const api = {
     classValue: string,
     academic_year?: string,
   ) => {
+    // Captured here, not asked for: the browser already knows, and a signup
+    // form is the wrong place to make a fifteen-year-old pick an IANA zone. The
+    // server drops it if it cannot format in it, and Settings can correct it.
     const response = await api.auth.signup({
       email,
       password,
       name,
       class: classValue,
       ...(academic_year && { academic_year }),
+      ...(browserZone() && { timezone: browserZone() }),
     });
     if (response.token) {
       setToken(response.token);
@@ -673,6 +678,113 @@ export const api = {
     feedback: string;
     missed_points: string[];
   }> => api.request('/api/recall/grade', { method: 'POST', body: payload }),
+
+  getTutors: (
+    subjectId?: number,
+  ): Promise<{
+    tutors: Array<{
+      id: number;
+      user_id: number;
+      name: string;
+      photo_url: string | null;
+      grade: number | null;
+      alumni: boolean;
+      subject_id: number;
+      subject_name: string | null;
+      subject_icon: string | null;
+      blurb: string | null;
+      grade_min: number | null;
+      grade_max: number | null;
+      languages: string | null;
+      rating_avg: number | null;
+      session_count: number;
+      learning_points: number;
+    }>;
+  }> => api.request(`/api/tutors${subjectId ? `?subject_id=${subjectId}` : ''}`),
+
+  getSessions: (): Promise<{
+    sessions: Array<{
+      id: number;
+      topic: string | null;
+      kind: string;
+      seat_cap: number;
+      seats_taken: number;
+      seats_left: number;
+      i_am_in: boolean;
+      i_am_tutor: boolean;
+      starts_at: string;
+      ends_at: string;
+      location: string | null;
+      tutor_name: string;
+      tutor_user_id: number;
+      subject_name: string | null;
+      subject_icon: string | null;
+    }>;
+  }> => api.request('/api/sessions'),
+
+  bookSession: (id: number): Promise<{ success: boolean; seat_no: number }> =>
+    api.request(`/api/sessions/${id}/book`, { method: 'POST' }),
+
+  completeSession: (
+    id: number,
+  ): Promise<{
+    success: boolean;
+    points_awarded?: number;
+    already_completed?: boolean;
+    attended?: number;
+  }> => api.request(`/api/sessions/${id}/complete`, { method: 'POST' }),
+
+  rateBooking: (
+    bookingId: number,
+    rating: number,
+  ): Promise<{ success: boolean; rating: number; rating_avg: number | null }> =>
+    api.request(`/api/bookings/${bookingId}/rate`, { method: 'POST', body: { rating } }),
+
+  cancelSession: (id: number): Promise<{ success: boolean; cancelled: string }> =>
+    api.request(`/api/sessions/${id}/cancel`, { method: 'POST' }),
+
+  getTutorEligibility: (): Promise<{
+    eligible: boolean;
+    reasons: string[];
+    learning_points: number;
+    notes_uploaded: number;
+    requirements: { learning_points: number; notes_uploaded: number };
+    my_profiles: Array<{ id: number; subject_id: number; status: string; subject_name: string }>;
+  }> => api.request('/api/tutors/eligibility'),
+
+  applyAsTutor: (payload: {
+    subject_id: number;
+    blurb?: string;
+    grade_min?: number;
+    grade_max?: number;
+  }): Promise<{ success: boolean; status: string; message: string }> =>
+    api.request('/api/tutors/apply', { method: 'POST', body: payload }),
+
+  getBadges: (): Promise<{
+    badges: Array<{
+      key: string;
+      label: string;
+      hint: string;
+      earned: boolean;
+      progress?: { have: number; need: number };
+      unavailable?: string;
+    }>;
+    rank: number;
+    tests_completed: number;
+  }> => api.request('/api/badges'),
+
+  completeTest: (payload: {
+    question_count: number;
+    correct_count: number;
+    source_type?: string | null;
+    source_id?: number | null;
+    duration_sec?: number | null;
+  }): Promise<{
+    success: boolean;
+    score_pct: number;
+    tests_completed: number;
+    previous: { score_pct: number; created_at: string; delta: number } | null;
+  }> => api.request('/api/tests/complete', { method: 'POST', body: payload }),
 
   getStudyStats: (): Promise<{
     current_streak: number;

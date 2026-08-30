@@ -2,13 +2,10 @@ import type { Env } from '../lib/env';
 import { jsonResponse } from '../lib/response';
 import { getUserFromToken } from '../lib/auth';
 import { checkRateLimit } from '../lib/ratelimit';
+import { localDate, addLocalDays, startOfLocalDay, resolveZone, isoUtc } from '../lib/time';
 
 const POINTS_CORRECT = 10;
 const POINTS_CONFIDENCE_BONUS = 5;
-
-function utcDate(d: Date = new Date()): string {
-  return d.toISOString().slice(0, 10);
-}
 
 function hashQuestion(text: string): string {
   let h = 5381;
@@ -39,7 +36,20 @@ interface Sm2Result {
   due_at: string;
 }
 
-export function computeSm2(prev: Sm2State, quality: number): Sm2Result {
+/**
+ * SM-2, with due dates anchored to the START of a local day rather than to an
+ * instant offset from the review.
+ *
+ * `zone` is REQUIRED, not defaulted. Every call site has a real user whose zone
+ * is known, and a silent default is exactly how a scheduler ends up quietly
+ * running on the wrong calendar.
+ */
+export function computeSm2(
+  prev: Sm2State,
+  quality: number,
+  zone: string,
+  now: Date = new Date(),
+): Sm2Result {
   const { interval_days: prevInterval } = prev;
   let { ease_factor: ease, repetitions } = prev;
 
@@ -57,19 +67,38 @@ export function computeSm2(prev: Sm2State, quality: number): Sm2Result {
   ease = ease + (0.1 - (5 - quality) * (0.08 + (5 - quality) * 0.02));
   if (ease < 1.3) ease = 1.3;
 
-  const due = new Date();
-  due.setUTCDate(due.getUTCDate() + interval);
+  // SM-2 intervals are counted in DAYS, so the basis is the local calendar day
+  // of the review — not the clock time of it. Offsetting from the instant made
+  // "due tomorrow" mean "due at this hour tomorrow", so the Today count climbed
+  // through the evening and a student studying at a fixed hour drifted later
+  // every cycle. Anchoring to local midnight makes the count stable all day.
+  const dueDay = addLocalDays(localDate(zone, now), interval);
 
   return {
     ease_factor: ease,
     interval_days: interval,
     repetitions,
-    due_at: due.toISOString(),
+    due_at: isoUtc(startOfLocalDay(zone, dueDay)),
   };
 }
 
-async function updateStreak(env: Env, userId: number): Promise<number> {
-  const today = utcDate();
+/**
+ * The zone to compute this user's day boundaries in.
+ *
+ * A separate lookup because `getUserFromToken` returns the JWT payload, not the
+ * row, and the zone must NOT live in the token: tokens last 24h, so a student
+ * who fixes their zone in Settings would keep getting the old one until it
+ * expired. One primary-key SELECT next to the ~7 this endpoint already runs.
+ */
+async function userZone(env: Env, userId: number): Promise<string> {
+  const row = (await env.DB.prepare(`SELECT timezone FROM users WHERE id = ?`)
+    .bind(userId)
+    .first()) as { timezone?: string | null } | null;
+  return resolveZone(row?.timezone);
+}
+
+async function updateStreak(env: Env, userId: number, zone: string): Promise<number> {
+  const today = localDate(zone);
   const user = (await env.DB.prepare(
     `SELECT current_streak, longest_streak, last_study_date FROM users WHERE id = ?`,
   )
@@ -84,7 +113,12 @@ async function updateStreak(env: Env, userId: number): Promise<number> {
     return current;
   }
 
-  const yesterday = utcDate(new Date(Date.now() - 24 * 60 * 60 * 1000));
+  // Calendar arithmetic on the date string, NOT "the instant 24h ago". A DST
+  // day is 23 or 25 hours long, so a fixed 24h step can land back on today
+  // (breaking a live streak) or skip a day. Asia/Jakarta has no DST, but the
+  // per-user override exists precisely so a student abroad can set a zone that
+  // does.
+  const yesterday = addLocalDays(today, -1);
   if (last === yesterday) {
     current = current + 1;
   } else {
@@ -118,7 +152,8 @@ async function upsertStudyItem(
   questionText: string,
   questionHash: string,
   isCorrect: boolean,
-  confidence?: number | null,
+  confidence: number | null | undefined,
+  zone: string,
 ): Promise<string> {
   // Dedup key is (user, note, question) — NOT (user, question). The same wording
   // asked from two different notes is two different cards. `IS` (not `=`) so a
@@ -139,8 +174,8 @@ async function upsertStudyItem(
     : { ease_factor: 2.5, interval_days: 0, repetitions: 0 };
 
   const quality = toQuality(isCorrect, confidence);
-  const next = computeSm2(prev, quality);
-  const now = new Date().toISOString();
+  const next = computeSm2(prev, quality, zone);
+  const now = isoUtc();
 
   if (existing) {
     await env.DB.prepare(
@@ -237,6 +272,10 @@ export async function logQuizAttempt(request: Request, env: Env) {
       .bind(user.id, noteId, questionText, questionHash, isCorrect ? 1 : 0, confidence)
       .run();
 
+    // user -> school default -> UTC. Day boundaries for BOTH the streak and the
+    // next due date are computed here, so they can never disagree.
+    const zone = await userZone(env, user.id);
+
     const dueAt = await upsertStudyItem(
       env,
       user.id,
@@ -245,9 +284,10 @@ export async function logQuizAttempt(request: Request, env: Env) {
       questionHash,
       isCorrect,
       confidence,
+      zone,
     );
 
-    const currentStreak = await updateStreak(env, user.id);
+    const currentStreak = await updateStreak(env, user.id, zone);
 
     let learningPoints: number;
     if (isCorrect) {
@@ -281,7 +321,7 @@ export async function getDueReviews(request: Request, env: Env) {
     const user = await getUserFromToken(request, env);
     if (!user) return jsonResponse({ error: 'Unauthorized' }, 401, env);
 
-    const now = new Date().toISOString();
+    const now = isoUtc();
     const { results } = await env.DB.prepare(
       `SELECT id, note_id, question_text, question_hash, ease_factor, interval_days, repetitions, due_at, created_at, updated_at
          FROM study_items
@@ -338,6 +378,8 @@ export async function gradeReview(itemId: string, request: Request, env: Env) {
       )
       .run();
 
+    const zone = await userZone(env, user.id);
+
     const dueAt = await upsertStudyItem(
       env,
       user.id,
@@ -346,9 +388,10 @@ export async function gradeReview(itemId: string, request: Request, env: Env) {
       item.question_hash,
       isCorrect,
       confidence,
+      zone,
     );
 
-    const currentStreak = await updateStreak(env, user.id);
+    const currentStreak = await updateStreak(env, user.id, zone);
 
     let learningPoints: number;
     if (isCorrect) {
@@ -478,7 +521,7 @@ export async function getStudyStats(request: Request, env: Env) {
       .bind(user.id)
       .first()) as any;
 
-    const now = new Date().toISOString();
+    const now = isoUtc();
     const dueRow = (await env.DB.prepare(
       `SELECT COUNT(*) as due_count FROM study_items
         WHERE user_id = ? AND (due_at IS NULL OR due_at <= ?)`,

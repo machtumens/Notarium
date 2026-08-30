@@ -5,6 +5,7 @@ import { darkThemeStyles } from '../theme';
 import GoogleLinkCard from '../components/settings/GoogleLinkCard';
 import TwoFactorCard from '../components/settings/TwoFactorCard';
 import SetPasswordCard from '../components/settings/SetPasswordCard';
+import TimezoneCard from '../components/settings/TimezoneCard';
 
 export default function SettingsPage() {
   const navigate = useNavigate();
@@ -55,6 +56,7 @@ export default function SettingsPage() {
           <GoogleLinkCard />
           <TwoFactorCard />
           <SetPasswordCard />
+          <TimezoneCard />
         </div>
       </div>
     </div>

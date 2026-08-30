@@ -1,6 +1,7 @@
 import type { Env } from '../lib/env';
 import { jsonResponse } from '../lib/response';
 import { getOrCreateUser, getAuthedUser } from '../lib/auth';
+import { SQL_NOW_ISO } from '../lib/time';
 
 export async function getNotesBySubject(subjectId: string, request: Request, env: Env) {
   // Public read: works for guests too. Personalization (class/grade filter,
@@ -386,7 +387,7 @@ export async function updateNoteSummary(noteId: string, request: Request, env: E
 
   const body = (await request.json()) as any;
 
-  await env.DB.prepare('UPDATE notes SET summary = ?, updated_at = datetime("now") WHERE id = ?')
+  await env.DB.prepare(`UPDATE notes SET summary = ?, updated_at = ${SQL_NOW_ISO} WHERE id = ?`)
     .bind(body.summary, noteId)
     .run();
 
@@ -498,7 +499,7 @@ export async function userUpdateNote(noteId: string, request: Request, env: Env)
       return jsonResponse({ error: 'No fields to update' }, 400);
     }
 
-    updates.push('updated_at = datetime("now")');
+    updates.push(`updated_at = ${SQL_NOW_ISO}`);
     values.push(noteId);
 
     const query = `UPDATE notes SET ${updates.join(', ')} WHERE id = ?`;
@@ -594,7 +595,7 @@ export async function publishDraftNote(noteId: string, request: Request, env: En
     await env.DB.prepare(
       `
       UPDATE notes
-      SET status = 'published', scheduled_publish_at = NULL, updated_at = datetime('now')
+      SET status = 'published', scheduled_publish_at = NULL, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now')
       WHERE id = ?
     `,
     )

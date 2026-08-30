@@ -9,6 +9,10 @@ export const signupSchema = z.object({
     .string()
     .regex(/^\d{4}\/\d{4}$/, 'Expected format YYYY/YYYY')
     .optional(),
+  // Sent by the browser at signup (Intl.resolvedOptions().timeZone). Length-capped
+  // here only; whether the zone actually exists is decided by isValidZone(), which
+  // asks Intl rather than guessing at a pattern.
+  timezone: z.string().max(64).optional(),
 });
 
 export const promoteClassesSchema = z.object({

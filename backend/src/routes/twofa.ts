@@ -24,7 +24,7 @@ export async function setup2fa(request: Request, env: Env) {
   if (!decoded) return jsonResponse({ error: 'Unauthorized' }, 401, env);
   const secret = generateTotpSecret();
   await env.DB.prepare(
-    `UPDATE users SET totp_secret = ?, totp_enabled = 0, updated_at = datetime('now') WHERE id = ?`,
+    `UPDATE users SET totp_secret = ?, totp_enabled = 0, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?`,
   )
     .bind(secret, decoded.id)
     .run();
@@ -51,7 +51,7 @@ export async function enable2fa(request: Request, env: Env) {
   }
   const { plain, hashes } = await generateBackupCodes();
   await env.DB.prepare(
-    `UPDATE users SET totp_enabled = 1, totp_backup_codes = ?, updated_at = datetime('now') WHERE id = ?`,
+    `UPDATE users SET totp_enabled = 1, totp_backup_codes = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?`,
   )
     .bind(JSON.stringify(hashes), decoded.id)
     .run();
@@ -74,7 +74,7 @@ export async function disable2fa(request: Request, env: Env) {
     return jsonResponse({ error: 'Provide a valid current code or password' }, 400, env);
   }
   await env.DB.prepare(
-    `UPDATE users SET totp_enabled = 0, totp_secret = NULL, totp_backup_codes = NULL, updated_at = datetime('now') WHERE id = ?`,
+    `UPDATE users SET totp_enabled = 0, totp_secret = NULL, totp_backup_codes = NULL, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?`,
   )
     .bind(decoded.id)
     .run();
@@ -208,7 +208,7 @@ export async function setPassword(request: Request, env: Env) {
   }
   const hashed = await hashPassword(String(newPassword));
   await env.DB.prepare(
-    `UPDATE users SET password_hash = ?, updated_at = datetime('now') WHERE id = ?`,
+    `UPDATE users SET password_hash = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?`,
   )
     .bind(hashed, decoded.id)
     .run();

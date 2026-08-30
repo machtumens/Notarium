@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import api from '../lib/api';
 import type { AppNotification } from '../types';
+import { formatDate as formatInStudentZone } from '../lib/datetime';
 
 interface NotificationPanelProps {
   onClose: () => void;
@@ -8,18 +9,18 @@ interface NotificationPanelProps {
 }
 
 const TYPE_STYLES: Record<string, { badge: string; dot: string }> = {
-  announcement: { badge: 'bg-blue-500/20 text-blue-400 border-blue-500/30', dot: 'bg-blue-400' },
+  announcement: {
+    badge: 'bg-[#3e7d8c]/20 text-[#3e7d8c] border-[#3e7d8c]/30',
+    dot: 'bg-[#3e7d8c]',
+  },
   class_reassignment: {
-    badge: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
+    badge: 'bg-amber-500/20 text-[#b98a3f] border-amber-500/30',
     dot: 'bg-amber-400',
   },
-  warning: { badge: 'bg-red-500/20 text-red-400 border-red-500/30', dot: 'bg-red-400' },
+  warning: { badge: 'bg-[#bf6b4f]/20 text-[#bf6b4f] border-[#bf6b4f]/30', dot: 'bg-red-400' },
 };
 
-function formatDate(dateStr: string) {
-  const d = new Date(dateStr);
-  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
-}
+const formatDate = (dateStr: string) => formatInStudentZone(dateStr);
 
 export default function NotificationPanel({ onClose, onCountChange }: NotificationPanelProps) {
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
@@ -59,15 +60,15 @@ export default function NotificationPanel({ onClose, onCountChange }: Notificati
   return (
     <div className="fixed inset-0 z-50 flex justify-end" onClick={onClose}>
       <div
-        className="relative w-full max-w-sm h-full bg-zinc-900 border-l border-zinc-800 shadow-2xl flex flex-col overflow-hidden"
+        className="relative w-full max-w-sm h-full bg-white/70 border-l border-[#1c2a22]/10 shadow-2xl flex flex-col overflow-hidden backdrop-blur-xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-[#1c2a22]/10">
           <div className="flex items-center gap-2">
-            <span className="text-white font-semibold text-sm">Notifications</span>
+            <span className="text-[#1c2a22] font-semibold text-sm">Notifications</span>
             {unreadCount > 0 && (
-              <span className="bg-red-500 text-white text-xs font-bold px-1.5 py-0.5 rounded-full">
+              <span className="bg-[#bf6b4f] text-[#1c2a22] text-xs font-bold px-1.5 py-0.5 rounded-full">
                 {unreadCount}
               </span>
             )}
@@ -76,14 +77,14 @@ export default function NotificationPanel({ onClose, onCountChange }: Notificati
             {unreadCount > 0 && (
               <button
                 onClick={handleMarkAllRead}
-                className="text-xs text-zinc-400 hover:text-zinc-200 transition-colors"
+                className="text-xs text-[#3c4f43] hover:text-[#1c2a22] transition-colors"
               >
                 Mark all read
               </button>
             )}
             <button
               onClick={onClose}
-              className="text-zinc-400 hover:text-white transition-colors p-1"
+              className="text-[#3c4f43] hover:text-[#1c2a22] transition-colors p-1"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path
@@ -101,10 +102,10 @@ export default function NotificationPanel({ onClose, onCountChange }: Notificati
         <div className="flex-1 overflow-y-auto">
           {loading ? (
             <div className="flex items-center justify-center py-12">
-              <div className="w-5 h-5 border-2 border-zinc-600 border-t-white rounded-full animate-spin" />
+              <div className="w-5 h-5 border-2 border-[#1c2a22]/[0.12] border-t-white rounded-full animate-spin" />
             </div>
           ) : notifications.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-12 text-zinc-500 gap-2">
+            <div className="flex flex-col items-center justify-center py-12 text-[#5b6f62] gap-2">
               <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path
                   strokeLinecap="round"
@@ -122,12 +123,12 @@ export default function NotificationPanel({ onClose, onCountChange }: Notificati
                 return (
                   <li
                     key={n.id}
-                    className={`px-4 py-3 cursor-pointer hover:bg-zinc-800/50 transition-colors ${n.is_read ? 'opacity-60' : ''}`}
+                    className={`px-4 py-3 cursor-pointer hover:bg-white/60/50 transition-colors ${n.is_read ? 'opacity-60' : ''}`}
                     onClick={() => n.is_read === 0 && handleMarkRead(n.id)}
                   >
                     <div className="flex items-start gap-3">
                       <div
-                        className={`mt-1.5 w-2 h-2 rounded-full flex-shrink-0 ${n.is_read ? 'bg-zinc-600' : style.dot}`}
+                        className={`mt-1.5 w-2 h-2 rounded-full flex-shrink-0 ${n.is_read ? 'bg-[#3c4f43]/15' : style.dot}`}
                       />
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1 flex-wrap">
@@ -136,10 +137,12 @@ export default function NotificationPanel({ onClose, onCountChange }: Notificati
                           >
                             {n.notification_type.replace('_', ' ')}
                           </span>
-                          <span className="text-xs text-zinc-500">{formatDate(n.created_at)}</span>
+                          <span className="text-xs text-[#5b6f62]">{formatDate(n.created_at)}</span>
                         </div>
-                        <p className="text-sm font-medium text-white mb-0.5 truncate">{n.title}</p>
-                        <p className="text-xs text-zinc-400 leading-relaxed">{n.message}</p>
+                        <p className="text-sm font-medium text-[#1c2a22] mb-0.5 truncate">
+                          {n.title}
+                        </p>
+                        <p className="text-xs text-[#3c4f43] leading-relaxed">{n.message}</p>
                       </div>
                     </div>
                   </li>

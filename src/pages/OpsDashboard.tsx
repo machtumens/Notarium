@@ -4,6 +4,7 @@ import { darkTheme, cardStyle } from '../theme';
 import { useAuth } from '../app/AuthContext';
 import MiniChart, { type ChartPoint } from '../components/ops/MiniChart';
 import type { OpsHealth, OpsMetrics, OpsFlags, OpsCloudflare } from '../types';
+import { formatTime } from '../lib/datetime';
 
 const t = darkTheme;
 
@@ -337,8 +338,7 @@ export default function OpsDashboard() {
       >
         <h1 style={{ fontSize: '24px', fontWeight: 700, margin: 0 }}>Ops Dashboard</h1>
         <span style={{ fontSize: '12px', color: t.colors.textSecondary }}>
-          {health?.time ? `Updated ${new Date(health.time).toLocaleTimeString()}` : 'Loading…'} ·
-          polls every 20s
+          {health?.time ? `Updated ${formatTime(health.time)}` : 'Loading…'} · polls every 20s
         </span>
       </div>
 

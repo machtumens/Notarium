@@ -20,6 +20,8 @@ export interface User {
   suspension_reason?: string;
   warning?: number;
   warning_message?: string;
+  /** IANA zone name. null = no override; fall back to the school default. */
+  timezone?: string | null;
 }
 
 export interface LoginCredentials {
@@ -43,6 +45,7 @@ export interface SignupData {
   name: string;
   class: string;
   academic_year?: string;
+  timezone?: string;
 }
 
 export interface TwoFactorSetup {
@@ -84,6 +87,8 @@ export interface ProfileUpdateData {
   class?: string;
   description?: string;
   photo_url?: string;
+  /** null clears the override and returns the student to the school default. */
+  timezone?: string | null;
 }
 
 export interface Note {

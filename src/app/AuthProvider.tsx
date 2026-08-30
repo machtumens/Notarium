@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import api from '../lib/api';
 import type { User } from '../types';
 import { AuthContext } from './AuthContext';
+import { setDisplayZone } from '../lib/datetime';
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -15,6 +16,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     try {
       const response = await api.getCurrentUser();
+      // Every timestamp in the app renders in this zone from here on. Set before
+      // setUser so the render that follows already uses it.
+      setDisplayZone(response.timezone);
       setUser(response);
     } catch (error) {
       console.error('Failed to load user:', error);

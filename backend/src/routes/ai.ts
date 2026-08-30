@@ -1,6 +1,7 @@
 import type { Env } from '../lib/env';
 import { jsonResponse } from '../lib/response';
 import { getUserFromToken } from '../lib/auth';
+import { SQL_NOW_ISO } from '../lib/time';
 
 // Best-effort AI usage logging. Never throws.
 export async function logAiUsage(
@@ -455,7 +456,7 @@ export async function generateNoteSummaryEndpoint(noteId: string, request: Reque
 
     const summary = await generateNoteSummary(content, title || 'Untitled', env);
 
-    await env.DB.prepare('UPDATE notes SET summary = ?, updated_at = datetime("now") WHERE id = ?')
+    await env.DB.prepare(`UPDATE notes SET summary = ?, updated_at = ${SQL_NOW_ISO} WHERE id = ?`)
       .bind(summary, noteId)
       .run();
 
@@ -587,11 +588,14 @@ export async function generateStructuredQuiz(
             role: 'user',
             content: `Create a ${difficulty}-difficulty quiz with EXACTLY ${count} questions based on the study material titled "${sourceContent.title}". Distribute the questions across these types: ${typeList}.
 
+Every question MUST carry a "topic": a short (1-3 word) label naming the sub-topic it tests, drawn from the material itself. Reuse the SAME topic string across questions that test the same idea — the results screen groups by it to show which topics are weak, so inconsistent labels make the breakdown useless. Aim for 2-5 distinct topics overall.
+
 Return ONLY a JSON object with this exact structure (no extra text):
 {
   "questions": [
     {
       "type": "mcq",
+      "topic": "Waves",
       "question": "Question text?",
       "options": ["option 1", "option 2", "option 3", "option 4"],
       "correct_answer": 0,
@@ -599,6 +603,7 @@ Return ONLY a JSON object with this exact structure (no extra text):
     },
     {
       "type": "true_false",
+      "topic": "Optics",
       "question": "Statement to judge.",
       "options": ["True", "False"],
       "correct_answer": 0,
@@ -606,6 +611,7 @@ Return ONLY a JSON object with this exact structure (no extra text):
     },
     {
       "type": "short_answer",
+      "topic": "Interference",
       "question": "Open question?",
       "model_answer": "The reference answer with the key points a correct response must contain.",
       "explanation": "Grading notes / rubric"

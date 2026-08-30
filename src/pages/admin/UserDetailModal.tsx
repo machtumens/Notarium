@@ -3,6 +3,7 @@ import { darkTheme } from '../../theme';
 import type { AdminUser } from './types';
 import EditUserModal from './EditUserModal';
 import { safePhotoUrl } from '../../lib/safeUrl';
+import { formatLongDateTime } from '../../lib/datetime';
 
 interface UserDetailModalProps {
   user: AdminUser | null;
@@ -19,7 +20,7 @@ export default function UserDetailModal({ user, onClose, onSaved }: UserDetailMo
       style={{
         position: 'fixed',
         inset: 0,
-        background: 'rgba(0, 0, 0, 0.8)',
+        background: 'rgba(20, 44, 30, 0.8)',
         backdropFilter: 'blur(4px)',
         display: 'flex',
         alignItems: 'center',
@@ -344,13 +345,7 @@ export default function UserDetailModal({ user, onClose, onSaved }: UserDetailMo
                     Suspended Until
                   </div>
                   <div style={{ fontSize: '13px', fontWeight: '500' }}>
-                    {new Date(user.suspension_end_date).toLocaleDateString('en-US', {
-                      year: 'numeric',
-                      month: 'long',
-                      day: 'numeric',
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })}
+                    {formatLongDateTime(user.suspension_end_date)}
                   </div>
                 </div>
               )}

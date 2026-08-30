@@ -1,6 +1,7 @@
 import React from 'react';
 import { Note } from '../../pages/SubjectNotesPage';
 import { darkTheme } from '../../theme';
+import { formatDate as formatInStudentZone } from '../../lib/datetime';
 
 interface NoteHeaderProps {
   note: Note;
@@ -17,7 +18,7 @@ const formatDate = (dateString: string) => {
   if (diffDays === 1) return 'Yesterday';
   if (diffDays < 7) return `${diffDays} days ago`;
   if (diffDays < 30) return `${Math.floor(diffDays / 7)} weeks ago`;
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  return formatInStudentZone(date);
 };
 
 export const NoteHeader: React.FC<NoteHeaderProps> = ({ note, onClose }) => {

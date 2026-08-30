@@ -1,6 +1,7 @@
 import api from '../../lib/api';
 import { darkTheme, cardStyle } from '../../theme';
 import type { AdminUser } from './types';
+import { formatDate } from '../../lib/datetime';
 
 interface NotifForm {
   target_type: string;
@@ -358,7 +359,7 @@ export default function NotificationsTab({
                     {n.target_class ? ` ${n.target_class}` : ''}
                   </span>
                   <span style={{ fontSize: '11px', color: darkTheme.colors.textSecondary }}>
-                    {new Date(n.created_at).toLocaleDateString()}
+                    {formatDate(n.created_at)}
                   </span>
                 </div>
                 <p

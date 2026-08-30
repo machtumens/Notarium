@@ -1,0 +1,21 @@
+-- Per-user timezone, so day boundaries are computed where the student is.
+--
+-- WHY: every day boundary was UTC. For a UTC+7 (WIB) user base the streak day
+-- rolled over at 07:00 local — mid school-morning — so a student revising
+-- Monday 22:00 and again Tuesday 06:00 recorded ONE streak day and Tuesday
+-- read as missed. Early-morning revision is exactly what the Primer flow
+-- encourages, so the bug penalised the behaviour the product is building.
+--
+-- NULLABLE ON PURPOSE. Resolution is user.timezone -> school default
+-- (Asia/Jakarta) -> UTC, so existing rows need no backfill: NULL simply means
+-- "the school's zone". A student abroad sets their own and gets correct days
+-- without the school default moving for everyone else.
+--
+-- Stores an IANA name ('Asia/Jakarta'), never a fixed offset: an offset is
+-- wrong for half the year in any zone with DST, and the name is what
+-- Intl.DateTimeFormat consumes directly.
+--
+-- Not backfilled from anything. There is no signal in existing rows to infer a
+-- zone from, and guessing one would silently re-date a student's history.
+
+ALTER TABLE users ADD COLUMN timezone TEXT;
