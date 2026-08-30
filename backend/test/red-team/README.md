@@ -13,29 +13,35 @@ npm test                       # whole suite (incl. these)
 npx vitest run test/red-team/   # just the red-team suites
 ```
 
-112 red-team tests, all green. Secrets are injected as test-only fakes via
-`vitest.config.ts` (`miniflare.bindings`); no real credentials, no live AI calls.
+178 backend red-team tests, all green — every one of the 150 numbered scenarios
+is now covered (directly, folded into a range/pair test, or in a `gaps-*` file;
+a handful are covered indirectly in `journeys`/`failure-sim`). Secrets are injected
+as test-only fakes via `vitest.config.ts` (`miniflare.bindings`); no real
+credentials, no live AI calls (provider paths use fetch-stubbed mocks).
 
 ## Files
 
-| File                     | Scenarios | Focus                                                                   |
-| ------------------------ | --------- | ----------------------------------------------------------------------- |
-| `helpers.ts`             | —         | schema apply, DB reset, user/subject/note seeding, JWT mint, `call()`   |
-| `A-auth.test.ts`         | 1–20      | signup + login                                                          |
-| `B-jwt.test.ts`          | 21–40     | token forgery, expiry, alg=none, tamper                                 |
-| `C-rbac.test.ts`         | 41–60     | student/moderator/technical/super gates                                 |
-| `D-ratelimit.test.ts`    | 61–75     | sliding window, IP keying, XFF spoof                                    |
-| `E-validation.test.ts`   | 76–90     | zod schemas, size cap, malformed JSON                                   |
-| `F-notes.test.ts`        | 91–110    | note CRUD + ownership                                                   |
-| `G-idor.test.ts`         | 111–120   | cross-user access, header-identity bypass                               |
-| `H-ai.test.ts`           | 121–130   | AI auth-gating + prompt sanitisation                                    |
-| `I-chat-study.test.ts`   | 131–140   | session isolation, quiz/review persistence                              |
-| `J-admin.test.ts`        | 141–150   | suspend/warn/feature/log/notify + denial                                |
-| `fuzz.test.ts`           | —         | SQLi/XSS/traversal/unicode corpora, protocol abuse                      |
-| `concurrency.test.ts`    | —         | concurrent likes/signup/delete lost-update probes                       |
-| `failure-sim.test.ts`    | —         | degraded KV, AI provider down, partial D1 failure, error-path hardening |
-| `journeys.test.ts`       | 1, 3, 9   | multi-API end-to-end backend flows                                      |
-| `provider-mocks.test.ts` | 4, 8      | AI/OCR paths with mocked Vision + DeepSeek (fetch-stubbed)              |
+| File                                | Scenarios                                     | Focus                                                                           |
+| ----------------------------------- | --------------------------------------------- | ------------------------------------------------------------------------------- |
+| `helpers.ts`                        | —                                             | schema apply, DB reset, user/subject/note seeding, JWT mint, `call()`           |
+| `A-auth.test.ts`                    | 1–20                                          | signup + login                                                                  |
+| `B-jwt.test.ts`                     | 21–40                                         | token forgery, expiry, alg=none, tamper                                         |
+| `C-rbac.test.ts`                    | 41–60                                         | student/moderator/technical/super gates                                         |
+| `D-ratelimit.test.ts`               | 61–75                                         | sliding window, IP keying, XFF spoof                                            |
+| `E-validation.test.ts`              | 76–90                                         | zod schemas, size cap, malformed JSON                                           |
+| `F-notes.test.ts`                   | 91–110                                        | note CRUD + ownership                                                           |
+| `G-idor.test.ts`                    | 111–120                                       | cross-user access, header-identity bypass                                       |
+| `H-ai.test.ts`                      | 121–130                                       | AI auth-gating + prompt sanitisation                                            |
+| `I-chat-study.test.ts`              | 131–140                                       | session isolation, quiz/review persistence                                      |
+| `J-admin.test.ts`                   | 141–150                                       | suspend/warn/feature/log/notify + denial                                        |
+| `fuzz.test.ts`                      | —                                             | SQLi/XSS/traversal/unicode corpora, protocol abuse                              |
+| `concurrency.test.ts`               | —                                             | concurrent likes/signup/delete lost-update probes                               |
+| `failure-sim.test.ts`               | —                                             | degraded KV, AI provider down, partial D1 failure, error-path hardening         |
+| `journeys.test.ts`                  | 1, 3, 9                                       | multi-API end-to-end backend flows                                              |
+| `provider-mocks.test.ts`            | 4, 8, 135                                     | AI/OCR/chat paths with mocked Vision + DeepSeek (fetch-stubbed)                 |
+| `gaps-auth-rbac.test.ts`            | 15,33,34,46,47,52,55,57,60                    | password reset, suspended-token, statelessness, technical tier, privilege guard |
+| `gaps-ratelimit-notes-idor.test.ts` | 64,70,71,93,94,99–102,104,105,108,114,115,119 | window reset, KV outage, drafts, soft-delete, admin override                    |
+| `gaps-study-admin.test.ts`          | 137,146,148                                   | SRS grading, restore, migration idempotency                                     |
 
 ## Findings surfaced (tests document actual behaviour, not the ideal)
 
@@ -69,11 +75,20 @@ behaviour, each flagged with a `FINDING` comment so a fix flips the expectation.
 8. **No server-side sanitisation of `display_name`** (`A-auth` 10). XSS payloads
    are stored verbatim; defence relies entirely on the frontend renderer
    (which does use `rehype-sanitize`, so this is defence-in-depth, not an open hole).
-9. **Soft-delete does not hide content from search** (`journeys` J9). `searchNotes`
-   has no `AND deleted_at IS NULL`, so a note with `deleted_at` set is still
-   returned by `/api/notes/search`. The user/admin delete paths hard-delete (so
-   `F-106` passes), but any `deleted_at`-based moderation leaves the content
-   discoverable. Fix: filter `deleted_at IS NULL` in the search/list queries.
+9. **A token issued before suspension keeps working** (`gaps-auth-rbac` B33).
+   Login blocks suspended users, but `/api/auth/me` (and token-only routes) only
+   re-load the row without re-checking `suspended` — so a user suspended _after_
+   their token was minted stays authenticated until it expires (24h). Fix: check
+   `suspended` on token validation, or keep a short-TTL revocation set.
+10. **Soft-delete is half-built** (`gaps-ratelimit-notes-idor` F99). The `deleted_at`
+    column + admin restore exist, but no endpoint ever _sets_ `deleted_at` — user
+    and admin deletes are both hard `DELETE FROM notes`. Combined with #9 (search
+    ignores `deleted_at`), the soft-delete/restore feature is effectively inert.
+11. **Soft-delete does not hide content from search** (`journeys` J9). `searchNotes`
+    has no `AND deleted_at IS NULL`, so a note with `deleted_at` set is still
+    returned by `/api/notes/search`. The user/admin delete paths hard-delete (so
+    `F-106` passes), but any `deleted_at`-based moderation leaves the content
+    discoverable. Fix: filter `deleted_at IS NULL` in the search/list queries.
 
 ## Harness notes / known limitations
 
