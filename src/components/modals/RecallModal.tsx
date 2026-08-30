@@ -86,7 +86,7 @@ export default function RecallModal({ noteId, noteContent, noteTitle, onClose }:
             marginBottom: '20px',
             position: 'sticky',
             top: 0,
-            background: 'rgba(10, 10, 10, 0.95)',
+            background: 'rgba(255, 255, 255, 0.82)',
             paddingBottom: '12px',
             zIndex: 1,
           }}

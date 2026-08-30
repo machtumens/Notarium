@@ -3,7 +3,7 @@ import { getCurrentTheme } from '../../theme';
 import { useAuth } from '../../App';
 import { safePhotoUrl } from '../../lib/safeUrl';
 import { ExpandableTabs } from '../../components/ui/expandable-tabs';
-import { Book, MessageSquare, Trophy, Settings, LogOut, BookOpen } from 'lucide-react';
+import { Book, Trophy, Settings, LogOut, BookOpen } from 'lucide-react';
 
 interface MyNotesNavProps {
   isMobile: boolean;
@@ -21,6 +21,24 @@ export default function MyNotesNav({
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const currentTheme = getCurrentTheme();
+
+  // One list drives both what is rendered and what each entry does. Separator
+  // entries carry no action, so clicking past them is a no-op rather than a
+  // mis-indexed navigation.
+  const navItems: Array<
+    | { title: string; icon: typeof Book; action: () => void }
+    | { type: 'separator'; action?: undefined }
+  > = [
+    { title: 'Community', icon: Book, action: () => navigate('/community') },
+    { title: 'Progress', icon: Trophy, action: () => navigate('/progress') },
+    ...(user?.role === 'admin'
+      ? [{ title: 'Admin', icon: Settings, action: () => navigate('/admin') }]
+      : []),
+    { type: 'separator' as const },
+    // Already on My Notes — selecting it should not navigate anywhere.
+    { title: 'My Notes', icon: BookOpen, action: () => {} },
+    { title: 'Logout', icon: LogOut, action: () => logout() },
+  ];
 
   return (
     <nav
@@ -79,18 +97,20 @@ export default function MyNotesNav({
           onMouseOut={(e) => (e.currentTarget.style.opacity = '1')}
         >
           <img
-            src="/notarium-logo.jpg"
+            src="/wordmark-pine.png"
             alt="Notarium"
             style={{ height: '48px', width: 'auto', borderRadius: '8px' }}
           />
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
-            <span style={{ fontSize: '20px', fontWeight: '700', color: '#fff', lineHeight: '1.2' }}>
+            <span
+              style={{ fontSize: '20px', fontWeight: '700', color: '#1c2a22', lineHeight: '1.2' }}
+            >
               Notarium
             </span>
             <span
               style={{
                 fontSize: '11px',
-                color: 'rgba(255, 255, 255, 0.6)',
+                color: '#3c4f43',
                 fontWeight: '500',
                 letterSpacing: '0.5px',
               }}
@@ -118,39 +138,25 @@ export default function MyNotesNav({
           onMouseOver={(e) => (e.currentTarget.style.opacity = '0.8')}
           onMouseOut={(e) => (e.currentTarget.style.opacity = '1')}
         >
-          <img src="/notarium-logo.jpg" alt="Notarium" style={{ height: '44px', width: 'auto' }} />
+          <img src="/wordmark-pine.png" alt="Notarium" style={{ height: '44px', width: 'auto' }} />
         </button>
       )}
 
-      {/* Desktop Navigation with black theme */}
+      {/* Desktop navigation.
+          ExpandableTabs reports the index of the clicked entry, and separators
+          occupy an index even though they are not selectable. Deriving both the
+          rendered tabs and their actions from ONE array makes that arithmetic
+          impossible to get wrong — the previous version kept a parallel `pages`
+          list whose length drove the branch, so every destination collapsed to
+          navigate('/') and the Admin tab never reached /admin. */}
       {!isMobile && (
         <div style={{ flex: 1, display: 'flex', justifyContent: 'center' }}>
           <ExpandableTabs
-            className="bg-black/95 border-white/10 backdrop-blur-xl shadow-2xl"
-            tabs={[
-              { title: 'Subjects', icon: Book },
-              { title: 'Chat', icon: MessageSquare },
-              { title: 'Leaderboard', icon: Trophy },
-              ...(user?.role === 'admin' ? [{ title: 'Admin', icon: Settings }] : []),
-              { type: 'separator' as const },
-              { title: 'My Notes', icon: BookOpen },
-              { title: 'Logout', icon: LogOut },
-            ]}
+            className="bg-white/80 border-white/60 backdrop-blur-xl shadow-2xl"
+            tabs={navItems.map(({ action: _action, ...tab }) => tab)}
             onChange={(index) => {
               if (index === null) return;
-
-              const pages = ['subjects', 'chat', 'leaderboard'];
-              if (user?.role === 'admin') pages.push('admin');
-
-              const actionIndex = user?.role === 'admin' ? 5 : 4;
-
-              if (index < pages.length) {
-                navigate('/');
-              } else if (index === actionIndex) {
-                // Already on My Notes page
-              } else if (index === actionIndex + 1) {
-                logout();
-              }
+              navItems[index]?.action?.();
             }}
           />
         </div>
@@ -164,7 +170,7 @@ export default function MyNotesNav({
             display: 'flex',
             alignItems: 'center',
             gap: '10px',
-            background: 'rgba(0, 0, 0, 0.95)',
+            background: 'rgba(255, 255, 255, 0.82)',
             backdropFilter: 'blur(10px)',
             border: '1px solid rgba(255, 255, 255, 0.1)',
             color: currentTheme.colors.textPrimary,

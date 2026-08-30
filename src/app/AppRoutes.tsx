@@ -9,6 +9,8 @@ import { CommunityRoute, ProgressRoute } from './routes/ShellPageRoutes';
 import { ReviewPageRoute } from './ReviewPageRoute';
 import {
   TodayPage,
+  CampusPage,
+  TutorWingPage,
   Login,
   AdminLogin,
   Signup,
@@ -37,7 +39,7 @@ export function AppRoutes() {
             alignItems: 'center',
             justifyContent: 'center',
             background: '#0a0a0f',
-            color: '#fff',
+            color: '#1c2a22',
           }}
         >
           <LoadingSpinner message="Loading..." size="lg" />
@@ -104,11 +106,13 @@ export function AppRoutes() {
           }
         >
           <Route path="/" element={<TodayPage />} />
+          <Route path="/campus" element={<CampusPage />} />
           <Route path="/community" element={<CommunityRoute />} />
           <Route path="/community/:subjectId" element={<SubjectNotesPage />} />
           <Route path="/progress" element={<ProgressRoute />} />
           <Route path="/quiz" element={<QuizBuilderPage />} />
           <Route path="/primer" element={<PrimerPage />} />
+          <Route path="/tutors" element={<TutorWingPage />} />
           <Route
             path="/admin"
             element={

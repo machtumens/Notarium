@@ -60,10 +60,10 @@ export default function AuthCallback() {
   }, [searchParams, navigate]);
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-green-50 to-blue-50">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-green-50 to-[#eef4ee]">
       <div className="text-center">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-600 mx-auto"></div>
-        <p className="mt-4 text-gray-600">Signing you in…</p>
+        <p className="mt-4 text-[#3c4f43]">Signing you in…</p>
       </div>
     </div>
   );

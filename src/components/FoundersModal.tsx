@@ -71,7 +71,7 @@ export default function FoundersModal({ onClose }: FoundersModalProps) {
         style={{
           position: 'fixed',
           inset: 0,
-          background: 'rgba(0, 0, 0, 0.75)',
+          background: 'rgba(20, 44, 30, 0.75)',
           backdropFilter: 'blur(4px)',
           zIndex: 9998,
           animation: 'fadeIn 0.2s ease-out',

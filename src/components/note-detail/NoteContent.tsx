@@ -1,6 +1,7 @@
 import React from 'react';
 import { darkTheme } from '../../theme';
 import { useImagePagination } from '../../hooks/useImagePagination';
+import ModelSlot from '../campus/ModelSlot';
 
 interface NoteContentProps {
   title: string;
@@ -98,7 +99,7 @@ export const NoteContent: React.FC<NoteContentProps> = ({
                   left: '16px',
                   top: '50%',
                   transform: 'translateY(-50%)',
-                  background: 'rgba(0,0,0,0.6)',
+                  background: 'rgba(20, 44, 30, 0.6)',
                   backdropFilter: 'blur(4px)',
                   border: 'none',
                   color: 'white',
@@ -134,7 +135,7 @@ export const NoteContent: React.FC<NoteContentProps> = ({
                   right: '16px',
                   top: '50%',
                   transform: 'translateY(-50%)',
-                  background: 'rgba(0,0,0,0.6)',
+                  background: 'rgba(20, 44, 30, 0.6)',
                   backdropFilter: 'blur(4px)',
                   border: 'none',
                   color: 'white',
@@ -177,7 +178,7 @@ export const NoteContent: React.FC<NoteContentProps> = ({
               >
                 <div
                   style={{
-                    background: 'rgba(0,0,0,0.6)',
+                    background: 'rgba(20, 44, 30, 0.6)',
                     backdropFilter: 'blur(4px)',
                     borderRadius: '16px',
                     padding: '6px 16px',
@@ -224,7 +225,7 @@ export const NoteContent: React.FC<NoteContentProps> = ({
                 position: 'absolute',
                 top: '16px',
                 right: '16px',
-                background: 'rgba(0,0,0,0.6)',
+                background: 'rgba(20, 44, 30, 0.6)',
                 backdropFilter: 'blur(4px)',
                 borderRadius: '8px',
                 padding: '8px 12px',
@@ -278,6 +279,21 @@ export const NoteContent: React.FC<NoteContentProps> = ({
             </div>
           </div>
         )}
+
+        {/* 3D model slot — redesign option 2d. Empty until a note carries a
+            model file; the slot itself is interactive so the affordance reads. */}
+        <div
+          style={{
+            marginBottom: '24px',
+            padding: '16px',
+            borderRadius: 16,
+            background: 'rgba(255,255,255,.55)',
+            backdropFilter: 'blur(26px) saturate(1.3)',
+            border: '1px solid rgba(255,255,255,.75)',
+          }}
+        >
+          <ModelSlot size={isMobile ? 140 : 180} />
+        </div>
 
         {/* Description */}
         <div style={{ marginBottom: '24px' }}>
@@ -367,7 +383,7 @@ export const NoteContent: React.FC<NoteContentProps> = ({
           style={{
             position: 'fixed',
             inset: 0,
-            background: 'rgba(0,0,0,0.95)',
+            background: 'rgba(255, 255, 255, 0.82)',
             backdropFilter: 'blur(8px)',
             zIndex: 2000,
             display: 'flex',
@@ -388,7 +404,7 @@ export const NoteContent: React.FC<NoteContentProps> = ({
               background: 'rgba(255,255,255,0.2)',
               backdropFilter: 'blur(4px)',
               border: 'none',
-              color: 'white',
+              color: '#1c2a22',
               fontSize: '32px',
               width: '50px',
               height: '50px',
@@ -434,7 +450,7 @@ export const NoteContent: React.FC<NoteContentProps> = ({
                 background: 'rgba(255,255,255,0.2)',
                 backdropFilter: 'blur(4px)',
                 border: 'none',
-                color: 'white',
+                color: '#1c2a22',
                 fontSize: '20px',
                 width: '50px',
                 height: '50px',
@@ -469,7 +485,7 @@ export const NoteContent: React.FC<NoteContentProps> = ({
                 background: 'rgba(255,255,255,0.2)',
                 backdropFilter: 'blur(4px)',
                 border: 'none',
-                color: 'white',
+                color: '#1c2a22',
                 fontSize: '20px',
                 width: '50px',
                 height: '50px',
@@ -504,7 +520,7 @@ export const NoteContent: React.FC<NoteContentProps> = ({
                   background: 'rgba(255,255,255,0.2)',
                   backdropFilter: 'blur(4px)',
                   border: 'none',
-                  color: 'white',
+                  color: '#1c2a22',
                   fontSize: '16px',
                   width: '50px',
                   height: '50px',
@@ -545,7 +561,7 @@ export const NoteContent: React.FC<NoteContentProps> = ({
                   background: 'rgba(255,255,255,0.2)',
                   backdropFilter: 'blur(4px)',
                   border: 'none',
-                  color: 'white',
+                  color: '#1c2a22',
                   width: '60px',
                   height: '60px',
                   borderRadius: '50%',
@@ -581,7 +597,7 @@ export const NoteContent: React.FC<NoteContentProps> = ({
                   background: 'rgba(255,255,255,0.2)',
                   backdropFilter: 'blur(4px)',
                   border: 'none',
-                  color: 'white',
+                  color: '#1c2a22',
                   width: '60px',
                   height: '60px',
                   borderRadius: '50%',
@@ -645,7 +661,7 @@ export const NoteContent: React.FC<NoteContentProps> = ({
           >
             <div
               style={{
-                background: 'rgba(0,0,0,0.6)',
+                background: 'rgba(20, 44, 30, 0.6)',
                 backdropFilter: 'blur(4px)',
                 color: 'white',
                 padding: '12px 24px',

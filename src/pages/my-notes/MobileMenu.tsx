@@ -20,7 +20,7 @@ export default function MobileMenu({ isMobile, closeMobileMenu }: MobileMenuProp
         left: 0,
         right: 0,
         bottom: 0,
-        background: 'rgba(0, 0, 0, 0.8)',
+        background: 'rgba(20, 44, 30, 0.8)',
         backdropFilter: 'blur(4px)',
         zIndex: 999,
         animation: 'fadeIn 0.2s ease-out',
@@ -126,91 +126,20 @@ export default function MobileMenu({ isMobile, closeMobileMenu }: MobileMenuProp
             flex: 1,
           }}
         >
-          <button
-            onClick={() => {
-              navigate('/');
-              closeMobileMenu();
-            }}
-            style={{
-              width: '100%',
-              padding: '12px 16px',
-              background: 'transparent',
-              border: 'none',
-              color: '#fff',
-              cursor: 'pointer',
-              fontSize: '15px',
-              fontWeight: '500',
-              transition: darkTheme.transitions.default,
-              borderRadius: darkTheme.borderRadius.md,
-              textAlign: 'left',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '12px',
-            }}
-            onMouseOver={(e) => (e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)')}
-            onMouseOut={(e) => (e.currentTarget.style.background = 'transparent')}
-          >
-            <i className="fas fa-book" style={{ width: '20px' }}></i>Subjects
-          </button>
-
-          <button
-            onClick={() => {
-              navigate('/');
-              closeMobileMenu();
-            }}
-            style={{
-              width: '100%',
-              padding: '12px 16px',
-              background: 'transparent',
-              border: 'none',
-              color: '#fff',
-              cursor: 'pointer',
-              fontSize: '15px',
-              fontWeight: '500',
-              transition: darkTheme.transitions.default,
-              borderRadius: darkTheme.borderRadius.md,
-              textAlign: 'left',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '12px',
-            }}
-            onMouseOver={(e) => (e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)')}
-            onMouseOut={(e) => (e.currentTarget.style.background = 'transparent')}
-          >
-            <i className="fas fa-comments" style={{ width: '20px' }}></i>Chat
-          </button>
-
-          <button
-            onClick={() => {
-              navigate('/');
-              closeMobileMenu();
-            }}
-            style={{
-              width: '100%',
-              padding: '12px 16px',
-              background: 'transparent',
-              border: 'none',
-              color: '#fff',
-              cursor: 'pointer',
-              fontSize: '15px',
-              fontWeight: '500',
-              transition: darkTheme.transitions.default,
-              borderRadius: darkTheme.borderRadius.md,
-              textAlign: 'left',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '12px',
-            }}
-            onMouseOver={(e) => (e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)')}
-            onMouseOut={(e) => (e.currentTarget.style.background = 'transparent')}
-          >
-            <i className="fas fa-trophy" style={{ width: '20px' }}></i>Leaderboard
-          </button>
-
-          {user?.role === 'admin' && (
+          {/* Destination list. Previously four near-identical buttons that ALL
+              called navigate('/') — including Admin — and one of which offered
+              "Chat", a feature removed in Paperloop Phase 4 (the backend 404s
+              /api/chat/*). Driving them from one array keeps label and
+              destination together so they cannot drift apart again. */}
+          {[
+            { label: 'Community', icon: 'fa-book', path: '/community' },
+            { label: 'Progress', icon: 'fa-trophy', path: '/progress' },
+            ...(user?.role === 'admin' ? [{ label: 'Admin', icon: 'fa-cog', path: '/admin' }] : []),
+          ].map(({ label, icon, path }) => (
             <button
+              key={path}
               onClick={() => {
-                navigate('/');
+                navigate(path);
                 closeMobileMenu();
               }}
               style={{
@@ -218,7 +147,7 @@ export default function MobileMenu({ isMobile, closeMobileMenu }: MobileMenuProp
                 padding: '12px 16px',
                 background: 'transparent',
                 border: 'none',
-                color: '#fff',
+                color: '#1c2a22',
                 cursor: 'pointer',
                 fontSize: '15px',
                 fontWeight: '500',
@@ -229,12 +158,13 @@ export default function MobileMenu({ isMobile, closeMobileMenu }: MobileMenuProp
                 alignItems: 'center',
                 gap: '12px',
               }}
-              onMouseOver={(e) => (e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)')}
+              onMouseOver={(e) => (e.currentTarget.style.background = 'rgba(46, 125, 82, 0.10)')}
               onMouseOut={(e) => (e.currentTarget.style.background = 'transparent')}
             >
-              <i className="fas fa-cog" style={{ width: '20px' }}></i>Admin
+              <i className={`fas ${icon}`} style={{ width: '20px' }}></i>
+              {label}
             </button>
-          )}
+          ))}
 
           {/* Divider */}
           <div
@@ -314,7 +244,7 @@ export default function MobileMenu({ isMobile, closeMobileMenu }: MobileMenuProp
           onMouseOver={(e) => (e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)')}
           onMouseOut={(e) => (e.currentTarget.style.background = 'transparent')}
         >
-          <img src="/notarium-logo.jpg" alt="Notarium" style={{ height: '40px', width: 'auto' }} />
+          <img src="/wordmark-pine.png" alt="Notarium" style={{ height: '40px', width: 'auto' }} />
           <div>
             <h4 style={{ margin: '0', fontSize: '14px', fontWeight: 'bold' }}>
               Notarium<span style={{ color: darkTheme.colors.accent }}>.Site</span>

@@ -217,8 +217,8 @@ export default function Login() {
   return (
     <div className="relative w-full h-screen flex items-center justify-center overflow-hidden">
       {/* Shader Animation Background */}
-      <div className="absolute inset-0 z-0 bg-black">
-        <Suspense fallback={<div className="absolute inset-0 bg-black" />}>
+      <div className="absolute inset-0 z-0 bg-[#f4f8f3]/40">
+        <Suspense fallback={<div className="absolute inset-0 bg-[#f4f8f3]/40" />}>
           <ShaderAnimation />
         </Suspense>
       </div>
@@ -227,7 +227,7 @@ export default function Login() {
         <div className="flex gap-4 py-8 items-center justify-center flex-col max-w-4xl mx-auto">
           {/* Animated Hero Header */}
           <div className="flex gap-2 flex-col items-center">
-            <h1 className="text-4xl md:text-5xl max-w-3xl tracking-tighter text-center font-regular text-white">
+            <h1 className="text-4xl md:text-5xl max-w-3xl tracking-tighter text-center font-regular text-[#1c2a22]">
               <span className="block mb-1">NOTARIUM</span>
               <span className="text-2xl md:text-3xl block">
                 <span>A library that's</span>
@@ -236,7 +236,7 @@ export default function Login() {
                   {titles.map((title, index) => (
                     <motion.span
                       key={index}
-                      className="absolute font-semibold text-white"
+                      className="absolute font-semibold text-[#1c2a22]"
                       initial={{ opacity: 0, y: '-100' }}
                       transition={{ type: 'spring', stiffness: 50 }}
                       animate={
@@ -258,20 +258,20 @@ export default function Login() {
               </span>
             </h1>
 
-            <p className="text-sm md:text-base leading-relaxed tracking-tight text-gray-400 max-w-2xl text-center">
+            <p className="text-sm md:text-base leading-relaxed tracking-tight text-[#3c4f43] max-w-2xl text-center">
               Sign in to access your study materials
             </p>
           </div>
 
           {/* Login Form Card */}
           <div className="w-full max-w-md">
-            <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-6 shadow-lg">
-              <h2 className="text-xl font-semibold text-center mb-4 text-white">
+            <div className="bg-white/70 border border-[#1c2a22]/10 rounded-lg p-6 shadow-lg backdrop-blur-xl">
+              <h2 className="text-xl font-semibold text-center mb-4 text-[#1c2a22]">
                 {twoFactorChallenge ? 'Two-Factor Authentication' : 'Welcome Back'}
               </h2>
 
               {error && (
-                <div className="bg-red-500/10 text-red-400 border border-red-500/20 rounded-md p-3 mb-4 text-sm">
+                <div className="bg-[#bf6b4f]/10 text-[#bf6b4f] border border-[#bf6b4f]/20 rounded-md p-3 mb-4 text-sm">
                   {error}
                 </div>
               )}
@@ -283,11 +283,11 @@ export default function Login() {
 
               {twoFactorChallenge ? (
                 <form onSubmit={handleVerify2fa} className="space-y-3">
-                  <p className="text-sm text-gray-400">
+                  <p className="text-sm text-[#3c4f43]">
                     Enter the 6-digit code from your authenticator app, or an 8-digit backup code.
                   </p>
                   <div className="space-y-1">
-                    <label htmlFor="twoFactorCode" className="text-sm font-medium text-white">
+                    <label htmlFor="twoFactorCode" className="text-sm font-medium text-[#1c2a22]">
                       Verification Code
                     </label>
                     <input
@@ -298,7 +298,7 @@ export default function Login() {
                       value={twoFactorCode}
                       onChange={(e) => setTwoFactorCode(e.target.value)}
                       placeholder="123456"
-                      className="w-full px-3 py-2 border border-zinc-700 rounded-md bg-zinc-800 text-white tracking-widest text-center focus:outline-none focus:ring-2 focus:ring-white/20"
+                      className="w-full px-3 py-2 border border-[#1c2a22]/[0.12] rounded-md bg-white/60 text-[#1c2a22] tracking-widest text-center focus:outline-none focus:ring-2 focus:ring-[#2e7d52]/30"
                       required
                       autoFocus
                     />
@@ -307,11 +307,11 @@ export default function Login() {
                   <button
                     type="submit"
                     disabled={isLoading || !twoFactorCode.trim()}
-                    className="relative w-full h-12 overflow-hidden rounded-md group disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="relative w-full h-12 overflow-hidden rounded-full group shadow-[inset_0_1px_0_rgba(255,255,255,.35),0_10px_22px_-12px_rgba(42,108,71,.7)] disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    <div className="absolute inset-0 bg-gradient-to-r from-purple-600 via-pink-600 to-blue-600 animate-gradient-xy opacity-80 group-hover:opacity-100 transition-opacity"></div>
-                    <div className="absolute inset-0.5 bg-black rounded-md flex items-center justify-center">
-                      <span className="relative z-10 text-white font-medium text-base">
+                    <div className="absolute inset-0 bg-gradient-to-r from-[#3f9468] via-[#2e7d52] to-[#2a6c47] animate-gradient-xy opacity-100 transition-opacity"></div>
+                    <div className="absolute inset-0 rounded-full flex items-center justify-center">
+                      <span className="relative z-10 text-white font-semibold text-base">
                         {isLoading ? 'Verifying...' : 'Verify'}
                       </span>
                     </div>
@@ -320,7 +320,7 @@ export default function Login() {
                   <button
                     type="button"
                     onClick={handleBackFromTwoFactor}
-                    className="w-full text-xs text-gray-400 hover:text-white transition-colors"
+                    className="w-full text-xs text-[#3c4f43] hover:text-[#1c2a22] transition-colors"
                   >
                     ← Back to sign in
                   </button>
@@ -339,7 +339,7 @@ export default function Login() {
                 <>
                   <form onSubmit={handleEmailLogin} className="space-y-3">
                     <div className="space-y-1">
-                      <label htmlFor="email" className="text-sm font-medium text-white">
+                      <label htmlFor="email" className="text-sm font-medium text-[#1c2a22]">
                         Email
                       </label>
                       <input
@@ -348,13 +348,13 @@ export default function Login() {
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
                         placeholder="you@example.com"
-                        className="w-full px-3 py-2 border border-zinc-700 rounded-md bg-zinc-800 text-white focus:outline-none focus:ring-2 focus:ring-white/20"
+                        className="w-full px-3 py-2 border border-[#1c2a22]/[0.12] rounded-md bg-white/60 text-[#1c2a22] focus:outline-none focus:ring-2 focus:ring-[#2e7d52]/30"
                         required
                       />
                     </div>
 
                     <div className="space-y-1">
-                      <label htmlFor="password" className="text-sm font-medium text-white">
+                      <label htmlFor="password" className="text-sm font-medium text-[#1c2a22]">
                         Password
                       </label>
                       <div className="relative">
@@ -364,13 +364,13 @@ export default function Login() {
                           value={password}
                           onChange={(e) => setPassword(e.target.value)}
                           placeholder="••••••••"
-                          className="w-full px-3 py-2 pr-10 border border-zinc-700 rounded-md bg-zinc-800 text-white focus:outline-none focus:ring-2 focus:ring-white/20"
+                          className="w-full px-3 py-2 pr-10 border border-[#1c2a22]/[0.12] rounded-md bg-white/60 text-[#1c2a22] focus:outline-none focus:ring-2 focus:ring-[#2e7d52]/30"
                           required
                         />
                         <button
                           type="button"
                           onClick={() => setShowPassword(!showPassword)}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white transition-colors"
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-[#3c4f43] hover:text-[#1c2a22] transition-colors"
                           title={showPassword ? 'Hide password' : 'Show password'}
                         >
                           {showPassword ? '👁️' : '👁️‍🗨️'}
@@ -381,11 +381,11 @@ export default function Login() {
                     <button
                       type="submit"
                       disabled={isLoading}
-                      className="relative w-full h-12 overflow-hidden rounded-md group disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="relative w-full h-12 overflow-hidden rounded-full group shadow-[inset_0_1px_0_rgba(255,255,255,.35),0_10px_22px_-12px_rgba(42,108,71,.7)] disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      <div className="absolute inset-0 bg-gradient-to-r from-purple-600 via-pink-600 to-blue-600 animate-gradient-xy opacity-80 group-hover:opacity-100 transition-opacity"></div>
-                      <div className="absolute inset-0.5 bg-black rounded-md flex items-center justify-center">
-                        <span className="relative z-10 text-white font-medium text-base">
+                      <div className="absolute inset-0 bg-gradient-to-r from-[#3f9468] via-[#2e7d52] to-[#2a6c47] animate-gradient-xy opacity-100 transition-opacity"></div>
+                      <div className="absolute inset-0 rounded-full flex items-center justify-center">
+                        <span className="relative z-10 text-white font-semibold text-base">
                           {isLoading ? 'Signing in...' : 'Sign In'}
                         </span>
                       </div>
@@ -411,23 +411,23 @@ export default function Login() {
                     <button
                       type="button"
                       onClick={handleOpenForgotPassword}
-                      className="text-xs text-gray-400 hover:text-white transition-colors"
+                      className="text-xs text-[#3c4f43] hover:text-[#1c2a22] transition-colors"
                     >
                       Forgot Password?
                     </button>
                   </div>
 
-                  <p className="text-center text-xs text-gray-400 mt-3">
+                  <p className="text-center text-xs text-[#3c4f43] mt-3">
                     Don't have an account?{' '}
-                    <a href="/signup" className="text-white hover:underline font-medium">
+                    <a href="/signup" className="text-[#1c2a22] hover:underline font-medium">
                       Sign up
                     </a>
                   </p>
 
-                  <div className="mt-3 pt-3 border-t border-zinc-800 space-y-2">
+                  <div className="mt-3 pt-3 border-t border-[#1c2a22]/10 space-y-2">
                     <a
                       href={`${import.meta.env.MODE === 'development' ? 'http://localhost:8787' : import.meta.env.VITE_API_URL || 'https://notarium-backend.notarium-backend.workers.dev'}/auth/google/start?intent=signup`}
-                      className="flex items-center justify-center gap-2 w-full py-2 px-3 border border-zinc-700 rounded-md bg-zinc-800 text-white text-sm hover:bg-zinc-700 transition-colors"
+                      className="flex items-center justify-center gap-2 w-full py-2 px-3 border border-[#1c2a22]/[0.12] rounded-md bg-white/60 text-[#1c2a22] text-sm hover:bg-[#3c4f43]/12 transition-colors"
                     >
                       <svg
                         width="16"
@@ -466,31 +466,31 @@ export default function Login() {
       {/* Forgot Password Modal */}
       {showForgotPassword && (
         <div
-          className="fixed inset-0 bg-black/95 backdrop-blur-sm flex items-center justify-center z-50 p-5"
+          className="fixed inset-0 bg-white/80 backdrop-blur-sm flex items-center justify-center z-50 p-5"
           onClick={handleCloseForgotPassword}
         >
           <div
-            className="bg-zinc-900 border border-zinc-800 rounded-lg p-8 shadow-lg max-w-md w-full"
+            className="bg-white/70 border border-[#1c2a22]/10 rounded-lg p-8 shadow-lg max-w-md w-full backdrop-blur-xl"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex justify-between items-center mb-4">
-              <h2 className="text-2xl font-semibold text-white">Reset Password</h2>
+              <h2 className="text-2xl font-semibold text-[#1c2a22]">Reset Password</h2>
               <button
                 onClick={handleCloseForgotPassword}
-                className="text-gray-400 hover:text-white text-2xl transition-colors"
+                className="text-[#3c4f43] hover:text-[#1c2a22] text-2xl transition-colors"
               >
                 ×
               </button>
             </div>
 
-            <p className="text-gray-400 mb-6">
+            <p className="text-[#3c4f43] mb-6">
               {resetStep === 'code'
                 ? 'Enter the code provided by your admin'
                 : 'Enter your email and new password'}
             </p>
 
             {resetError && (
-              <div className="bg-red-500/10 text-red-400 border border-red-500/20 rounded-md p-3 mb-4 text-sm">
+              <div className="bg-[#bf6b4f]/10 text-[#bf6b4f] border border-[#bf6b4f]/20 rounded-md p-3 mb-4 text-sm">
                 {resetError}
               </div>
             )}
@@ -499,7 +499,7 @@ export default function Login() {
             {resetStep === 'code' && (
               <form onSubmit={handleCodeSubmit} className="space-y-4">
                 <div className="space-y-2">
-                  <label htmlFor="resetCode" className="text-sm font-medium text-white">
+                  <label htmlFor="resetCode" className="text-sm font-medium text-[#1c2a22]">
                     Admin Code
                   </label>
                   <input
@@ -508,7 +508,7 @@ export default function Login() {
                     value={resetCode}
                     onChange={(e) => setResetCode(e.target.value)}
                     placeholder="Enter the code from admin"
-                    className="w-full px-3 py-2 border border-zinc-700 rounded-md bg-zinc-800 text-white focus:outline-none focus:ring-2 focus:ring-white/20"
+                    className="w-full px-3 py-2 border border-[#1c2a22]/[0.12] rounded-md bg-white/60 text-[#1c2a22] focus:outline-none focus:ring-2 focus:ring-[#2e7d52]/30"
                     required
                     autoFocus
                   />
@@ -518,9 +518,11 @@ export default function Login() {
                   type="submit"
                   className="relative w-full h-12 overflow-hidden rounded-md group"
                 >
-                  <div className="absolute inset-0 bg-gradient-to-r from-purple-600 via-pink-600 to-blue-600 animate-gradient-xy opacity-80 group-hover:opacity-100 transition-opacity"></div>
-                  <div className="absolute inset-0.5 bg-black rounded-md flex items-center justify-center">
-                    <span className="relative z-10 text-white font-medium text-base">Continue</span>
+                  <div className="absolute inset-0 bg-gradient-to-r from-[#3f9468] via-[#2e7d52] to-[#2a6c47] animate-gradient-xy opacity-100 transition-opacity"></div>
+                  <div className="absolute inset-0 rounded-full flex items-center justify-center">
+                    <span className="relative z-10 text-white font-semibold text-base">
+                      Continue
+                    </span>
                   </div>
                 </button>
               </form>
@@ -530,7 +532,7 @@ export default function Login() {
             {resetStep === 'reset' && (
               <form onSubmit={handlePasswordReset} className="space-y-4">
                 <div className="space-y-2">
-                  <label htmlFor="resetEmail" className="text-sm font-medium text-white">
+                  <label htmlFor="resetEmail" className="text-sm font-medium text-[#1c2a22]">
                     Email
                   </label>
                   <input
@@ -539,14 +541,14 @@ export default function Login() {
                     value={resetEmail}
                     onChange={(e) => setResetEmail(e.target.value)}
                     placeholder="you@example.com"
-                    className="w-full px-3 py-2 border border-zinc-700 rounded-md bg-zinc-800 text-white focus:outline-none focus:ring-2 focus:ring-white/20"
+                    className="w-full px-3 py-2 border border-[#1c2a22]/[0.12] rounded-md bg-white/60 text-[#1c2a22] focus:outline-none focus:ring-2 focus:ring-[#2e7d52]/30"
                     required
                     autoFocus
                   />
                 </div>
 
                 <div className="space-y-2">
-                  <label htmlFor="newPassword" className="text-sm font-medium text-white">
+                  <label htmlFor="newPassword" className="text-sm font-medium text-[#1c2a22]">
                     New Password
                   </label>
                   <div className="relative">
@@ -556,13 +558,13 @@ export default function Login() {
                       value={newPassword}
                       onChange={(e) => setNewPassword(e.target.value)}
                       placeholder="Enter new password"
-                      className="w-full px-3 py-2 pr-10 border border-zinc-700 rounded-md bg-zinc-800 text-white focus:outline-none focus:ring-2 focus:ring-white/20"
+                      className="w-full px-3 py-2 pr-10 border border-[#1c2a22]/[0.12] rounded-md bg-white/60 text-[#1c2a22] focus:outline-none focus:ring-2 focus:ring-[#2e7d52]/30"
                       required
                     />
                     <button
                       type="button"
                       onClick={() => setShowNewPassword(!showNewPassword)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white transition-colors"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-[#3c4f43] hover:text-[#1c2a22] transition-colors"
                       title={showNewPassword ? 'Hide password' : 'Show password'}
                     >
                       {showNewPassword ? '👁️' : '👁️‍🗨️'}
@@ -571,7 +573,7 @@ export default function Login() {
                 </div>
 
                 <div className="space-y-2">
-                  <label htmlFor="confirmPassword" className="text-sm font-medium text-white">
+                  <label htmlFor="confirmPassword" className="text-sm font-medium text-[#1c2a22]">
                     Confirm New Password
                   </label>
                   <div className="relative">
@@ -581,13 +583,13 @@ export default function Login() {
                       value={confirmPassword}
                       onChange={(e) => setConfirmPassword(e.target.value)}
                       placeholder="Confirm new password"
-                      className="w-full px-3 py-2 pr-10 border border-zinc-700 rounded-md bg-zinc-800 text-white focus:outline-none focus:ring-2 focus:ring-white/20"
+                      className="w-full px-3 py-2 pr-10 border border-[#1c2a22]/[0.12] rounded-md bg-white/60 text-[#1c2a22] focus:outline-none focus:ring-2 focus:ring-[#2e7d52]/30"
                       required
                     />
                     <button
                       type="button"
                       onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white transition-colors"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-[#3c4f43] hover:text-[#1c2a22] transition-colors"
                       title={showConfirmPassword ? 'Hide password' : 'Show password'}
                     >
                       {showConfirmPassword ? '👁️' : '👁️‍🗨️'}
@@ -599,7 +601,7 @@ export default function Login() {
                   <button
                     type="button"
                     onClick={() => setResetStep('code')}
-                    className="flex-1 h-12 bg-zinc-800 text-white border border-zinc-700 hover:bg-zinc-700 rounded-md transition-colors font-medium"
+                    className="flex-1 h-12 bg-white/60 text-[#1c2a22] border border-[#1c2a22]/[0.12] hover:bg-[#3c4f43]/12 rounded-md transition-colors font-medium"
                   >
                     Back
                   </button>
@@ -608,9 +610,9 @@ export default function Login() {
                     disabled={resetLoading}
                     className="relative flex-[2] h-12 overflow-hidden rounded-md group disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    <div className="absolute inset-0 bg-gradient-to-r from-purple-600 via-pink-600 to-blue-600 animate-gradient-xy opacity-80 group-hover:opacity-100 transition-opacity"></div>
-                    <div className="absolute inset-0.5 bg-black rounded-md flex items-center justify-center">
-                      <span className="relative z-10 text-white font-medium text-base">
+                    <div className="absolute inset-0 bg-gradient-to-r from-[#3f9468] via-[#2e7d52] to-[#2a6c47] animate-gradient-xy opacity-100 transition-opacity"></div>
+                    <div className="absolute inset-0 rounded-full flex items-center justify-center">
+                      <span className="relative z-10 text-white font-semibold text-base">
                         {resetLoading ? 'Resetting...' : 'Reset Password'}
                       </span>
                     </div>

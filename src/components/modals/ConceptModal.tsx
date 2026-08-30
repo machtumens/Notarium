@@ -54,7 +54,7 @@ export default function ConceptModal({ onClose }: ConceptModalProps) {
             marginBottom: '24px',
             position: 'sticky',
             top: 0,
-            background: 'rgba(10, 10, 10, 0.95)',
+            background: 'rgba(255, 255, 255, 0.82)',
             paddingBottom: '16px',
             zIndex: 1,
           }}
@@ -87,7 +87,7 @@ export default function ConceptModal({ onClose }: ConceptModalProps) {
                 display: 'block',
                 fontSize: '14px',
                 fontWeight: '600',
-                color: '#fff',
+                color: '#1c2a22',
                 marginBottom: '8px',
               }}
             >

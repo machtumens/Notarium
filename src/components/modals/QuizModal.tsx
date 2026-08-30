@@ -295,7 +295,7 @@ export default function QuizModal({ noteId, onClose }: QuizModalProps) {
             marginBottom: '24px',
           }}
         >
-          <h2 style={{ fontSize: '24px', fontWeight: 'bold', color: '#fff', margin: 0 }}>
+          <h2 style={{ fontSize: '24px', fontWeight: 'bold', color: '#1c2a22', margin: 0 }}>
             Quiz ({currentQuestion + 1}/{quiz.questions.length})
           </h2>
           <button

@@ -133,7 +133,7 @@ export default function ProfileStats({ onClose, onEditProfile }: ProfileStatsPro
           ...modalOverlayStyle,
           position: 'fixed',
           inset: 0,
-          background: 'rgba(0, 0, 0, 0.7)',
+          background: 'rgba(20, 44, 30, 0.7)',
           zIndex: 999,
           display: 'flex',
           alignItems: 'center',
@@ -166,7 +166,7 @@ export default function ProfileStats({ onClose, onEditProfile }: ProfileStatsPro
               marginBottom: '24px',
             }}
           >
-            <h2 style={{ fontSize: '24px', fontWeight: 'bold', color: '#fff', margin: 0 }}>
+            <h2 style={{ fontSize: '24px', fontWeight: 'bold', color: '#1c2a22', margin: 0 }}>
               My Profile
             </h2>
             <button
@@ -326,7 +326,7 @@ export default function ProfileStats({ onClose, onEditProfile }: ProfileStatsPro
                     margin: '0 0 8px 0',
                     cursor: 'pointer',
                     transition: 'color 0.2s',
-                    color: '#fff',
+                    color: '#1c2a22',
                   }}
                   onClick={() => setEditingName(true)}
                   onMouseOver={(e) => (e.currentTarget.style.color = darkTheme.colors.accent)}
@@ -496,7 +496,7 @@ export default function ProfileStats({ onClose, onEditProfile }: ProfileStatsPro
                 borderRadius: '12px',
                 padding: '20px',
                 textAlign: 'center',
-                color: 'white',
+                color: '#1c2a22',
               }}
             >
               <div style={{ fontSize: '28px', fontWeight: 'bold', marginBottom: '8px' }}>
@@ -512,7 +512,7 @@ export default function ProfileStats({ onClose, onEditProfile }: ProfileStatsPro
                 borderRadius: '12px',
                 padding: '20px',
                 textAlign: 'center',
-                color: 'white',
+                color: '#1c2a22',
               }}
             >
               <div style={{ fontSize: '28px', fontWeight: 'bold', marginBottom: '8px' }}>
@@ -521,14 +521,15 @@ export default function ProfileStats({ onClose, onEditProfile }: ProfileStatsPro
               <div style={{ fontSize: '12px', opacity: 0.9 }}>Likes Received</div>
             </div>
 
-            {/* Leaderboard Rank */}
+            {/* Learning rank — ranked by learning_points since the Phase 3 metric flip,
+                not by notes/likes. */}
             <div
               style={{
                 background: getGradientColor(2),
                 borderRadius: '12px',
                 padding: '20px',
                 textAlign: 'center',
-                color: 'white',
+                color: '#1c2a22',
               }}
             >
               <div
@@ -543,7 +544,7 @@ export default function ProfileStats({ onClose, onEditProfile }: ProfileStatsPro
               >
                 {userRank ? `#${userRank}` : 'N/A'}
               </div>
-              <div style={{ fontSize: '12px', opacity: 0.9 }}>Rank</div>
+              <div style={{ fontSize: '12px', opacity: 0.9 }}>Learning Rank</div>
             </div>
 
             {/* Points */}
@@ -553,7 +554,7 @@ export default function ProfileStats({ onClose, onEditProfile }: ProfileStatsPro
                 borderRadius: '12px',
                 padding: '20px',
                 textAlign: 'center',
-                color: 'white',
+                color: '#1c2a22',
               }}
             >
               <div style={{ fontSize: '28px', fontWeight: 'bold', marginBottom: '8px' }}>

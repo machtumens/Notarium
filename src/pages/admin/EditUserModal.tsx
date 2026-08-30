@@ -61,7 +61,7 @@ export default function EditUserModal({ user, onClose, onSaved }: EditUserModalP
       style={{
         position: 'fixed',
         inset: 0,
-        background: 'rgba(0, 0, 0, 0.8)',
+        background: 'rgba(20, 44, 30, 0.8)',
         backdropFilter: 'blur(4px)',
         display: 'flex',
         alignItems: 'center',

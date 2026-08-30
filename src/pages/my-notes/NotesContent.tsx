@@ -295,7 +295,7 @@ export default function NotesContent({
                               flex: 1,
                               padding: '8px 12px',
                               background: '#10b981',
-                              color: 'white',
+                              color: '#1c2a22',
                               border: 'none',
                               borderRadius: darkTheme.borderRadius.sm,
                               cursor: saving ? 'not-allowed' : 'pointer',

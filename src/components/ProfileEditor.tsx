@@ -178,7 +178,7 @@ export default function ProfileEditor({ onClose }: ProfileEditorProps) {
             style={{
               fontSize: isMobile ? '20px' : '24px',
               fontWeight: 'bold',
-              color: '#fff',
+              color: '#1c2a22',
               margin: 0,
             }}
           >
@@ -314,7 +314,7 @@ export default function ProfileEditor({ onClose }: ProfileEditorProps) {
                       padding: '12px 16px',
                       background: darkTheme.colors.bgSecondary,
                       border: 'none',
-                      color: '#fff',
+                      color: '#1c2a22',
                       borderRadius: '8px',
                       cursor: 'pointer',
                       fontSize: '14px',
@@ -344,7 +344,7 @@ export default function ProfileEditor({ onClose }: ProfileEditorProps) {
                       padding: '12px 16px',
                       background: darkTheme.colors.bgSecondary,
                       border: 'none',
-                      color: '#fff',
+                      color: '#1c2a22',
                       borderRadius: '8px',
                       cursor: 'pointer',
                       fontSize: '14px',
@@ -457,7 +457,7 @@ export default function ProfileEditor({ onClose }: ProfileEditorProps) {
                   display: 'block',
                   fontSize: '14px',
                   fontWeight: '600',
-                  color: '#fff',
+                  color: '#1c2a22',
                   marginBottom: '8px',
                 }}
               >
@@ -487,7 +487,7 @@ export default function ProfileEditor({ onClose }: ProfileEditorProps) {
                   display: 'block',
                   fontSize: '14px',
                   fontWeight: '600',
-                  color: '#fff',
+                  color: '#1c2a22',
                   marginBottom: '8px',
                 }}
               >
@@ -532,7 +532,7 @@ export default function ProfileEditor({ onClose }: ProfileEditorProps) {
                     display: 'block',
                     fontSize: '14px',
                     fontWeight: '600',
-                    color: '#fff',
+                    color: '#1c2a22',
                     marginBottom: '8px',
                   }}
                 >

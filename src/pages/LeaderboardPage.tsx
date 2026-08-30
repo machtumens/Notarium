@@ -6,6 +6,8 @@ import { logger } from '../lib/logger';
 import { safePhotoUrl } from '../lib/safeUrl';
 import LoadingSpinner from '../components/LoadingSpinner';
 import { darkTheme, cardStyle } from '../theme';
+import LevelRing from '../components/campus/LevelRing';
+import BadgeShelf from '../components/campus/BadgeShelf';
 
 interface LeaderboardEntry {
   name?: string;
@@ -104,14 +106,14 @@ export default function LeaderboardPage({ isLoading, setIsLoading }: Leaderboard
       icon: <Flame size={20} />,
       value: personalStats.current_streak,
       label: 'day streak',
-      color: '#f97316',
+      color: '#b98a3f', // Honey — streak is a "you" stat
     },
     {
       key: 'learning',
       icon: <Trophy size={20} />,
       value: personalStats.learning_points,
       label: 'learning points',
-      color: '#22c55e',
+      color: '#63a37f', // Moss
     },
     {
       key: 'due',
@@ -144,6 +146,26 @@ export default function LeaderboardPage({ isLoading, setIsLoading }: Leaderboard
       >
         Peringkat berdasarkan poin belajar dari kuis & review — bukan sekadar unggah catatan.
       </p>
+
+      {/* Level ring — redesign option 2g. Derived from learning_points, so it
+          always agrees with the ranking below it. */}
+      {!statsLoading && (
+        <div
+          style={{
+            background: 'rgba(255,255,255,.55)',
+            backdropFilter: 'blur(26px) saturate(1.3)',
+            border: '1px solid rgba(255,255,255,.75)',
+            boxShadow: '0 18px 40px rgba(20,44,30,.18)',
+            borderRadius: 16,
+            padding: '18px 20px',
+            marginBottom: '16px',
+          }}
+        >
+          <LevelRing points={personalStats.learning_points} />
+        </div>
+      )}
+
+      <BadgeShelf />
 
       {/* Personal study snapshot — reuses the existing /api/study/stats endpoint */}
       <div
@@ -308,7 +330,7 @@ export default function LeaderboardPage({ isLoading, setIsLoading }: Leaderboard
                       margin: 0,
                       fontSize: '18px',
                       fontWeight: 'bold',
-                      color: '#22c55e',
+                      color: '#63a37f', // Moss
                     }}
                   >
                     {getLearningPoints(entry)}

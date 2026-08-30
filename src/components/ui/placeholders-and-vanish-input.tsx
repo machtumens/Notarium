@@ -169,9 +169,9 @@ export function PlaceholdersAndVanishInput({
   return (
     <form
       className={cn(
-        'w-full relative max-w-full mx-auto bg-black/50 backdrop-blur-xl h-14 sm:h-16 rounded-full overflow-hidden transition duration-300',
-        'border border-white/10',
-        value && 'bg-black/60 border-purple-500/30 shadow-[0_0_30px_rgba(139,92,246,0.15)]',
+        'w-full relative max-w-full mx-auto bg-white/70/50 backdrop-blur-xl h-14 sm:h-16 rounded-full overflow-hidden transition duration-300',
+        'border border-white/60',
+        value && 'bg-white/70/60 border-[#2e7d52]/30 shadow-[0_0_30px_rgba(139,92,246,0.15)]',
       )}
       onSubmit={handleSubmit}
     >
@@ -194,7 +194,7 @@ export function PlaceholdersAndVanishInput({
         value={value}
         type="text"
         className={cn(
-          'w-full relative text-sm sm:text-base z-50 border-none text-white bg-transparent h-full rounded-full focus:outline-none focus:ring-0 pl-5 sm:pl-12 pr-20 placeholder:text-zinc-500',
+          'w-full relative text-sm sm:text-base z-50 border-none text-[#1c2a22] bg-transparent h-full rounded-full focus:outline-none focus:ring-0 pl-5 sm:pl-12 pr-20 placeholder:text-[#5b6f62]',
           animating && 'text-transparent',
         )}
       />
@@ -205,8 +205,8 @@ export function PlaceholdersAndVanishInput({
         className={cn(
           'absolute right-2 sm:right-3 top-1/2 z-50 -translate-y-1/2 h-10 w-10 sm:h-12 sm:w-12 rounded-full transition-all duration-300 flex items-center justify-center group',
           value
-            ? 'bg-gradient-to-br from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 shadow-[0_0_20px_rgba(139,92,246,0.5)]'
-            : 'bg-zinc-800/50 cursor-not-allowed',
+            ? 'bg-gradient-to-br from-[#2e7d52] to-[#3e7d8c] hover:from-[#3f9468] hover:to-[#3e7d8c] shadow-[0_0_20px_rgba(139,92,246,0.5)]'
+            : 'bg-white/60/50 cursor-not-allowed',
         )}
       >
         <motion.svg
@@ -221,7 +221,7 @@ export function PlaceholdersAndVanishInput({
           strokeLinejoin="round"
           className={cn(
             'h-5 w-5 sm:h-6 sm:w-6 transition-colors',
-            value ? 'text-white' : 'text-zinc-600',
+            value ? 'text-[#1c2a22]' : 'text-[#5b6f62]',
           )}
         >
           <path stroke="none" d="M0 0h24v24H0z" fill="none" />
@@ -265,7 +265,7 @@ export function PlaceholdersAndVanishInput({
                 duration: 0.3,
                 ease: 'linear',
               }}
-              className="text-zinc-400 text-sm sm:text-base font-normal pl-5 sm:pl-12 text-left w-[calc(100%-2rem)] truncate"
+              className="text-[#3c4f43] text-sm sm:text-base font-normal pl-5 sm:pl-12 text-left w-[calc(100%-2rem)] truncate"
             >
               {placeholders[currentPlaceholder]}
             </motion.p>

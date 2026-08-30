@@ -33,7 +33,7 @@ export function ReviewPageRoute() {
             gap: '16px',
             zIndex: 1000,
             minHeight: '68px',
-            background: 'rgba(10, 10, 10, 0.6)',
+            background: 'rgba(255, 255, 255, 0.72)',
           }}
         >
           <button
@@ -44,9 +44,9 @@ export function ReviewPageRoute() {
               display: 'flex',
               alignItems: 'center',
               gap: '8px',
-              background: 'rgba(0, 0, 0, 0.95)',
+              background: 'rgba(255, 255, 255, 0.82)',
               backdropFilter: 'blur(10px)',
-              border: '1px solid rgba(255, 255, 255, 0.1)',
+              border: '1px solid rgba(28, 42, 34, 0.12)',
               color: currentTheme.colors.textPrimary,
               cursor: 'pointer',
               padding: '8px 16px',
@@ -55,13 +55,13 @@ export function ReviewPageRoute() {
               fontWeight: '500',
               transition: currentTheme.transitions.default,
             }}
-            onMouseOver={(e) => (e.currentTarget.style.borderColor = 'rgba(255,255,255,0.3)')}
-            onMouseOut={(e) => (e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)')}
+            onMouseOver={(e) => (e.currentTarget.style.borderColor = 'rgba(28,42,34,0.28)')}
+            onMouseOut={(e) => (e.currentTarget.style.borderColor = 'rgba(28,42,34,0.12)')}
           >
             <i className="fas fa-arrow-left"></i>
             Kembali
           </button>
-          <span style={{ fontSize: '18px', fontWeight: '700', color: '#fff' }}>Review</span>
+          <span style={{ fontSize: '18px', fontWeight: '700', color: '#1c2a22' }}>Review</span>
         </nav>
 
         <main

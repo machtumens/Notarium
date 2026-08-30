@@ -316,7 +316,7 @@ export default function CameraCapture({
         left: 0,
         right: 0,
         bottom: 0,
-        background: 'rgba(0, 0, 0, 0.95)',
+        background: 'rgba(20, 44, 30, 0.95)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -402,7 +402,7 @@ export default function CameraCapture({
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  background: 'rgba(0, 0, 0, 0.7)',
+                  background: 'rgba(20, 44, 30, 0.7)',
                   borderRadius: darkTheme.borderRadius.md,
                   zIndex: 10,
                 }}
@@ -423,7 +423,7 @@ export default function CameraCapture({
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  background: 'rgba(0, 0, 0, 0.9)',
+                  background: 'rgba(20, 44, 30, 0.9)',
                   borderRadius: darkTheme.borderRadius.md,
                   zIndex: 10,
                   flexDirection: 'column',
@@ -537,7 +537,7 @@ export default function CameraCapture({
                     left: 0,
                     right: 0,
                     height: `${crop.y}%`,
-                    background: 'rgba(0, 0, 0, 0.5)',
+                    background: 'rgba(20, 44, 30, 0.5)',
                   }}
                 />
 
@@ -549,7 +549,7 @@ export default function CameraCapture({
                     left: 0,
                     right: 0,
                     height: `${100 - crop.y - crop.height}%`,
-                    background: 'rgba(0, 0, 0, 0.5)',
+                    background: 'rgba(20, 44, 30, 0.5)',
                   }}
                 />
 
@@ -561,7 +561,7 @@ export default function CameraCapture({
                     left: 0,
                     width: `${crop.x}%`,
                     height: `${crop.height}%`,
-                    background: 'rgba(0, 0, 0, 0.5)',
+                    background: 'rgba(20, 44, 30, 0.5)',
                   }}
                 />
 
@@ -573,7 +573,7 @@ export default function CameraCapture({
                     right: 0,
                     width: `${100 - crop.x - crop.width}%`,
                     height: `${crop.height}%`,
-                    background: 'rgba(0, 0, 0, 0.5)',
+                    background: 'rgba(20, 44, 30, 0.5)',
                   }}
                 />
               </div>
@@ -672,7 +672,7 @@ export default function CameraCapture({
                   bottom: '10px',
                   left: '50%',
                   transform: 'translateX(-50%)',
-                  background: 'rgba(0, 0, 0, 0.7)',
+                  background: 'rgba(20, 44, 30, 0.7)',
                   color: 'white',
                   padding: '6px 12px',
                   borderRadius: '20px',

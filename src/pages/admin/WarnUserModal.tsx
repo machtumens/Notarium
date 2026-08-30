@@ -32,7 +32,7 @@ export default function WarnUserModal({ user, onClose, onWarn }: WarnUserModalPr
       style={{
         position: 'fixed',
         inset: 0,
-        background: 'rgba(0, 0, 0, 0.8)',
+        background: 'rgba(20, 44, 30, 0.8)',
         backdropFilter: 'blur(4px)',
         display: 'flex',
         alignItems: 'center',
@@ -157,7 +157,7 @@ export default function WarnUserModal({ user, onClose, onWarn }: WarnUserModalPr
                 padding: '10px 20px',
                 background: 'rgba(245, 158, 11, 0.9)',
                 border: 'none',
-                color: 'white',
+                color: '#1c2a22',
                 borderRadius: darkTheme.borderRadius.md,
                 cursor: isSubmitting ? 'not-allowed' : 'pointer',
                 fontSize: '14px',

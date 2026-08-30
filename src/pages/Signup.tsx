@@ -120,8 +120,8 @@ export default function Signup() {
 
   return (
     <div className="relative w-full h-screen flex items-center justify-center overflow-hidden">
-      <div className="absolute inset-0 z-0 bg-black">
-        <Suspense fallback={<div className="absolute inset-0 bg-black" />}>
+      <div className="absolute inset-0 z-0 bg-[#f4f8f3]/40">
+        <Suspense fallback={<div className="absolute inset-0 bg-[#f4f8f3]/40" />}>
           <ShaderAnimation />
         </Suspense>
       </div>
@@ -129,7 +129,7 @@ export default function Signup() {
       <div className="container mx-auto px-4 relative z-10 max-h-screen overflow-y-auto">
         <div className="flex gap-4 py-8 items-center justify-center flex-col max-w-4xl mx-auto">
           <div className="flex gap-2 flex-col items-center">
-            <h1 className="text-4xl md:text-5xl max-w-3xl tracking-tighter text-center font-regular text-white">
+            <h1 className="text-4xl md:text-5xl max-w-3xl tracking-tighter text-center font-regular text-[#1c2a22]">
               <span className="block mb-1">NOTARIUM</span>
               <span className="text-2xl md:text-3xl block">
                 <span>A library that's</span>
@@ -138,7 +138,7 @@ export default function Signup() {
                   {titles.map((title, index) => (
                     <motion.span
                       key={index}
-                      className="absolute font-semibold text-white"
+                      className="absolute font-semibold text-[#1c2a22]"
                       initial={{ opacity: 0, y: '-100' }}
                       transition={{ type: 'spring', stiffness: 50 }}
                       animate={
@@ -154,24 +154,26 @@ export default function Signup() {
               </span>
             </h1>
 
-            <p className="text-sm md:text-base leading-relaxed tracking-tight text-gray-400 max-w-2xl text-center">
+            <p className="text-sm md:text-base leading-relaxed tracking-tight text-[#3c4f43] max-w-2xl text-center">
               Join a library of notes
             </p>
           </div>
 
           <div className="w-full max-w-md">
-            <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-6 shadow-lg">
-              <h2 className="text-xl font-semibold text-center mb-4 text-white">Create Account</h2>
+            <div className="bg-white/70 border border-[#1c2a22]/10 rounded-lg p-6 shadow-lg backdrop-blur-xl">
+              <h2 className="text-xl font-semibold text-center mb-4 text-[#1c2a22]">
+                Create Account
+              </h2>
 
               {error && (
-                <div className="bg-red-500/10 text-red-400 border border-red-500/20 rounded-md p-3 mb-4 text-sm">
+                <div className="bg-[#bf6b4f]/10 text-[#bf6b4f] border border-[#bf6b4f]/20 rounded-md p-3 mb-4 text-sm">
                   {error}
                 </div>
               )}
 
               <form onSubmit={handleSubmit} className="space-y-3">
                 <div className="space-y-1">
-                  <label htmlFor="name" className="text-sm font-medium text-white">
+                  <label htmlFor="name" className="text-sm font-medium text-[#1c2a22]">
                     Full Name
                   </label>
                   <input
@@ -181,13 +183,13 @@ export default function Signup() {
                     value={formData.name}
                     onChange={handleChange}
                     placeholder="John Doe"
-                    className="w-full px-3 py-2 border border-zinc-700 rounded-md bg-zinc-800 text-white focus:outline-none focus:ring-2 focus:ring-white/20"
+                    className="w-full px-3 py-2 border border-[#1c2a22]/[0.12] rounded-md bg-white/60 text-[#1c2a22] focus:outline-none focus:ring-2 focus:ring-[#2e7d52]/30"
                     required
                   />
                 </div>
 
                 <div className="space-y-1">
-                  <label htmlFor="email" className="text-sm font-medium text-white">
+                  <label htmlFor="email" className="text-sm font-medium text-[#1c2a22]">
                     School Email
                   </label>
                   <input
@@ -197,15 +199,15 @@ export default function Signup() {
                     value={formData.email}
                     onChange={handleChange}
                     placeholder={`you${SCHOOL_DOMAIN}`}
-                    className="w-full px-3 py-2 border border-zinc-700 rounded-md bg-zinc-800 text-white focus:outline-none focus:ring-2 focus:ring-white/20"
+                    className="w-full px-3 py-2 border border-[#1c2a22]/[0.12] rounded-md bg-white/60 text-[#1c2a22] focus:outline-none focus:ring-2 focus:ring-[#2e7d52]/30"
                     required
                   />
-                  <p className="text-xs text-zinc-500">Must end with {SCHOOL_DOMAIN}</p>
+                  <p className="text-xs text-[#5b6f62]">Must end with {SCHOOL_DOMAIN}</p>
                 </div>
 
                 <div className="grid grid-cols-2 gap-2">
                   <div className="space-y-1">
-                    <label htmlFor="grade" className="text-sm font-medium text-white">
+                    <label htmlFor="grade" className="text-sm font-medium text-[#1c2a22]">
                       Grade
                     </label>
                     <select
@@ -213,7 +215,7 @@ export default function Signup() {
                       name="grade"
                       value={formData.grade}
                       onChange={handleChange}
-                      className="w-full px-3 py-2 border border-zinc-700 rounded-md bg-zinc-800 text-white focus:outline-none focus:ring-2 focus:ring-white/20"
+                      className="w-full px-3 py-2 border border-[#1c2a22]/[0.12] rounded-md bg-white/60 text-[#1c2a22] focus:outline-none focus:ring-2 focus:ring-[#2e7d52]/30"
                       required
                     >
                       <option value="">Select grade</option>
@@ -226,7 +228,7 @@ export default function Signup() {
                   </div>
 
                   <div className="space-y-1">
-                    <label htmlFor="class" className="text-sm font-medium text-white">
+                    <label htmlFor="class" className="text-sm font-medium text-[#1c2a22]">
                       Class
                     </label>
                     <select
@@ -234,7 +236,7 @@ export default function Signup() {
                       name="class"
                       value={formData.class}
                       onChange={handleChange}
-                      className="w-full px-3 py-2 border border-zinc-700 rounded-md bg-zinc-800 text-white focus:outline-none focus:ring-2 focus:ring-white/20 disabled:opacity-50"
+                      className="w-full px-3 py-2 border border-[#1c2a22]/[0.12] rounded-md bg-white/60 text-[#1c2a22] focus:outline-none focus:ring-2 focus:ring-[#2e7d52]/30 disabled:opacity-50"
                       required
                       disabled={!formData.grade}
                     >
@@ -249,7 +251,7 @@ export default function Signup() {
                 </div>
 
                 <div className="space-y-1">
-                  <label htmlFor="academic_year" className="text-sm font-medium text-white">
+                  <label htmlFor="academic_year" className="text-sm font-medium text-[#1c2a22]">
                     Academic Year
                   </label>
                   <select
@@ -257,7 +259,7 @@ export default function Signup() {
                     name="academic_year"
                     value={formData.academic_year}
                     onChange={handleChange}
-                    className="w-full px-3 py-2 border border-zinc-700 rounded-md bg-zinc-800 text-white focus:outline-none focus:ring-2 focus:ring-white/20"
+                    className="w-full px-3 py-2 border border-[#1c2a22]/[0.12] rounded-md bg-white/60 text-[#1c2a22] focus:outline-none focus:ring-2 focus:ring-[#2e7d52]/30"
                     required
                   >
                     {academicYears.map((year) => (
@@ -269,7 +271,7 @@ export default function Signup() {
                 </div>
 
                 <div className="space-y-1">
-                  <label htmlFor="password" className="text-sm font-medium text-white">
+                  <label htmlFor="password" className="text-sm font-medium text-[#1c2a22]">
                     Password
                   </label>
                   <input
@@ -279,13 +281,13 @@ export default function Signup() {
                     value={formData.password}
                     onChange={handleChange}
                     placeholder="••••••••"
-                    className="w-full px-3 py-2 border border-zinc-700 rounded-md bg-zinc-800 text-white focus:outline-none focus:ring-2 focus:ring-white/20"
+                    className="w-full px-3 py-2 border border-[#1c2a22]/[0.12] rounded-md bg-white/60 text-[#1c2a22] focus:outline-none focus:ring-2 focus:ring-[#2e7d52]/30"
                     required
                   />
                 </div>
 
                 <div className="space-y-1">
-                  <label htmlFor="confirmPassword" className="text-sm font-medium text-white">
+                  <label htmlFor="confirmPassword" className="text-sm font-medium text-[#1c2a22]">
                     Confirm Password
                   </label>
                   <input
@@ -295,7 +297,7 @@ export default function Signup() {
                     value={formData.confirmPassword}
                     onChange={handleChange}
                     placeholder="••••••••"
-                    className="w-full px-3 py-2 border border-zinc-700 rounded-md bg-zinc-800 text-white focus:outline-none focus:ring-2 focus:ring-white/20"
+                    className="w-full px-3 py-2 border border-[#1c2a22]/[0.12] rounded-md bg-white/60 text-[#1c2a22] focus:outline-none focus:ring-2 focus:ring-[#2e7d52]/30"
                     required
                   />
                 </div>
@@ -303,11 +305,11 @@ export default function Signup() {
                 <button
                   type="submit"
                   disabled={isLoading}
-                  className="relative w-full h-12 overflow-hidden rounded-md group disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="relative w-full h-12 overflow-hidden rounded-full group shadow-[inset_0_1px_0_rgba(255,255,255,.35),0_10px_22px_-12px_rgba(42,108,71,.7)] disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  <div className="absolute inset-0 bg-gradient-to-r from-purple-600 via-pink-600 to-blue-600 animate-gradient-xy opacity-80 group-hover:opacity-100 transition-opacity"></div>
-                  <div className="absolute inset-0.5 bg-black rounded-md flex items-center justify-center">
-                    <span className="relative z-10 text-white font-medium text-base">
+                  <div className="absolute inset-0 bg-gradient-to-r from-[#3f9468] via-[#2e7d52] to-[#2a6c47] animate-gradient-xy opacity-100 transition-opacity"></div>
+                  <div className="absolute inset-0 rounded-full flex items-center justify-center">
+                    <span className="relative z-10 text-white font-semibold text-base">
                       {isLoading ? 'Creating account...' : 'Sign Up'}
                     </span>
                   </div>
@@ -324,9 +326,9 @@ export default function Signup() {
                 `}</style>
               </form>
 
-              <p className="text-center text-xs text-gray-400 mt-3">
+              <p className="text-center text-xs text-[#3c4f43] mt-3">
                 Already have an account?{' '}
-                <a href="/login" className="text-white hover:underline font-medium">
+                <a href="/login" className="text-[#1c2a22] hover:underline font-medium">
                   Sign in
                 </a>
               </p>

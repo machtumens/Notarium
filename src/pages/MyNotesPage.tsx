@@ -9,6 +9,7 @@ import MobileMenu from './my-notes/MobileMenu';
 import NotesContent from './my-notes/NotesContent';
 import EditNoteModal from './my-notes/EditNoteModal';
 import MyNotesFooter from './my-notes/MyNotesFooter';
+import MobileTabBar from '../components/MobileTabBar';
 
 const FoundersModal = lazy(() => import('../components/FoundersModal'));
 
@@ -102,6 +103,18 @@ export default function MyNotesPage() {
       {showProfileEditor && <ProfileEditor onClose={() => setShowProfileEditor(false)} />}
 
       <MyNotesFooter isMobile={isMobile} setShowFoundersModal={setShowFoundersModal} />
+
+      {/* /my-notes renders OUTSIDE the AppShell layout (see AppRoutes), so the
+          mobile tab bar has to be mounted here too — otherwise tapping "Notes"
+          lands on a page with no primary nav, which reads as a dead end. The
+          real fix is moving this route inside AppShell and deleting this page's
+          private nav entirely; that is finding F6 in the UI/UX report. */}
+      {isMobile && (
+        <>
+          <div aria-hidden style={{ height: 78 }} />
+          <MobileTabBar />
+        </>
+      )}
 
       {showFoundersModal && (
         <Suspense fallback={<LoadingSpinner />}>

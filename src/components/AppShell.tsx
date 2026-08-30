@@ -17,11 +17,14 @@ import {
   GraduationCap,
   Home,
   ClipboardList,
+  Compass,
 } from 'lucide-react';
 import NotificationPanel from './NotificationPanel';
+import MobileTabBar from './MobileTabBar';
 import { useAuth } from '../app/AuthContext';
 import { ProfileEditor, ProfileStats, FoundersModal } from '../app/lazyPages';
 import { canModerate, canOps } from '../app/roles';
+import { formatLongDateTime } from '../lib/datetime';
 
 // AppShell is the persistent application layout: fixed nav, ExpandableTabs bottom
 // nav, mobile hamburger menu, notification bell, profile modals, warning/suspension
@@ -161,20 +164,25 @@ export function AppShell() {
               onMouseOut={(e) => (e.currentTarget.style.opacity = '1')}
             >
               <img
-                src="/notarium-logo.jpg"
+                src="/wordmark-pine.png"
                 alt="Notarium"
                 style={{ height: '48px', width: 'auto', borderRadius: '8px' }}
               />
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
                 <span
-                  style={{ fontSize: '20px', fontWeight: '700', color: '#fff', lineHeight: '1.2' }}
+                  style={{
+                    fontSize: '20px',
+                    fontWeight: '700',
+                    color: '#1c2a22',
+                    lineHeight: '1.2',
+                  }}
                 >
                   Notarium
                 </span>
                 <span
                   style={{
                     fontSize: '11px',
-                    color: 'rgba(255, 255, 255, 0.6)',
+                    color: '#3c4f43',
                     fontWeight: '500',
                     letterSpacing: '0.5px',
                   }}
@@ -203,7 +211,7 @@ export function AppShell() {
               onMouseOut={(e) => (e.currentTarget.style.opacity = '1')}
             >
               <img
-                src="/notarium-logo.jpg"
+                src="/wordmark-pine.png"
                 alt="Notarium"
                 style={{ height: '44px', width: 'auto' }}
               />
@@ -214,9 +222,10 @@ export function AppShell() {
           {!isMobile && (
             <div style={{ flex: 1, display: 'flex', justifyContent: 'center' }}>
               <ExpandableTabs
-                className="bg-black/95 border-white/10 backdrop-blur-xl shadow-2xl"
+                className="bg-white/80 border-white/60 backdrop-blur-xl shadow-2xl"
                 tabs={[
                   { title: 'Today', icon: Home },
+                  { title: 'Campus', icon: Compass },
                   { title: 'Community', icon: Book },
                   { title: 'Progress', icon: Trophy },
                   { title: 'Tests', icon: ClipboardList },
@@ -231,8 +240,8 @@ export function AppShell() {
                   if (index === null) return;
 
                   // Fixed leading tabs (indices 0..5).
-                  const paths = ['/', '/community', '/progress', '/quiz', '/review'];
-                  let cursor = paths.length; // 5
+                  const paths = ['/', '/campus', '/community', '/progress', '/quiz', '/review'];
+                  let cursor = paths.length; // 6
                   const adminIndex = canModerate(user) ? cursor++ : -1;
                   const opsIndex = canOps(user) ? cursor++ : -1;
                   // cursor now points at the separator; My Notes is one past it.
@@ -260,10 +269,10 @@ export function AppShell() {
             onClick={() => setShowNotifications((v) => !v)}
             style={{
               position: 'relative',
-              background: 'rgba(0, 0, 0, 0.95)',
+              background: 'rgba(255, 255, 255, 0.72)',
               backdropFilter: 'blur(10px)',
               border: '1px solid rgba(255, 255, 255, 0.1)',
-              color: 'white',
+              color: '#1c2a22',
               cursor: 'pointer',
               padding: '8px',
               borderRadius: '50%',
@@ -283,7 +292,7 @@ export function AppShell() {
                   position: 'absolute',
                   top: '-4px',
                   right: '-4px',
-                  background: '#ef4444',
+                  background: '#bf6b4f',
                   color: 'white',
                   fontSize: '10px',
                   fontWeight: 'bold',
@@ -309,7 +318,7 @@ export function AppShell() {
                 display: 'flex',
                 alignItems: 'center',
                 gap: '10px',
-                background: 'rgba(0, 0, 0, 0.95)',
+                background: 'rgba(255, 255, 255, 0.72)',
                 backdropFilter: 'blur(10px)',
                 border: '1px solid rgba(255, 255, 255, 0.1)',
                 color: currentTheme.colors.textPrimary,
@@ -317,14 +326,14 @@ export function AppShell() {
                 transition: currentTheme.transitions.default,
                 padding: '8px 16px',
                 borderRadius: '9999px',
-                boxShadow: '0 10px 40px rgba(0, 0, 0, 0.3)',
+                boxShadow: '0 18px 40px rgba(20, 44, 30, 0.18)',
               }}
               onMouseOver={(e) => {
-                e.currentTarget.style.background = 'rgba(0, 0, 0, 1)';
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.88)';
                 e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.2)';
               }}
               onMouseOut={(e) => {
-                e.currentTarget.style.background = 'rgba(0, 0, 0, 0.95)';
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.72)';
                 e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.1)';
               }}
             >
@@ -334,7 +343,7 @@ export function AppShell() {
                   height: '40px',
                   background: safePhotoUrl(user?.photo_url)
                     ? `url('${safePhotoUrl(user?.photo_url)}') center/cover`
-                    : `linear-gradient(135deg, ${currentTheme.colors.accent}, #8b5cf6)`,
+                    : `linear-gradient(135deg, ${currentTheme.colors.accent}, ${currentTheme.colors.success})`,
                   borderRadius: '50%',
                   display: 'flex',
                   alignItems: 'center',
@@ -369,12 +378,12 @@ export function AppShell() {
               left: 0,
               right: 0,
               background:
-                'linear-gradient(135deg, rgba(245, 158, 11, 0.95), rgba(217, 119, 6, 0.95))',
+                'linear-gradient(135deg, rgba(150, 112, 49, 0.96), rgba(117, 87, 38, 0.96))',
               backdropFilter: 'blur(10px)',
               borderBottom: '2px solid rgba(245, 158, 11, 0.5)',
               padding: '14px 20px',
               zIndex: 999,
-              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
+              boxShadow: '0 12px 28px -14px rgba(20, 44, 30, 0.28)',
             }}
           >
             <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
@@ -395,7 +404,7 @@ export function AppShell() {
                     style={{
                       fontSize: '13px',
                       padding: '10px',
-                      background: 'rgba(0, 0, 0, 0.15)',
+                      background: 'rgba(46, 125, 82, 0.10)',
                       borderRadius: '6px',
                       color: 'rgba(255, 255, 255, 0.95)',
                       borderLeft: '3px solid rgba(255, 255, 255, 0.6)',
@@ -428,12 +437,12 @@ export function AppShell() {
               left: 0,
               right: 0,
               background:
-                'linear-gradient(135deg, rgba(220, 38, 38, 0.95), rgba(153, 27, 27, 0.95))',
+                'linear-gradient(135deg, rgba(174, 97, 72, 0.96), rgba(136, 76, 56, 0.96))',
               backdropFilter: 'blur(10px)',
               borderBottom: '2px solid rgba(239, 68, 68, 0.5)',
               padding: '16px 20px',
               zIndex: 999,
-              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
+              boxShadow: '0 12px 28px -14px rgba(20, 44, 30, 0.28)',
             }}
           >
             <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
@@ -458,14 +467,7 @@ export function AppShell() {
                         color: 'rgba(255, 255, 255, 0.95)',
                       }}
                     >
-                      Your account is suspended until{' '}
-                      {new Date(user.suspension_end_date).toLocaleDateString('en-US', {
-                        year: 'numeric',
-                        month: 'long',
-                        day: 'numeric',
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })}
+                      Your account is suspended until {formatLongDateTime(user.suspension_end_date)}
                     </div>
                   )}
                   {user.suspension_reason && (
@@ -473,7 +475,7 @@ export function AppShell() {
                       style={{
                         fontSize: '13px',
                         padding: '10px',
-                        background: 'rgba(0, 0, 0, 0.2)',
+                        background: 'rgba(46, 125, 82, 0.12)',
                         borderRadius: '6px',
                         marginTop: '8px',
                         color: 'rgba(255, 255, 255, 0.9)',
@@ -504,7 +506,7 @@ export function AppShell() {
             style={{
               position: 'fixed',
               inset: 0,
-              background: 'rgba(0, 0, 0, 0.6)',
+              background: 'rgba(20, 44, 30, 0.34)',
               zIndex: 999,
               top: '60px',
             }}
@@ -521,7 +523,7 @@ export function AppShell() {
               top: '64px',
               width: '280px',
               height: 'calc(100vh - 64px)',
-              background: 'rgba(10, 10, 10, 0.95)',
+              background: 'rgba(255, 255, 255, 0.72)',
               backdropFilter: 'blur(10px)',
               borderRight: `1px solid ${currentTheme.colors.borderColor}`,
               zIndex: 1001,
@@ -537,7 +539,7 @@ export function AppShell() {
               style={{
                 padding: '24px 16px',
                 borderBottom: `2px solid ${currentTheme.colors.borderColor}`,
-                background: `linear-gradient(135deg, rgba(139, 92, 246, 0.1), rgba(59, 130, 246, 0.1))`,
+                background: `linear-gradient(135deg, rgba(46, 125, 82, 0.10), rgba(99, 163, 127, 0.10))`,
                 textAlign: 'center',
                 cursor: 'pointer',
                 transition: currentTheme.transitions.default,
@@ -547,10 +549,10 @@ export function AppShell() {
                 closeMobileMenu();
               }}
               onMouseOver={(e) =>
-                (e.currentTarget.style.background = `linear-gradient(135deg, rgba(139, 92, 246, 0.2), rgba(59, 130, 246, 0.2))`)
+                (e.currentTarget.style.background = `linear-gradient(135deg, rgba(46, 125, 82, 0.18), rgba(99, 163, 127, 0.18))`)
               }
               onMouseOut={(e) =>
-                (e.currentTarget.style.background = `linear-gradient(135deg, rgba(139, 92, 246, 0.1), rgba(59, 130, 246, 0.1))`)
+                (e.currentTarget.style.background = `linear-gradient(135deg, rgba(46, 125, 82, 0.10), rgba(99, 163, 127, 0.10))`)
               }
             >
               {/* Profile Picture */}
@@ -560,7 +562,7 @@ export function AppShell() {
                   height: '80px',
                   background: safePhotoUrl(user?.photo_url)
                     ? `url('${safePhotoUrl(user?.photo_url)}') center/cover`
-                    : `linear-gradient(135deg, ${currentTheme.colors.accent}, #8b5cf6)`,
+                    : `linear-gradient(135deg, ${currentTheme.colors.accent}, ${currentTheme.colors.success})`,
                   borderRadius: '50%',
                   display: 'flex',
                   alignItems: 'center',
@@ -582,7 +584,7 @@ export function AppShell() {
                   margin: '0 0 2px 0',
                   fontSize: '18px',
                   fontWeight: '800',
-                  color: '#fff',
+                  color: '#1c2a22',
                   letterSpacing: '0.5px',
                 }}
               >
@@ -968,7 +970,7 @@ export function AppShell() {
                   padding: '12px 16px',
                   background: 'transparent',
                   border: 'none',
-                  color: '#fff',
+                  color: '#1c2a22',
                   cursor: 'pointer',
                   fontSize: '15px',
                   fontWeight: '500',
@@ -1036,7 +1038,7 @@ export function AppShell() {
               }}
             >
               <img
-                src="/notarium-logo.jpg"
+                src="/wordmark-pine.png"
                 alt="Notarium"
                 style={{ height: '40px', width: 'auto' }}
               />
@@ -1080,6 +1082,10 @@ export function AppShell() {
           style={{ marginTop: isMobile ? '78px' : '92px', padding: isMobile ? '16px' : '32px' }}
         >
           <Outlet />
+          {/* Redesign option 2h — thumb-reachable primary nav on phones. The
+              spacer below reserves its height so content is never hidden
+              underneath it. */}
+          {isMobile && <div aria-hidden style={{ height: 78 }} />}
         </main>
 
         {/* Profile Stats Modal - Mobile only */}
@@ -1119,7 +1125,7 @@ export function AppShell() {
             width: isMobile ? '90%' : '60%',
             marginLeft: 'auto',
             marginRight: 'auto',
-            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
+            boxShadow: '0 12px 28px -14px rgba(20, 44, 30, 0.28)',
           }}
         >
           <p style={{ margin: 0 }}>© 2025 Notarium. All rights reserved.</p>
@@ -1159,6 +1165,7 @@ export function AppShell() {
           </Suspense>
         )}
       </div>
+      {isMobile && <MobileTabBar />}
     </div>
   );
 }

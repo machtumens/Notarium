@@ -77,6 +77,9 @@ export default function TestResultsPage({
   onReview,
 }: Props) {
   const [grades, setGrades] = useState<Grade[] | null>(null);
+  // "Better than last time" (redesign 2e step 3). Recorded once, when grading
+  // settles, so the comparison is against the PREVIOUS test rather than this one.
+  const [previous, setPrevious] = useState<{ delta: number; score_pct: number } | null>(null);
 
   // One SRS attempt per wrong answer. note_id is set only for a single-note
   // source (owned → ownership check passes); a subject source logs a note-less card.
@@ -129,6 +132,23 @@ export default function TestResultsPage({
           toast('Some review cards may not have been saved.');
         }
       }
+
+      // Record the finished mock. Non-blocking and failure-tolerant, exactly
+      // like the SRS batch above: a history write must never cost the student
+      // their results screen.
+      try {
+        const res = await api.completeTest({
+          question_count: questions.length,
+          correct_count: computed.filter((g) => g.status === 'correct').length,
+          source_type: sourceType,
+          source_id: sourceId,
+        });
+        if (!cancelled && res.previous) {
+          setPrevious({ delta: res.previous.delta, score_pct: res.previous.score_pct });
+        }
+      } catch {
+        // History is a nice-to-have here; swallow and move on.
+      }
     })();
     return () => {
       cancelled = true;
@@ -158,6 +178,29 @@ export default function TestResultsPage({
   const correctCount = grades.filter((g) => g.status === 'correct').length;
   const pendingSelf = grades.some((g) => g.status === 'self');
 
+  // Per-topic breakdown (redesign option 2e, step 3 — "Waves 9/10, Optics 8/12").
+  // Grouped from the generator's per-question `topic`. Older cached quizzes have
+  // no topic, so the section simply does not render rather than inventing a
+  // bucket — a breakdown that lumps everything under "General" would be worse
+  // than none, because it looks like real information and is not.
+  const topicRows = (() => {
+    const seen = questions.some((q) => (q.topic ?? '').trim().length > 0);
+    if (!seen) return [];
+    const by = new Map<string, { correct: number; total: number }>();
+    questions.forEach((q, i) => {
+      const t = (q.topic ?? '').trim();
+      if (!t) return;
+      const row = by.get(t) ?? { correct: 0, total: 0 };
+      row.total += 1;
+      if (grades[i]?.status === 'correct') row.correct += 1;
+      by.set(t, row);
+    });
+    // Weakest first — the point of the breakdown is what to go and revise.
+    return [...by.entries()]
+      .map(([topic, r]) => ({ topic, ...r, pct: r.total ? r.correct / r.total : 0 }))
+      .sort((a, b) => a.pct - b.pct);
+  })();
+
   return (
     <div style={pageWrap}>
       <div style={inner}>
@@ -165,6 +208,22 @@ export default function TestResultsPage({
           <h1 style={{ fontSize: '24px', fontWeight: 'bold', margin: '0 0 4px 0' }}>Results</h1>
           <p style={{ margin: 0, color: darkTheme.colors.textSecondary, fontSize: '15px' }}>
             {correctCount} / {questions.length} correct
+            {previous && (
+              <span
+                style={{
+                  marginLeft: 10,
+                  fontSize: 12,
+                  fontWeight: 600,
+                  padding: '3px 10px',
+                  borderRadius: 999,
+                  background: previous.delta >= 0 ? 'rgba(99,163,127,.18)' : 'rgba(191,107,79,.16)',
+                  color: previous.delta >= 0 ? '#1f5c3e' : '#8a3f28',
+                }}
+              >
+                {previous.delta >= 0 ? '+' : ''}
+                {previous.delta} pts vs last time ({previous.score_pct}%)
+              </span>
+            )}
             {pendingSelf ? ' · some answers need self-grading below' : ''}
           </p>
           <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginTop: '18px' }}>
@@ -176,6 +235,65 @@ export default function TestResultsPage({
             </button>
           </div>
         </div>
+
+        {topicRows.length > 0 && (
+          <div style={{ ...card }}>
+            <h2
+              className="mono"
+              style={{
+                fontSize: 10.5,
+                letterSpacing: '.12em',
+                textTransform: 'uppercase',
+                color: darkTheme.colors.textSecondary,
+                margin: '0 0 12px',
+              }}
+            >
+              By topic · weakest first
+            </h2>
+            {topicRows.map((r) => {
+              // Clay marks a weak topic — the brief reserves it for exactly this.
+              const weak = r.pct < 0.6;
+              const bar = weak ? '#bf6b4f' : r.pct < 0.85 ? '#b98a3f' : '#2e7d52';
+              return (
+                <div key={r.topic} style={{ marginBottom: 10 }}>
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      fontSize: 13,
+                      marginBottom: 5,
+                    }}
+                  >
+                    <span style={{ fontWeight: 600 }}>{r.topic}</span>
+                    <span className="mono" style={{ color: bar, fontWeight: 600 }}>
+                      {r.correct}/{r.total}
+                    </span>
+                  </div>
+                  <div
+                    role="img"
+                    aria-label={`${r.topic}: ${r.correct} of ${r.total} correct`}
+                    style={{
+                      height: 6,
+                      borderRadius: 999,
+                      background: 'rgba(28,42,34,.08)',
+                      overflow: 'hidden',
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: `${Math.round(r.pct * 100)}%`,
+                        height: '100%',
+                        background: bar,
+                        borderRadius: 999,
+                        transition: 'width 500ms cubic-bezier(0.16,1,0.3,1)',
+                      }}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
 
         {questions.map((q, i) => {
           const g = grades[i];

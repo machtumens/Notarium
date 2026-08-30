@@ -41,6 +41,8 @@ const api = vi.hoisted(() => ({
   request: vi.fn(() => Promise.resolve({ notes: [] })),
   notifications: {
     getUnreadCount: vi.fn(() => Promise.resolve({ count: 0 })),
+    // Progress mounts BadgeShelf, which reads this.
+    getBadges: vi.fn(() => Promise.resolve({ badges: [], rank: 0, tests_completed: 0 })),
   },
 }));
 vi.mock('../../lib/api', () => ({ default: api }));

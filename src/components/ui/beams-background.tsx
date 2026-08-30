@@ -177,7 +177,7 @@ export function BeamsBackground({
 
   return (
     <div
-      className={cn('relative min-h-screen w-full overflow-hidden bg-neutral-950', className)}
+      className={cn('relative min-h-screen w-full overflow-hidden bg-[#f4f8f3]', className)}
       style={{ pointerEvents: 'none' }}
     >
       <canvas
@@ -192,7 +192,7 @@ export function BeamsBackground({
       />
 
       <motion.div
-        className="absolute inset-0 bg-neutral-950/5"
+        className="absolute inset-0 bg-[#1c2a22]/[0.05]"
         animate={{
           opacity: [0.05, 0.15, 0.05],
         }}

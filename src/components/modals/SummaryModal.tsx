@@ -50,7 +50,7 @@ export default function SummaryModal({ noteId, onClose }: SummaryModalProps) {
             marginBottom: '24px',
             position: 'sticky',
             top: 0,
-            background: 'rgba(10, 10, 10, 0.95)',
+            background: 'rgba(255, 255, 255, 0.82)',
             paddingBottom: '16px',
             zIndex: 1,
           }}

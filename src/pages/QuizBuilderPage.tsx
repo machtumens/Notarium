@@ -19,6 +19,9 @@ export type QuizDifficulty = 'easy' | 'medium' | 'hard';
 
 export interface StructuredQuestion {
   type: QuizQuestionType;
+  /** Short sub-topic label from the generator, used to group the results
+   *  breakdown. Optional: older cached quizzes predate it. */
+  topic?: string;
   question: string;
   options?: string[];
   correct_answer?: number;

@@ -2,20 +2,39 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Frosted Canopy — glass & natural-green system.
+   Mist ground, white frost panels over the canopy plate, pine as the system
+   colour, honey reserved for "you" (points, streak, your marker). */
+
 :root {
-  /* SpaceX-inspired dark theme */
-  --primary: #000000;
-  --secondary: #0a0a0a;
-  --accent: #005288;
-  --accent-hover: #0066aa;
-  --text: #ffffff;
-  --text-secondary: #a0a0a0;
-  --border: #1a1a1a;
-  --success: #4ade80;
-  --danger: #ef4444;
+  /* Legacy Notarium vars, namespaced `--nt-*`.
+     They previously used the bare names --primary/--secondary/--accent/--border,
+     which COLLIDE with the shadcn token layer below. Unlayered rules beat
+     @layer base, so the legacy values won and every `hsl(var(--primary))`
+     utility resolved to `hsl(#hex)` — invalid, silently dropped. Namespacing
+     keeps both systems and un-breaks the token utilities. */
+  --nt-ground: #f4f8f3; /* Mist — page ground */
+  --nt-surface: rgba(255, 255, 255, 0.62); /* Frost — raised surface */
+  --nt-accent: #2e7d52; /* Pine — system colour */
+  --nt-accent-hover: #3f9468;
+  --nt-text: #1c2a22; /* Ink */
+  --nt-text-secondary: #3c4f43; /* Ink, softened — metadata on frost */
+  --nt-border: rgba(28, 42, 34, 0.12);
+  --nt-success: #63a37f; /* Moss */
+  --nt-danger: #bf6b4f; /* Clay */
+  --nt-warning: #b98a3f; /* Honey */
+  --nt-juniper: #3e7d8c; /* Juniper — exams / timed work */
   --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
-  --shadow-lg: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
+  --shadow: 0 10px 22px -12px rgba(42, 108, 71, 0.55);
+  --shadow-lg: 0 18px 40px rgba(20, 44, 30, 0.18);
+
+  /* Glass recipes — frost over the canopy plate. */
+  --glass-panel: rgba(255, 255, 255, 0.55);
+  --glass-panel-border: rgba(255, 255, 255, 0.75);
+  --glass-panel-blur: blur(26px) saturate(1.3);
+  --glass-chrome: rgba(255, 255, 255, 0.4);
+  --glass-chrome-border: rgba(255, 255, 255, 0.6);
+  --glass-chrome-blur: blur(14px);
 }
 
 * {
@@ -23,16 +42,43 @@
   padding: 0;
   box-sizing: border-box;
   font-family:
-    'Inter',
+    'IBM Plex Sans',
     -apple-system,
     BlinkMacSystemFont,
     'Segoe UI',
     sans-serif;
 }
 
+/* Display face — headings opt in via .display or a heading tag. */
+h1,
+h2,
+h3,
+.display {
+  font-family: 'Bricolage Grotesque', 'IBM Plex Sans', sans-serif;
+  letter-spacing: -0.02em;
+}
+
+code,
+kbd,
+pre,
+samp,
+.mono {
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+}
+
 body {
-  background-color: var(--primary);
-  color: var(--text);
+  /* The canopy plate: nature.jpg pre-blurred and washed once, so every screen
+     loads one flat background instead of re-layering a 1920px photo. The mist
+     wash on top keeps Ink text readable and gives the frost panels something
+     green to blur. `background-color` is the fallback before the plate loads. */
+  background-color: var(--nt-ground);
+  background-image:
+    linear-gradient(rgba(244, 248, 243, 0.62), rgba(244, 248, 243, 0.62)), url('/canopy-light.jpg');
+  background-size: cover;
+  background-position: center;
+  background-attachment: fixed;
+  background-repeat: no-repeat;
+  color: var(--nt-text);
   min-height: 100vh;
   overflow-x: hidden;
   -webkit-font-smoothing: antialiased;
@@ -54,30 +100,56 @@ html {
 }
 
 ::-webkit-scrollbar-track {
-  background: var(--secondary);
+  background: rgba(28, 42, 34, 0.04);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--border);
+  background: rgba(46, 125, 82, 0.28);
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #2a2a2a;
+  background: rgba(46, 125, 82, 0.45);
 }
 
 /* Utility classes */
 .text-gradient {
-  background: linear-gradient(135deg, #ffffff 0%, #a0a0a0 100%);
+  background: linear-gradient(135deg, #1f5c3e 0%, #63a37f 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
 }
 
+/* Panel glass — content surfaces. */
 .glass-effect {
-  background: rgba(10, 10, 10, 0.8);
-  backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--glass-panel);
+  backdrop-filter: var(--glass-panel-blur);
+  -webkit-backdrop-filter: var(--glass-panel-blur);
+  border: 1px solid var(--glass-panel-border);
+  box-shadow: var(--shadow-lg);
+}
+
+/* Chrome glass — nav rails, toolbars, floating bars. */
+.glass-chrome {
+  background: var(--glass-chrome);
+  backdrop-filter: var(--glass-chrome-blur);
+  -webkit-backdrop-filter: var(--glass-chrome-blur);
+  border: 1px solid var(--glass-chrome-border);
+}
+
+/* Campus plate — the orbit surface is keyboard-operable, so it needs a focus
+   ring the 3D transform cannot swallow. outline (not box-shadow) survives
+   preserve-3d; the offset keeps it clear of the plate's own border. */
+.campus-plate:focus-visible {
+  outline: 3px solid #2e7d52;
+  outline-offset: 6px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .campus-plate,
+  .campus-plate * {
+    transition-duration: 0.01ms !important;
+  }
 }
 
 /* Animations */
@@ -128,82 +200,92 @@ html {
 
 @layer components {
   .chat-input {
-    @apply text-white placeholder-gray-400 focus:ring-2 focus:ring-blue-500;
+    @apply placeholder-gray-500 focus:ring-2;
   }
 }
 
 @layer base {
+  /* shadcn token layer.
+     These MUST be bare HSL triplets: tailwind.config.js consumes them as
+     `hsl(var(--background))`. They were previously oklch(), which produced the
+     invalid `hsl(oklch(...))` and silently killed every colour token utility
+     (bg-background, text-foreground, and friends). Triplets restore them. */
   :root {
-    --background: oklch(0 0 0);
-    --foreground: oklch(1 0 0);
-    --card: oklch(0.1 0 0 / 0.1);
-    --card-foreground: oklch(1 0 0);
-    --popover: oklch(0 0 0 / 0.8);
-    --popover-foreground: oklch(1 0 0);
-    --primary: oklch(1 0 0);
-    --primary-foreground: oklch(0 0 0);
-    --secondary: oklch(0.65 0.25 25);
-    --secondary-foreground: oklch(1 0 0);
-    --muted: oklch(1 0 0 / 0.5);
-    --muted-foreground: oklch(0.7 0 0);
-    --accent: oklch(0.65 0.25 25);
-    --accent-foreground: oklch(1 0 0);
-    --destructive: oklch(0.6 0.25 15);
-    --destructive-foreground: oklch(1 0 0);
-    --border: oklch(1 0 0 / 0.2);
-    --input: oklch(1 0 0 / 0.1);
-    --ring: oklch(1 0 0 / 0.3);
-    --chart-1: oklch(0.65 0.25 25);
-    --chart-2: oklch(0.8 0.15 85);
-    --chart-3: oklch(0.7 0.2 140);
-    --chart-4: oklch(0.7 0.2 240);
-    --chart-5: oklch(0.6 0.25 300);
-    --radius: 0.5rem;
-    --sidebar: oklch(0 0 0 / 0.9);
-    --sidebar-foreground: oklch(1 0 0);
-    --sidebar-primary: oklch(0.65 0.25 25);
-    --sidebar-primary-foreground: oklch(1 0 0);
-    --sidebar-accent: oklch(0.65 0.25 25);
-    --sidebar-accent-foreground: oklch(1 0 0);
-    --sidebar-border: oklch(1 0 0 / 0.2);
-    --sidebar-ring: oklch(1 0 0 / 0.3);
-    --font-geist-sans: 'Geist Sans', sans-serif;
-    --font-geist-mono: 'Geist Mono', monospace;
+    --background: 108 26% 96%; /* Mist */
+    --foreground: 146 20% 14%; /* Ink */
+    --card: 0 0% 100%;
+    --card-foreground: 146 20% 14%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 146 20% 14%;
+    --primary: 147 46% 34%; /* Pine */
+    --primary-foreground: 0 0% 100%;
+    --secondary: 146 26% 51%; /* Moss */
+    --secondary-foreground: 146 20% 14%;
+    --muted: 142 14% 90%;
+    --muted-foreground: 142 14% 27%; /* Ink, softened */
+    --accent: 37 49% 49%; /* Honey — "you" */
+    --accent-foreground: 146 20% 14%;
+    --destructive: 15 47% 53%; /* Clay */
+    --destructive-foreground: 0 0% 100%;
+    --border: 120 7% 86%; /* Ink 12% blended onto Mist — `*` inherits this */
+    --input: 120 6% 82%;
+    --ring: 147 46% 34%;
+    --chart-1: 147 46% 34%; /* Pine */
+    --chart-2: 146 26% 51%; /* Moss */
+    --chart-3: 192 39% 40%; /* Juniper */
+    --chart-4: 37 49% 49%; /* Honey */
+    --chart-5: 15 47% 53%; /* Clay */
+    --radius: 1rem; /* 16px panels */
+    --sidebar: 0 0% 100%;
+    --sidebar-foreground: 146 20% 14%;
+    --sidebar-primary: 147 46% 34%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 146 26% 51%;
+    --sidebar-accent-foreground: 146 20% 14%;
+    --sidebar-border: 120 7% 86%;
+    --sidebar-ring: 147 46% 34%;
+    --font-display: 'Bricolage Grotesque', sans-serif;
+    --font-geist-sans: 'IBM Plex Sans', sans-serif;
+    --font-geist-mono: 'IBM Plex Mono', monospace;
   }
+
+  /* Forest night — the brief's 2i variant. Same system, dark plate.
+     Not enabled anywhere yet; add `class="dark"` on <html> to use it. */
   .dark {
-    --background: oklch(0 0 0);
-    --foreground: oklch(1 0 0);
-    --card: oklch(0.1 0 0 / 0.1);
-    --card-foreground: oklch(1 0 0);
-    --popover: oklch(0 0 0 / 0.8);
-    --popover-foreground: oklch(1 0 0);
-    --primary: oklch(1 0 0);
-    --primary-foreground: oklch(0 0 0);
-    --secondary: oklch(0.65 0.25 25);
-    --secondary-foreground: oklch(1 0 0);
-    --muted: oklch(1 0 0 / 0.5);
-    --muted-foreground: oklch(0.7 0 0);
-    --accent: oklch(0.65 0.25 25);
-    --accent-foreground: oklch(1 0 0);
-    --destructive: oklch(0.6 0.25 15);
-    --destructive-foreground: oklch(1 0 0);
-    --border: oklch(1 0 0 / 0.2);
-    --input: oklch(1 0 0 / 0.1);
-    --ring: oklch(1 0 0 / 0.3);
-    --chart-1: oklch(0.65 0.25 25);
-    --chart-2: oklch(0.8 0.15 85);
-    --chart-3: oklch(0.7 0.2 140);
-    --chart-4: oklch(0.7 0.2 240);
-    --chart-5: oklch(0.6 0.25 300);
-    --sidebar: oklch(0 0 0 / 0.9);
-    --sidebar-foreground: oklch(1 0 0);
-    --sidebar-primary: oklch(0.65 0.25 25);
-    --sidebar-primary-foreground: oklch(1 0 0);
-    --sidebar-accent: oklch(0.65 0.25 25);
-    --sidebar-accent-foreground: oklch(1 0 0);
-    --sidebar-border: oklch(1 0 0 / 0.2);
-    --sidebar-ring: oklch(1 0 0 / 0.3);
+    --background: 150 60% 6%; /* #06170e */
+    --foreground: 140 26% 94%; /* #ecf4ee */
+    --card: 150 40% 10%;
+    --card-foreground: 140 26% 94%;
+    --popover: 150 40% 10%;
+    --popover-foreground: 140 26% 94%;
+    --primary: 147 45% 45%; /* brightened pine */
+    --primary-foreground: 150 60% 6%;
+    --secondary: 146 40% 68%;
+    --secondary-foreground: 150 60% 6%;
+    --muted: 150 20% 18%;
+    --muted-foreground: 140 14% 60%;
+    --accent: 40 68% 70%; /* #e6c37c honey */
+    --accent-foreground: 150 60% 6%;
+    --destructive: 15 47% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 148 15% 20%; /* Mist 16% blended onto the night plate */
+    --input: 144 12% 25%;
+    --ring: 147 45% 45%;
+    --chart-1: 147 45% 45%;
+    --chart-2: 146 40% 68%;
+    --chart-3: 192 55% 79%;
+    --chart-4: 40 68% 70%;
+    --chart-5: 15 47% 60%;
+    --sidebar: 150 40% 10%;
+    --sidebar-foreground: 140 26% 94%;
+    --sidebar-primary: 147 45% 45%;
+    --sidebar-primary-foreground: 150 60% 6%;
+    --sidebar-accent: 146 40% 68%;
+    --sidebar-accent-foreground: 150 60% 6%;
+    --sidebar-border: 148 15% 20%;
+    --sidebar-ring: 147 45% 45%;
   }
+
   .theme {
     --font-sans: var(--font-geist-sans);
     --font-mono: var(--font-geist-mono);
@@ -216,6 +298,8 @@ html {
     @apply border-border;
   }
   body {
-    @apply bg-background text-foreground;
+    /* NB: no `bg-background` here — it would paint a flat colour over the
+       canopy plate set above. Ground colour comes from `background-color`. */
+    @apply text-foreground;
   }
 }

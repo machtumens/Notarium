@@ -172,7 +172,7 @@ export default function SubjectsPage({
                       flexDirection: 'column',
                       alignItems: 'flex-start',
                       padding: '32px',
-                      color: 'white',
+                      color: '#1c2a22',
                     }}
                   >
                     <div

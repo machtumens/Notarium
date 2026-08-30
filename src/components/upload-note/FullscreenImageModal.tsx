@@ -16,7 +16,7 @@ export default function FullscreenImageModal({
       style={{
         position: 'fixed',
         inset: 0,
-        background: 'rgba(0, 0, 0, 0.95)',
+        background: 'rgba(20, 44, 30, 0.95)',
         backdropFilter: 'blur(8px)',
         display: 'flex',
         alignItems: 'center',

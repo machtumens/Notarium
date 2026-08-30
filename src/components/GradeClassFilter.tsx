@@ -12,11 +12,13 @@ export default function GradeClassFilter({
   userGrade,
 }: GradeClassFilterProps) {
   return (
-    <div className="flex items-center gap-1 bg-zinc-800/60 rounded-lg p-1 border border-zinc-700/50">
+    <div className="flex items-center gap-1 bg-white/60 rounded-lg p-1 border border-[#1c2a22]/10">
       <button
         onClick={() => onChange('my_class')}
         className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-          value === 'my_class' ? 'bg-zinc-600 text-white' : 'text-zinc-400 hover:text-zinc-200'
+          value === 'my_class'
+            ? 'bg-[#3c4f43]/15 text-[#1c2a22]'
+            : 'text-[#3c4f43] hover:text-[#1c2a22]'
         }`}
       >
         My Class{userClass ? ` (${userClass})` : ''}
@@ -24,7 +26,9 @@ export default function GradeClassFilter({
       <button
         onClick={() => onChange('my_grade')}
         className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-          value === 'my_grade' ? 'bg-zinc-600 text-white' : 'text-zinc-400 hover:text-zinc-200'
+          value === 'my_grade'
+            ? 'bg-[#3c4f43]/15 text-[#1c2a22]'
+            : 'text-[#3c4f43] hover:text-[#1c2a22]'
         }`}
       >
         My Grade{userGrade ? ` (Grade ${userGrade})` : ''}
