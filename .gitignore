@@ -56,3 +56,9 @@ SETUP_INTERNAL.md
 SETUP.md
 README_INTERNAL.md
 .env*
+
+# Claude Code local state
+# worktrees/ holds real git worktrees (git worktree list) — never commit them.
+# settings.local.json is per-developer.
+.claude/worktrees/
+.claude/settings.local.json
