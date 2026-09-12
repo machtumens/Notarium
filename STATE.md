@@ -1,6 +1,6 @@
 # STATE — Notarium
 
-Updated: 12 Sep 2026 · Session: go-live 2
+Updated: 12 Sep 2026 (worker + frontend deployed, rebuild rehearsed) · Session: go-live 2
 
 ## Building
 
@@ -10,9 +10,15 @@ tutors. Cloudflare Worker + D1 behind a Vite/React frontend on Vercel.
 
 ## True right now
 
-- Production runs code from 24 Nov 2025. Everything since — study loop,
-  Frosted Canopy redesign, tutor wing, timezone fixes — is on this laptop only:
-  21 commits unpushed, ~49 files uncommitted.
+- The Worker is current: commit `356aa92` deployed 12 Sep from this machine
+  (version `46916160`). `/api/health` returns 200. The first request ran the
+  schema init against production — 5 new `users` columns, 6 new tables, 24
+  timestamp triggers, all verified by query.
+- The Vercel frontend is current too: deployed 12 Sep from this machine,
+  aliased to notarium-site.vercel.app. A repo `.npmrc` (`legacy-peer-deps=true`)
+  was needed — the lockfile was generated with peer checks off and plain
+  `npm install` failed on Vercel.
+- 24 commits are unpushed to GitHub.
 - Tests pass: 61 frontend, 332 backend. `npm run build` is green as of today
   (tests were being compiled into the backend build; now excluded).
 - Local wrangler is logged in as the right account and can read and write the
@@ -40,8 +46,29 @@ tutors. Cloudflare Worker + D1 behind a Vite/React frontend on Vercel.
   worker has already deployed.
 - Firebase auth is half-migrated. `FIREBASE_PROJECT_ID` is unset, so the code
   falls through to the legacy HS256 path, which works. Ship without it.
-- Live worker still 404s `/api/health`; that route exists in local code. When
-  it returns 200, the new worker is serving.
+- Google sign-in: `OAUTH_REDIRECT_URI` is now set on the worker and
+  `/auth/google/start` 302s to accounts.google.com with
+  `redirect_uri=https://notarium-backend.notarium-backend.workers.dev/auth/google/callback`.
+  Whether that URI is registered in Google Cloud Console is unverified — only
+  Richard can check. Before 12 Sep this had never worked in production (501).
+  The "link Google to an existing account" path also needs `OAUTH_TOKEN_AES_KEY`
+  and `VITE_FEATURE_GOOGLE_OAUTH=true` on Vercel — optional.
+- Timestamp backfill: dry-run against production counts 706 space-form values
+  across 13 columns. Not yet applied. The script's audit had to switch to
+  `--command` — `--file` against `--remote` returns no rows.
+- `backend/scripts/rebuild-users-table.sh` exists and is verified: rehearsed
+  end to end on a scratch D1 (`notarium-rehearsal`) loaded from a production
+  export — 45 rows identical, 11 children unchanged, no CHECK, grade-12 insert
+  succeeds. Not yet run against production. The scratch DB still exists;
+  delete it after the production run.
+- Vercel production has no environment variables at all. `VITE_API_URL` falls
+  back to the correct default, so that is fine.
+- AI: OCR (Google Vision), summaries, quiz, primer, study plan, concept explain
+  are all deployed and all three provider keys are on the worker. Every LLM
+  call goes to DeepSeek — the `/api/gemini/*` path names are historical. AI
+  chat was removed deliberately (Paperloop phase 4). No AI roadmap or backlog
+  exists. The live DeepSeek round-trip for `/api/ai/primer` has never been
+  verified — only mocked tests. Needs a logged-in account to probe.
 
 ## Decided
 
@@ -50,11 +77,13 @@ tutors. Cloudflare Worker + D1 behind a Vite/React frontend on Vercel.
 - Deploy the backend from this machine with `npx wrangler deploy`, not via
   GitHub Actions. The local token works and is verified; the CI path depends on
   repo secrets and a dead R2 step. (12 Sep)
-- Rebuild the production `users` table with the same guarded procedure used on
-  the local DB on 28 Aug (backup → assert column coverage → assert row count →
-  `PRAGMA foreign_key_check` → rollback on any throw → recount 11 child tables).
-  It must be scripted and rehearsed against the local DB first; the local
-  rebuild was done by hand and left no script. (12 Sep)
+- Rebuild `users` by rename → create clean → copy → verify → drop `users_old`,
+  never dropping a table a child still references. The script probes on
+  throwaway tables that `PRAGMA foreign_keys=OFF` really takes effect on the
+  execution path before it touches `users`: it does NOT on wrangler's
+  `--local` path (the batch runs in a transaction, so the cascade fires), it
+  DOES on `--remote`. Rehearsal therefore happens on a scratch remote D1, not
+  locally. (12 Sep)
 - Order: commit → deploy worker → confirm `/api/health` 200 → backfill →
   rebuild `users` → smoke test signup as grade 12 and via Google. (8 Sep)
 
@@ -74,8 +103,13 @@ tutors. Cloudflare Worker + D1 behind a Vite/React frontend on Vercel.
 
 ## Next
 
-1. Commit the working tree (49 files incl. the untracked backfill script,
-   migration 0021, and four new test files), then `cd backend && npx wrangler deploy`.
+1. `cd backend && ./scripts/backfill-iso-timestamps.sh --remote` (706 values),
+   then `./scripts/rebuild-users-table.sh --remote` (45 users). Both export
+   first and ask for the database name.
+2. Smoke test on notarium-site.vercel.app: sign up as grade 12, sign in with
+   Google (needs the redirect URI in Google Cloud Console), upload a note,
+   check a date reads "Today", book a tutor session, hit Primer once.
+3. `npx wrangler d1 delete notarium-rehearsal -y`; `git push origin main`.
 
 ## Landmines
 
