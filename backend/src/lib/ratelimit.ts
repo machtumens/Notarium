@@ -1,16 +1,19 @@
 import type { Env } from './env';
 import { MAX_REQUEST_SIZE, RATE_LIMIT_WINDOW, RATE_LIMIT_MAX_ATTEMPTS } from './env';
 
-export async function checkRateLimit(ip: string, endpoint: string, env: Env): Promise<boolean> {
+export async function checkRateLimit(
+  ip: string,
+  endpoint: string,
+  env: Env,
+  maxAttempts: number = RATE_LIMIT_MAX_ATTEMPTS,
+): Promise<boolean> {
   // Prefer the Durable Object limiter — a DO instance is single-threaded, so its
   // read-modify-write is atomic (no burst can slip past like it can with KV).
   if (env.RATE_LIMITER) {
     try {
       const id = env.RATE_LIMITER.idFromName(`${endpoint}:${ip}`);
       const stub = env.RATE_LIMITER.get(id);
-      const res = await stub.fetch(
-        `https://rl/?limit=${RATE_LIMIT_MAX_ATTEMPTS}&window=${RATE_LIMIT_WINDOW}`,
-      );
+      const res = await stub.fetch(`https://rl/?limit=${maxAttempts}&window=${RATE_LIMIT_WINDOW}`);
       const data = (await res.json()) as { allowed?: boolean };
       return data.allowed !== false;
     } catch {
@@ -29,7 +32,7 @@ export async function checkRateLimit(ip: string, endpoint: string, env: Env): Pr
     const attempts: number[] = attemptsData ? JSON.parse(attemptsData) : [];
     const recentAttempts = attempts.filter((timestamp) => timestamp > windowStart);
 
-    if (recentAttempts.length >= RATE_LIMIT_MAX_ATTEMPTS) {
+    if (recentAttempts.length >= maxAttempts) {
       return false;
     }
     recentAttempts.push(now);

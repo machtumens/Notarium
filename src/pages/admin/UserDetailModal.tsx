@@ -1,9 +1,21 @@
 import { useState } from 'react';
-import { darkTheme } from '../../theme';
 import type { AdminUser } from './types';
 import EditUserModal from './EditUserModal';
 import { safePhotoUrl } from '../../lib/safeUrl';
 import { formatLongDateTime } from '../../lib/datetime';
+import {
+  Avatar,
+  Button,
+  Callout,
+  Modal,
+  Pill,
+  Readout,
+  Readouts,
+} from '../../components/ops/ConsoleKit';
+import { ink } from '../../components/ops/tokens';
+import { darkTheme } from '../../theme';
+
+const t = darkTheme;
 
 interface UserDetailModalProps {
   user: AdminUser | null;
@@ -11,364 +23,131 @@ interface UserDetailModalProps {
   onSaved?: () => void;
 }
 
+function Row({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: '120px minmax(0,1fr)',
+        gap: '10px',
+        alignItems: 'center',
+        padding: '7px 0',
+        borderBottom: `1px solid ${t.colors.borderColor}`,
+      }}
+    >
+      <span style={{ fontSize: '11.5px', color: ink.faint }}>{label}</span>
+      <div style={{ fontSize: '12.5px' }}>{children}</div>
+    </div>
+  );
+}
+
 export default function UserDetailModal({ user, onClose, onSaved }: UserDetailModalProps) {
   const [editing, setEditing] = useState(false);
   if (!user) return null;
 
+  const name = user.display_name || user.name;
+
   return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(20, 44, 30, 0.8)',
-        backdropFilter: 'blur(4px)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 1001,
-        padding: '16px',
-      }}
-      onClick={onClose}
-    >
-      <div
-        style={{
-          background: darkTheme.colors.bgPrimary,
-          borderRadius: darkTheme.borderRadius.lg,
-          width: '100%',
-          maxWidth: '600px',
-          maxHeight: '90vh',
-          overflowY: 'auto',
-          color: darkTheme.colors.textPrimary,
-          boxShadow: darkTheme.shadows.lg,
-        }}
-        onClick={(e) => e.stopPropagation()}
+    <>
+      <Modal
+        title={name}
+        sub={user.email}
+        width="560px"
+        onClose={onClose}
+        footer={
+          <>
+            <Button variant="ghost" onClick={onClose}>
+              Close
+            </Button>
+            <Button variant="primary" onClick={() => setEditing(true)}>
+              Edit details
+            </Button>
+          </>
+        }
       >
-        {/* Header */}
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            padding: '24px',
-            borderBottom: `1px solid ${darkTheme.colors.borderColor}`,
-          }}
-        >
-          <h2 style={{ fontSize: '20px', margin: 0, fontWeight: '600' }}>User Details</h2>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <button
-              onClick={() => setEditing(true)}
-              style={{
-                padding: '6px 14px',
-                background: darkTheme.colors.accent,
-                border: 'none',
-                color: '#fff',
-                borderRadius: darkTheme.borderRadius.md,
-                cursor: 'pointer',
-                fontSize: '13px',
-                fontWeight: '600',
-              }}
-            >
-              Edit
-            </button>
-            <button
-              onClick={onClose}
-              style={{
-                fontSize: '24px',
-                background: 'none',
-                border: 'none',
-                cursor: 'pointer',
-                color: darkTheme.colors.textSecondary,
-              }}
-            >
-              ×
-            </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '14px' }}>
+          <Avatar name={name} photoUrl={safePhotoUrl(user.photo_url)} size={48} />
+          <div style={{ minWidth: 0 }}>
+            <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
+              {user.suspended ? (
+                <Pill tone="crit">Suspended</Pill>
+              ) : user.warning ? (
+                <Pill tone="warn">Warned</Pill>
+              ) : (
+                <Pill tone="ok">Good standing</Pill>
+              )}
+              <Pill tone="mute">{user.class || 'no class'}</Pill>
+              <Pill tone="mute">{user.role}</Pill>
+            </div>
           </div>
         </div>
 
-        {editing && (
-          <EditUserModal
-            user={user}
-            onClose={() => setEditing(false)}
-            onSaved={() => {
-              onSaved?.();
-              onClose();
-            }}
-          />
-        )}
+        <div style={{ marginBottom: '14px' }}>
+          <Readouts>
+            <Readout label="Notes" value={user.notes_uploaded || user.notes_count || 0} />
+            <Readout label="Likes received" value={(user.total_likes || 0).toLocaleString()} />
+            <Readout label="Admin upvotes" value={user.total_admin_upvotes || 0} />
+            <Readout label="Points" value={(user.points || 0).toLocaleString()} />
+          </Readouts>
+        </div>
 
-        {/* Content */}
-        <div style={{ padding: '24px' }}>
-          {/* Profile */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '24px' }}>
-            <div
-              style={{
-                width: '64px',
-                height: '64px',
-                background: safePhotoUrl(user.photo_url)
-                  ? `url('${safePhotoUrl(user.photo_url)}') center/cover`
-                  : `linear-gradient(135deg, ${darkTheme.colors.accent}, #8b5cf6)`,
-                borderRadius: '50%',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: 'white',
-                fontWeight: 'bold',
-                fontSize: '24px',
-              }}
-            >
-              {!safePhotoUrl(user.photo_url) &&
-                (user.display_name || user.name)?.charAt(0).toUpperCase()}
-            </div>
-            <div>
-              <h3 style={{ margin: 0, fontSize: '20px', fontWeight: '600' }}>
-                {user.display_name || user.name}
-              </h3>
-              <p
-                style={{
-                  margin: '4px 0 0 0',
-                  color: darkTheme.colors.textSecondary,
-                  fontSize: '14px',
-                }}
-              >
-                {user.email}
-              </p>
-            </div>
-          </div>
-
-          {/* Stats Grid */}
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(2, 1fr)',
-              gap: '16px',
-              marginBottom: '20px',
-            }}
-          >
-            <div
-              style={{
-                padding: '16px',
-                background: darkTheme.colors.bgSecondary,
-                borderRadius: darkTheme.borderRadius.md,
-              }}
-            >
-              <div style={{ fontSize: '24px', fontWeight: '700', color: '#fbbf24' }}>
-                {(user as any).points || 0}
-              </div>
-              <div
-                style={{
-                  fontSize: '12px',
-                  color: darkTheme.colors.textSecondary,
-                  marginTop: '4px',
-                }}
-              >
-                Total Points
-              </div>
-            </div>
-            <div
-              style={{
-                padding: '16px',
-                background: darkTheme.colors.bgSecondary,
-                borderRadius: darkTheme.borderRadius.md,
-              }}
-            >
-              <div style={{ fontSize: '24px', fontWeight: '700', color: darkTheme.colors.accent }}>
-                {user.points || 0}
-              </div>
-              <div
-                style={{
-                  fontSize: '12px',
-                  color: darkTheme.colors.textSecondary,
-                  marginTop: '4px',
-                }}
-              >
-                Points
-              </div>
-            </div>
-            <div
-              style={{
-                padding: '16px',
-                background: darkTheme.colors.bgSecondary,
-                borderRadius: darkTheme.borderRadius.md,
-              }}
-            >
-              <div
-                style={{ fontSize: '24px', fontWeight: '700', color: darkTheme.colors.textPrimary }}
-              >
-                {user.notes_uploaded || user.notes_count || 0}
-              </div>
-              <div
-                style={{
-                  fontSize: '12px',
-                  color: darkTheme.colors.textSecondary,
-                  marginTop: '4px',
-                }}
-              >
-                Notes Uploaded
-              </div>
-            </div>
-            <div
-              style={{
-                padding: '16px',
-                background: darkTheme.colors.bgSecondary,
-                borderRadius: darkTheme.borderRadius.md,
-              }}
-            >
-              <div
-                style={{ fontSize: '24px', fontWeight: '700', color: darkTheme.colors.textPrimary }}
-              >
-                {user.total_likes || 0}
-              </div>
-              <div
-                style={{
-                  fontSize: '12px',
-                  color: darkTheme.colors.textSecondary,
-                  marginTop: '4px',
-                }}
-              >
-                Total Likes
-              </div>
-            </div>
-            <div
-              style={{
-                padding: '16px',
-                background: darkTheme.colors.bgSecondary,
-                borderRadius: darkTheme.borderRadius.md,
-              }}
-            >
-              <div
-                style={{ fontSize: '24px', fontWeight: '700', color: darkTheme.colors.textPrimary }}
-              >
-                {user.total_admin_upvotes || 0}
-              </div>
-              <div
-                style={{
-                  fontSize: '12px',
-                  color: darkTheme.colors.textSecondary,
-                  marginTop: '4px',
-                }}
-              >
-                Admin Likes
-              </div>
-            </div>
-          </div>
-
-          {/* Info */}
-          <div
-            style={{
-              padding: '16px',
-              background: darkTheme.colors.bgSecondary,
-              borderRadius: darkTheme.borderRadius.md,
-              marginBottom: '20px',
-            }}
-          >
-            <div style={{ marginBottom: '12px' }}>
-              <div
-                style={{
-                  fontSize: '12px',
-                  color: darkTheme.colors.textSecondary,
-                  marginBottom: '4px',
-                }}
-              >
-                Class
-              </div>
-              <div style={{ fontSize: '14px', fontWeight: '500' }}>{user.class}</div>
-            </div>
-            <div style={{ marginBottom: '12px' }}>
-              <div
-                style={{
-                  fontSize: '12px',
-                  color: darkTheme.colors.textSecondary,
-                  marginBottom: '4px',
-                }}
-              >
-                Role
-              </div>
-              <div style={{ fontSize: '14px', fontWeight: '500', textTransform: 'capitalize' }}>
-                {user.role}
-              </div>
-            </div>
-            <div>
-              <div
-                style={{
-                  fontSize: '12px',
-                  color: darkTheme.colors.textSecondary,
-                  marginBottom: '4px',
-                }}
-              >
-                Status
-              </div>
-              <span
-                style={{
-                  padding: '4px 12px',
-                  borderRadius: darkTheme.borderRadius.sm,
-                  background: user.suspended ? 'rgba(239, 68, 68, 0.2)' : 'rgba(34, 197, 94, 0.2)',
-                  color: user.suspended ? '#fca5a5' : '#86efac',
-                  fontSize: '12px',
-                  fontWeight: '500',
-                }}
-              >
-                {user.suspended ? 'Suspended' : 'Active'}
-              </span>
-            </div>
-          </div>
-
-          {/* Suspension Details */}
-          {user.suspended && (user.suspension_end_date || user.suspension_reason) && (
-            <div
-              style={{
-                padding: '16px',
-                background: 'rgba(239, 68, 68, 0.1)',
-                border: '1px solid rgba(239, 68, 68, 0.3)',
-                borderRadius: darkTheme.borderRadius.md,
-                marginBottom: '20px',
-              }}
-            >
-              <div
-                style={{
-                  fontSize: '14px',
-                  fontWeight: '600',
-                  color: '#fca5a5',
-                  marginBottom: '12px',
-                }}
-              >
-                Suspension Details
-              </div>
+        {user.suspended && (user.suspension_end_date || user.suspension_reason) && (
+          <div style={{ marginBottom: '14px' }}>
+            <Callout tone="crit">
               {user.suspension_end_date && (
-                <div style={{ marginBottom: '8px' }}>
-                  <div
-                    style={{
-                      fontSize: '12px',
-                      color: darkTheme.colors.textSecondary,
-                      marginBottom: '4px',
-                    }}
-                  >
-                    Suspended Until
-                  </div>
-                  <div style={{ fontSize: '13px', fontWeight: '500' }}>
-                    {formatLongDateTime(user.suspension_end_date)}
-                  </div>
+                <div>
+                  <strong>Suspended until</strong> {formatLongDateTime(user.suspension_end_date)}
                 </div>
               )}
               {user.suspension_reason && (
-                <div>
-                  <div
-                    style={{
-                      fontSize: '12px',
-                      color: darkTheme.colors.textSecondary,
-                      marginBottom: '4px',
-                    }}
-                  >
-                    Reason
-                  </div>
-                  <div style={{ fontSize: '13px', lineHeight: '1.5' }}>
-                    {user.suspension_reason}
-                  </div>
-                </div>
+                <div style={{ marginTop: '4px' }}>They were told: “{user.suspension_reason}”</div>
               )}
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
+            </Callout>
+          </div>
+        )}
+
+        {Boolean(user.warning) && user.warning_message && (
+          <div style={{ marginBottom: '14px' }}>
+            <Callout tone="warn">
+              <strong>Active warning.</strong> They were told: “{user.warning_message}”
+            </Callout>
+          </div>
+        )}
+
+        <Row label="Display name">{name}</Row>
+        <Row label="Email">
+          <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: '12px' }}>
+            {user.email}
+          </span>
+        </Row>
+        <Row label="Class">{user.class || '—'}</Row>
+        <Row label="Access level">
+          <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <Pill tone="mute" bare>
+              {user.role}
+            </Pill>
+            <span style={{ fontSize: '10.5px', color: ink.fainter }}>
+              set by the email allowlist, not here
+            </span>
+          </span>
+        </Row>
+        <Row label="Account id">
+          <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: '12px' }}>
+            {user.id}
+          </span>
+        </Row>
+      </Modal>
+
+      {editing && (
+        <EditUserModal
+          user={user}
+          onClose={() => setEditing(false)}
+          onSaved={() => {
+            onSaved?.();
+            onClose();
+          }}
+        />
+      )}
+    </>
   );
 }

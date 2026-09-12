@@ -2,9 +2,17 @@ import type { Env } from '../lib/env';
 import { jsonResponse } from '../lib/response';
 import { requireTechnical } from '../lib/auth';
 import { logAdminActivity } from './admin';
+import { SCHEMA_VERSION } from '../lib/db';
+import { SCHOOL_TIMEZONE, addLocalDays, isoUtc, localDate, startOfLocalDay } from '../lib/time';
 
-// Highest applied migration. Bump this string when a new migration lands.
-const LATEST_MIGRATION = '0014';
+// Newest file in backend/migrations/. Bump when one lands.
+//
+// Reported for reference only — do NOT read it as "production is at 0021".
+// Production has no d1_migrations table; `wrangler d1 migrations apply` has
+// never run against it, and the schema it actually has comes from
+// initializeDatabase(). SCHEMA_VERSION below is the number that tells you
+// whether a deploy's schema pass has landed.
+const LATEST_MIGRATION = '0021';
 
 type Decoded = { id: number; email: string; role: string; admin_role?: string };
 
@@ -71,6 +79,9 @@ export async function healthCheck(request: Request, env: Env): Promise<Response>
       ai_configured: !!env.DEEPSEEK_API_KEY,
       oauth_configured: !!env.GOOGLE_CLIENT_ID,
       latest_migration: LATEST_MIGRATION,
+      // What the running worker will apply on its next schema pass. Compare
+      // against the deployed build when a column looks missing.
+      schema_version: SCHEMA_VERSION,
     },
     200,
     env,
@@ -409,7 +420,8 @@ export async function recompute(request: Request, env: Env): Promise<Response> {
         ).run();
         break;
       case 'usage_snapshot': {
-        // usage_stats table is not part of the current schema — skip gracefully.
+        // The table only exists on databases that got it from the deploy path
+        // (initializeDatabase) — skip rather than 500 on one that has not.
         const hasTable = await safeScalar<number>(
           env,
           `SELECT COUNT(*) AS v FROM sqlite_master WHERE type='table' AND name='usage_stats'`,
@@ -421,14 +433,42 @@ export async function recompute(request: Request, env: Env): Promise<Response> {
             env,
           );
         }
-        await env.DB.prepare(
-          `INSERT INTO usage_stats (date, total_users, total_notes)
-           VALUES (
-             date('now'),
-             (SELECT COUNT(*) FROM users),
-             (SELECT COUNT(*) FROM notes WHERE deleted_at IS NULL)
-           )`,
-        ).run();
+
+        // A row here is one SCHOOL day, not one UTC day. date('now') would cut
+        // the day at midnight UTC — 07:00 in Jakarta — splitting a single
+        // school morning across two rows and making every daily figure wrong
+        // by the same seven hours that broke the rendered timestamps.
+        // startOfLocalDay resolves the real UTC instants the local day spans.
+        const day = localDate(SCHOOL_TIMEZONE);
+        const from = isoUtc(startOfLocalDay(SCHOOL_TIMEZONE, day));
+        const to = isoUtc(startOfLocalDay(SCHOOL_TIMEZONE, addLocalDays(day, 1)));
+
+        // Half-open [from, to): the next day's first instant belongs to the
+        // next row. String comparison is exact because every stored timestamp
+        // is ISO-8601 UTC of fixed width.
+        const inWindow = (col: string) => `${col} >= ? AND ${col} < ?`;
+
+        // These columns are per-day counts, not running totals — the previous
+        // statement wrote cumulative user/note totals into column names that
+        // did not exist (`date`, `total_users`, `total_notes`), so this action
+        // had never once succeeded.
+        await env.DB.batch([
+          // Idempotent: re-running the snapshot replaces today's row instead of
+          // appending a second one and doubling the day in any chart built on it.
+          env.DB.prepare(`DELETE FROM usage_stats WHERE stat_date = ?`).bind(day),
+          env.DB.prepare(
+            `INSERT INTO usage_stats
+               (stat_date, active_users, new_users, notes_created, likes_given, chat_sessions)
+             VALUES (
+               ?,
+               (SELECT COUNT(*) FROM users WHERE ${inWindow('last_seen_at')}),
+               (SELECT COUNT(*) FROM users WHERE ${inWindow('created_at')}),
+               (SELECT COUNT(*) FROM notes WHERE deleted_at IS NULL AND ${inWindow('created_at')}),
+               (SELECT COUNT(*) FROM note_likes WHERE ${inWindow('created_at')}),
+               (SELECT COUNT(*) FROM chat_sessions WHERE ${inWindow('created_at')})
+             )`,
+          ).bind(day, from, to, from, to, from, to, from, to, from, to),
+        ]);
         break;
       }
       default:

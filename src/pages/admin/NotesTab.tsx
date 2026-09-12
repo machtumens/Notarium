@@ -1,6 +1,19 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import api from '../../lib/api';
-import { darkTheme, cardStyle } from '../../theme';
+import {
+  Button,
+  Callout,
+  EmptyState,
+  Filters,
+  Panel,
+  Pill,
+  RowActions,
+  SelectField,
+  TableWrap,
+  TextField,
+} from '../../components/ops/ConsoleKit';
+import { ink, rowSubStyle, tdNumStyle, tdStyle, thStyle } from '../../components/ops/tokens';
+import { formatDateTime } from '../../lib/datetime';
 
 interface ModNote {
   id: number;
@@ -14,22 +27,16 @@ interface ModNote {
   created_at: string;
 }
 
-const inputStyle: React.CSSProperties = {
-  padding: '10px 12px',
-  background: darkTheme.colors.bgSecondary,
-  border: `1px solid ${darkTheme.colors.borderColor}`,
-  borderRadius: darkTheme.borderRadius.sm,
-  color: darkTheme.colors.textPrimary,
-  fontSize: '14px',
-  boxSizing: 'border-box',
-};
+type StateFilter = 'all' | 'active' | 'removed' | 'featured';
 
 export default function NotesTab() {
   const [notes, setNotes] = useState<ModNote[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState('');
   const [sort, setSort] = useState('recent');
+  const [stateFilter, setStateFilter] = useState<StateFilter>('all');
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState<number | null>(null);
 
   const loadNotes = async () => {
@@ -39,6 +46,7 @@ export default function NotesTab() {
       setNotes((res.notes as ModNote[]) || []);
     } catch (err) {
       console.error('Failed to load notes:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load notes');
     } finally {
       setLoading(false);
     }
@@ -50,11 +58,24 @@ export default function NotesTab() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sort]);
 
-  const runAction = async (id: number, action: () => Promise<unknown>) => {
+  // State filtering is local so switching Active/Removed does not re-query.
+  const visible = useMemo(
+    () =>
+      notes.filter((n) => {
+        if (stateFilter === 'active') return !n.deleted_at;
+        if (stateFilter === 'removed') return Boolean(n.deleted_at);
+        if (stateFilter === 'featured') return Boolean(n.featured);
+        return true;
+      }),
+    [notes, stateFilter],
+  );
+
+  const runAction = async (id: number, action: () => Promise<unknown>, done: string) => {
     setBusy(id);
     setError(null);
     try {
       await action();
+      setNotice(done);
       await loadNotes();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Action failed');
@@ -64,245 +85,160 @@ export default function NotesTab() {
   };
 
   return (
-    <div>
-      <h3
-        style={{
-          fontSize: '20px',
-          fontWeight: '600',
-          marginBottom: '16px',
-          color: darkTheme.colors.textPrimary,
-        }}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+      {error && <Callout tone="crit">{error}</Callout>}
+      {notice && <Callout>{notice}</Callout>}
+
+      <Panel
+        legend="Notes"
+        sub={
+          loading
+            ? 'loading…'
+            : visible.length === notes.length
+              ? `${notes.length} notes`
+              : `${visible.length} of ${notes.length}`
+        }
+        bodyPadding="0"
+        actions={
+          <Filters>
+            <TextField
+              type="search"
+              label="Search notes"
+              placeholder="Title or description"
+              value={q}
+              onChange={setQ}
+              width="200px"
+            />
+            <SelectField<StateFilter>
+              label="Filter by state"
+              value={stateFilter}
+              onChange={setStateFilter}
+              options={[
+                { value: 'all', label: 'Any state' },
+                { value: 'active', label: 'Live' },
+                { value: 'removed', label: 'Removed' },
+                { value: 'featured', label: 'Featured' },
+              ]}
+            />
+            <SelectField
+              label="Sort"
+              value={sort}
+              onChange={setSort}
+              options={[
+                { value: 'recent', label: 'Newest' },
+                { value: 'likes', label: 'Most liked' },
+                { value: 'featured', label: 'Featured first' },
+              ]}
+            />
+            <Button variant="primary" onClick={loadNotes}>
+              Search
+            </Button>
+          </Filters>
+        }
       >
-        <i
-          className="fas fa-file-lines"
-          style={{ marginRight: '8px', color: darkTheme.colors.accent }}
-        ></i>
-        Notes ({notes.length})
-      </h3>
-
-      {/* Filters */}
-      <div
-        style={{
-          ...(cardStyle as React.CSSProperties),
-          display: 'flex',
-          gap: '12px',
-          alignItems: 'flex-end',
-          marginBottom: '24px',
-          flexWrap: 'wrap',
-        }}
-      >
-        <div style={{ flex: '2 1 220px' }}>
-          <label
-            style={{
-              fontSize: '12px',
-              color: darkTheme.colors.textSecondary,
-              marginBottom: '4px',
-              display: 'block',
-            }}
-          >
-            Search
-          </label>
-          <input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && loadNotes()}
-            placeholder="Title or description"
-            style={{ ...inputStyle, width: '100%' }}
-          />
-        </div>
-        <div style={{ flex: '1 1 140px' }}>
-          <label
-            style={{
-              fontSize: '12px',
-              color: darkTheme.colors.textSecondary,
-              marginBottom: '4px',
-              display: 'block',
-            }}
-          >
-            Sort
-          </label>
-          <select
-            value={sort}
-            onChange={(e) => setSort(e.target.value)}
-            style={{ ...inputStyle, width: '100%' }}
-          >
-            <option value="recent">Most recent</option>
-            <option value="likes">Most liked</option>
-            <option value="featured">Featured first</option>
-          </select>
-        </div>
-        <button
-          onClick={loadNotes}
-          style={{
-            padding: '10px 20px',
-            background: darkTheme.colors.accent,
-            border: 'none',
-            color: '#fff',
-            borderRadius: darkTheme.borderRadius.md,
-            cursor: 'pointer',
-            fontSize: '14px',
-            fontWeight: '600',
-          }}
-        >
-          Search
-        </button>
-      </div>
-
-      {error && (
-        <div
-          style={{
-            padding: '12px 16px',
-            marginBottom: '16px',
-            background: 'rgba(239, 68, 68, 0.1)',
-            border: '1px solid rgba(239, 68, 68, 0.3)',
-            borderRadius: darkTheme.borderRadius.md,
-            color: '#fca5a5',
-            fontSize: '13px',
-          }}
-        >
-          {error}
-        </div>
-      )}
-
-      {loading ? (
-        <div
-          style={{ padding: '40px', textAlign: 'center', color: darkTheme.colors.textSecondary }}
-        >
-          Loading notes...
-        </div>
-      ) : (
-        <div style={{ ...(cardStyle as React.CSSProperties), padding: 0, overflow: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead style={{ background: darkTheme.colors.bgSecondary }}>
+        {loading ? (
+          <EmptyState>Loading notes…</EmptyState>
+        ) : visible.length === 0 ? (
+          <EmptyState>
+            {notes.length === 0
+              ? 'No notes match that search.'
+              : 'No notes in this state. Try “Any state”.'}
+          </EmptyState>
+        ) : (
+          <TableWrap maxHeight="620px">
+            <thead>
               <tr>
-                {['Title', 'Author', 'Subject', 'Likes', 'State', 'Actions'].map((h) => (
-                  <th
-                    key={h}
-                    style={{
-                      padding: '12px 16px',
-                      textAlign: 'left',
-                      borderBottom: `1px solid ${darkTheme.colors.borderColor}`,
-                      fontWeight: '600',
-                      fontSize: '13px',
-                    }}
-                  >
-                    {h}
-                  </th>
-                ))}
+                <th style={thStyle}>Note</th>
+                <th style={thStyle}>Author</th>
+                <th style={thStyle}>Subject</th>
+                <th style={thStyle}>State</th>
+                <th style={{ ...thStyle, textAlign: 'right' }}>Likes</th>
+                <th style={thStyle} aria-label="Actions" />
               </tr>
             </thead>
             <tbody>
-              {notes.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={6}
-                    style={{
-                      padding: '40px',
-                      textAlign: 'center',
-                      color: darkTheme.colors.textSecondary,
-                    }}
-                  >
-                    No notes found
-                  </td>
-                </tr>
-              ) : (
-                notes.map((note) => (
-                  <tr
-                    key={note.id}
-                    style={{ borderBottom: `1px solid ${darkTheme.colors.borderColor}` }}
-                  >
-                    <td style={{ padding: '12px 16px', fontSize: '14px', fontWeight: '500' }}>
-                      {note.featured ? '⭐ ' : ''}
-                      {note.title}
+              {visible.map((note) => {
+                const isBusy = busy === note.id;
+                return (
+                  <tr key={note.id} className="ops-row">
+                    <td style={tdStyle}>
+                      <div style={{ fontWeight: 500 }}>{note.title}</div>
+                      <div style={rowSubStyle}>added {formatDateTime(note.created_at)}</div>
                     </td>
-                    <td
-                      style={{
-                        padding: '12px 16px',
-                        fontSize: '13px',
-                        color: darkTheme.colors.textSecondary,
-                      }}
-                    >
-                      {note.author_name || '—'}
-                    </td>
-                    <td
-                      style={{
-                        padding: '12px 16px',
-                        fontSize: '13px',
-                        color: darkTheme.colors.textSecondary,
-                      }}
-                    >
-                      {note.subject_name || '—'}
-                    </td>
-                    <td style={{ padding: '12px 16px', fontSize: '13px' }}>{note.likes}</td>
-                    <td style={{ padding: '12px 16px', fontSize: '12px' }}>
-                      {note.deleted_at ? (
-                        <span style={{ color: '#fca5a5' }}>Deleted</span>
-                      ) : (
-                        <span style={{ color: '#86efac' }}>Active</span>
-                      )}
-                    </td>
-                    <td style={{ padding: '12px 16px' }}>
-                      <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                        <button
-                          onClick={() => runAction(note.id, () => api.admin.featureNote(note.id))}
-                          disabled={busy === note.id}
-                          style={{
-                            padding: '6px 10px',
-                            background: 'rgba(245, 158, 11, 0.15)',
-                            border: '1px solid rgba(245, 158, 11, 0.3)',
-                            color: '#fbbf24',
-                            borderRadius: darkTheme.borderRadius.sm,
-                            cursor: 'pointer',
-                            fontSize: '12px',
-                          }}
-                        >
-                          {note.featured ? 'Unfeature' : 'Feature'}
-                        </button>
+                    <td style={tdStyle}>{note.author_name || '—'}</td>
+                    <td style={tdStyle}>{note.subject_name || '—'}</td>
+                    <td style={tdStyle}>
+                      <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
                         {note.deleted_at ? (
-                          <button
-                            onClick={() => runAction(note.id, () => api.admin.restoreNote(note.id))}
-                            disabled={busy === note.id}
-                            style={{
-                              padding: '6px 10px',
-                              background: 'rgba(34, 197, 94, 0.2)',
-                              border: '1px solid rgba(34, 197, 94, 0.3)',
-                              color: '#86efac',
-                              borderRadius: darkTheme.borderRadius.sm,
-                              cursor: 'pointer',
-                              fontSize: '12px',
-                            }}
-                          >
-                            Restore
-                          </button>
+                          <Pill tone="mute">Removed</Pill>
                         ) : (
-                          <button
-                            onClick={() => {
-                              if (!confirm('Delete this note?')) return;
-                              runAction(note.id, () => api.admin.deleteNote(note.id));
-                            }}
-                            disabled={busy === note.id}
-                            style={{
-                              padding: '6px 10px',
-                              background: 'rgba(239, 68, 68, 0.2)',
-                              border: 'none',
-                              color: '#fca5a5',
-                              borderRadius: darkTheme.borderRadius.sm,
-                              cursor: 'pointer',
-                              fontSize: '12px',
-                            }}
-                          >
-                            Delete
-                          </button>
+                          <Pill tone="ok">Live</Pill>
                         )}
+                        {Boolean(note.featured) && <Pill tone="info">Featured</Pill>}
                       </div>
                     </td>
+                    <td style={tdNumStyle}>{note.likes}</td>
+                    <td style={tdStyle}>
+                      <RowActions>
+                        <Button
+                          size="xs"
+                          disabled={isBusy}
+                          onClick={() =>
+                            runAction(
+                              note.id,
+                              () => api.admin.featureNote(note.id),
+                              note.featured
+                                ? `“${note.title}” is no longer featured.`
+                                : `“${note.title}” is now featured.`,
+                            )
+                          }
+                        >
+                          {note.featured ? 'Unfeature' : 'Feature'}
+                        </Button>
+                        {note.deleted_at ? (
+                          <Button
+                            size="xs"
+                            disabled={isBusy}
+                            onClick={() =>
+                              runAction(
+                                note.id,
+                                () => api.admin.restoreNote(note.id),
+                                `“${note.title}” is live again.`,
+                              )
+                            }
+                          >
+                            Restore
+                          </Button>
+                        ) : (
+                          <Button
+                            size="xs"
+                            variant="danger"
+                            disabled={isBusy}
+                            onClick={() =>
+                              runAction(
+                                note.id,
+                                () => api.admin.deleteNote(note.id),
+                                `“${note.title}” removed. It stays under Removed and can be restored.`,
+                              )
+                            }
+                          >
+                            Remove
+                          </Button>
+                        )}
+                      </RowActions>
+                    </td>
                   </tr>
-                ))
-              )}
+                );
+              })}
             </tbody>
-          </table>
-        </div>
-      )}
+          </TableWrap>
+        )}
+      </Panel>
+
+      <div style={{ fontSize: '11px', color: ink.fainter }}>
+        Removing a note is reversible — it moves to Removed, keeps its likes, and can be restored.
+        Permanent deletion lives in the ops Danger zone.
+      </div>
     </div>
   );
 }

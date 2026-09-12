@@ -13,6 +13,7 @@ export default function UploadNoteModal({
   preselectedSubject,
 }: UploadNoteModalProps) {
   const {
+    user,
     uploadMode,
     uploadImages,
     setUploadImages,
@@ -414,6 +415,7 @@ export default function UploadNoteModal({
         )}
 
         <NoteFormFields
+          hasClass={Boolean(user?.class)}
           isMobile={isMobile}
           uploadMode={uploadMode}
           subjects={subjects}

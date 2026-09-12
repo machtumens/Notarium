@@ -100,3 +100,33 @@ describe('D. Rate limiting (61-75)', () => {
     expect(r.status).not.toBe(401);
   });
 });
+
+describe('D. Rate limiting — shared-IP schools', () => {
+  // The school is behind one NAT. An IP-only key gave the whole school five
+  // logins per quarter hour, so one student mistyping a password locked out
+  // everyone sitting next to them.
+  it('76. two students behind one NAT do not consume each other budget', async () => {
+    const sharedIp = '203.0.113.9';
+    const classmate = async (email: string) =>
+      call('/api/auth/login', { body: { email, password: 'wrong-password' }, ip: sharedIp });
+
+    for (let i = 0; i < 6; i++) await classmate('student.a@sekolahkristencalvin.org');
+
+    expect((await classmate('student.a@sekolahkristencalvin.org')).status).toBe(429);
+    expect((await classmate('student.b@sekolahkristencalvin.org')).status).not.toBe(429);
+  });
+
+  it('77. one account is still capped at five guesses from a single origin', async () => {
+    const ip = '203.0.113.10';
+    const guess = async () =>
+      call('/api/auth/login', {
+        body: { email: 'victim@sekolahkristencalvin.org', password: 'wrong-password' },
+        ip,
+      });
+
+    const codes: number[] = [];
+    for (let i = 0; i < 6; i++) codes.push((await guess()).status);
+    expect(codes.slice(0, 5).every((c) => c !== 429)).toBe(true);
+    expect(codes[5]).toBe(429);
+  });
+});

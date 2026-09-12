@@ -9,6 +9,7 @@ import {
   formatLongDateTime,
   formatCalendarDate,
   formatAppointment,
+  formatRelativeDay,
   SCHOOL_TIMEZONE,
 } from '../datetime';
 
@@ -115,5 +116,54 @@ describe('bad input never renders as a wrong time', () => {
     setDisplayZone('Mars/Olympus_Mons');
     expect(() => formatDate(ACROSS_MIDNIGHT)).not.toThrow();
     expect(formatDate(ACROSS_MIDNIGHT)).toMatch(/2026/);
+  });
+});
+
+describe('formatRelativeDay', () => {
+  // The old formatter did Math.ceil over elapsed milliseconds, which made
+  // "Today" unreachable: anything a millisecond old ceils to 1 and rendered as
+  // "Yesterday". A note uploaded minutes ago claimed to be from yesterday.
+  const minutesAgo = (n: number) => new Date(Date.now() - n * 60_000);
+  const daysAgoInZone = (n: number) => {
+    const d = new Date();
+    d.setDate(d.getDate() - n);
+    // Midday keeps the calendar day unambiguous either side of a zone offset.
+    d.setHours(12, 0, 0, 0);
+    return d;
+  };
+
+  beforeEach(() => setDisplayZone(SCHOOL_TIMEZONE));
+
+  it('calls a note from a few minutes ago Today, not Yesterday', () => {
+    expect(formatRelativeDay(minutesAgo(6))).toBe('Today');
+  });
+
+  it('still says Today at the far end of the same calendar day', () => {
+    expect(formatRelativeDay(minutesAgo(60 * 3))).toBe('Today');
+  });
+
+  it('counts calendar days, so one day back is Yesterday', () => {
+    expect(formatRelativeDay(daysAgoInZone(1))).toBe('Yesterday');
+  });
+
+  it('reports whole days for the rest of the week', () => {
+    expect(formatRelativeDay(daysAgoInZone(3))).toBe('3 days ago');
+  });
+
+  it('singularises one week', () => {
+    expect(formatRelativeDay(daysAgoInZone(8))).toBe('1 week ago');
+  });
+
+  it('falls back to an absolute date beyond a month', () => {
+    expect(formatRelativeDay('2020-01-15T06:00:00Z')).toBe('15 Jan 2020');
+  });
+
+  it('never renders a future instant as though it had passed', () => {
+    const scheduled = new Date(Date.now() + 3 * 86_400_000);
+    expect(formatRelativeDay(scheduled)).not.toMatch(/ago|Today|Yesterday/);
+  });
+
+  it('returns the fallback for an unparseable value', () => {
+    expect(formatRelativeDay(null)).toBe('—');
   });
 });

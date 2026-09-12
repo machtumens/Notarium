@@ -20,6 +20,7 @@ interface NoteFormFieldsProps {
   suggestedTags: string[];
   setSuggestedTags: (tags: string[]) => void;
   visibility: Visibility;
+  hasClass: boolean;
   setVisibility: (value: Visibility) => void;
   saveAsDraft: boolean;
   setSaveAsDraft: (value: boolean) => void;
@@ -44,6 +45,7 @@ export default function NoteFormFields({
   suggestedTags,
   setSuggestedTags,
   visibility,
+  hasClass,
   setVisibility,
   saveAsDraft,
   setSaveAsDraft,
@@ -465,7 +467,10 @@ export default function NoteFormFields({
         >
           {visibility === 'everyone'
             ? 'All users can see this note'
-            : 'Only students in your class can see this note'}
+            : hasClass
+              ? 'Only students in your class can see this note'
+              : 'You are not in a class yet, so nobody — not even you — would be ' +
+                'able to find this note. Pick "Everyone", or set your class in Settings.'}
         </p>
       </div>
 

@@ -3,6 +3,7 @@ import { SignJWT, jwtVerify, createRemoteJWKSet } from 'jose';
 import type { Env, User } from './env';
 import { JWT_EXPIRATION } from './env';
 import { jsonResponse } from './response';
+import { isoUtc } from './time';
 
 type Identity = { id: number; email: string; role: string; admin_role?: string };
 
@@ -228,6 +229,53 @@ const USER_COLUMNS =
   'last_seen_at, timezone, created_at, updated_at';
 
 /**
+ * How stale `last_seen_at` may get before the next authenticated request
+ * refreshes it. The column feeds the `active_users` figure in the daily usage
+ * snapshot, which asks "did this person use the app today" — a fifteen-minute
+ * resolution answers that exactly as well as a per-request write would, for a
+ * fraction of the writes.
+ */
+const LAST_SEEN_THROTTLE_MS = 15 * 60 * 1000;
+
+/**
+ * Record that `userId` is currently using the app.
+ *
+ * Pass `knownLastSeen` when the caller already has the row: a fresh value
+ * short-circuits in JS and D1 is never touched, so the common request pays
+ * nothing. The SQL guard repeats the same condition so two concurrent requests
+ * cannot both write.
+ *
+ * Never throws. This is telemetry — a failure here must not turn a working
+ * request into an error.
+ */
+export async function touchLastSeen(
+  env: Env,
+  userId: number,
+  knownLastSeen?: string | null,
+): Promise<void> {
+  const now = new Date();
+
+  if (knownLastSeen) {
+    const seen = Date.parse(knownLastSeen);
+    if (!Number.isNaN(seen) && now.getTime() - seen < LAST_SEEN_THROTTLE_MS) return;
+  }
+
+  const staleBefore = isoUtc(new Date(now.getTime() - LAST_SEEN_THROTTLE_MS));
+  try {
+    await env.DB.prepare(
+      `UPDATE users
+          SET last_seen_at = ?
+        WHERE id = ?
+          AND (last_seen_at IS NULL OR last_seen_at < ?)`,
+    )
+      .bind(isoUtc(now), userId, staleBefore)
+      .run();
+  } catch {
+    // Deliberately swallowed — see the doc comment.
+  }
+}
+
+/**
  * JWT-only identity resolver. Returns the full user row for a valid Bearer
  * token, or null when the request is unauthenticated (or the token's user no
  * longer exists). Never trusts a client header and never creates a user —
@@ -242,7 +290,12 @@ export async function getAuthedUser(request: Request, env: Env): Promise<User | 
   const user = await env.DB.prepare(`SELECT ${USER_COLUMNS} FROM users WHERE id = ?`)
     .bind(userId)
     .first();
-  return (user as unknown as User) ?? null;
+  if (!user) return null;
+
+  // USER_COLUMNS already carries last_seen_at, so this is free unless a write
+  // is actually due.
+  await touchLastSeen(env, userId, (user as unknown as User).last_seen_at);
+  return user as unknown as User;
 }
 
 /**

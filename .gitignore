@@ -62,3 +62,8 @@ README_INTERNAL.md
 # settings.local.json is per-developer.
 .claude/worktrees/
 .claude/settings.local.json
+
+# D1 exports taken by backend/scripts/backfill-iso-timestamps.sh before it
+# writes. These are full database dumps — real student names, emails and notes —
+# and must never be committed.
+backend/backups/

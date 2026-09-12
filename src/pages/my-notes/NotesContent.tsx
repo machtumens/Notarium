@@ -86,7 +86,7 @@ export default function NotesContent({
                   marginBottom: 0,
                 }}
               >
-                {notes.length} {activeTab} notes
+                {notes.length} {activeTab} {notes.length === 1 ? 'note' : 'notes'}
               </p>
             </div>
             <button

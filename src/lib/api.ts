@@ -211,20 +211,24 @@ export const api = {
   getCurrentUser: async (): Promise<User> => {
     const token = getToken();
     logger.debug('api', 'getCurrentUser', { hasToken: !!token });
-    const response = await api.request<User>('/api/auth/me', {
+    // /api/auth/me answers with an envelope; unwrap it. Returning the envelope
+    // leaves every consumer reading user.name / user.role / user.timezone as
+    // undefined, which reads as "logged in but nobody" rather than as an error.
+    const response = await api.request<{ user: User }>('/api/auth/me', {
       method: 'GET',
     });
-    return response;
+    return response.user;
   },
 
   updateProfile: async (data: ProfileUpdateData): Promise<User> => {
     const token = getToken();
     logger.debug('api', 'updateProfile', { hasToken: !!token });
-    const response = await api.request<User>('/api/auth/profile', {
+    // Same envelope as /api/auth/me — unwrap rather than hand back the wrapper.
+    const response = await api.request<{ user: User }>('/api/auth/profile', {
       method: 'PUT',
       body: data,
     });
-    return response;
+    return response.user;
   },
 
   notes: {

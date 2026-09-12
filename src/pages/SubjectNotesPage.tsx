@@ -415,6 +415,12 @@ export default function SubjectNotesPage() {
           }}
         >
           {filteredAndSortedNotes.map((note) => (
+            // Deliberate: the card click is a mouse-only convenience duplicating
+            // the title button below. The card cannot itself be role="button" —
+            // it contains real <button>s, and nesting those inside a button hides
+            // them from screen readers. Keyboard users open the note via the
+            // title button, which is the accessible control.
+            // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions
             <div
               key={note.id}
               onClick={() => setSelectedNote(note)}
@@ -633,17 +639,32 @@ export default function SubjectNotesPage() {
                   flex: 1,
                 }}
               >
-                {/* Title */}
+                {/* Title. The whole card is clickable for a mouse, but the
+                    keyboard/screen-reader entry point is this button: the card
+                    contains its own buttons, so it cannot itself be one. */}
                 <h3
                   style={{
                     fontSize: '18px',
                     fontWeight: '600',
                     margin: '0 0 8px 0',
-                    color: darkTheme.colors.textPrimary,
                     lineHeight: '1.3',
                   }}
                 >
-                  {note.title}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSelectedNote(note);
+                    }}
+                    style={{
+                      all: 'unset',
+                      cursor: 'pointer',
+                      color: darkTheme.colors.textPrimary,
+                      font: 'inherit',
+                    }}
+                  >
+                    {note.title}
+                  </button>
                 </h3>
 
                 {/* Author and Class */}

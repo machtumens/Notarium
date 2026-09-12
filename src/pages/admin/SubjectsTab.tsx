@@ -1,17 +1,17 @@
 import { useEffect, useState } from 'react';
 import api from '../../lib/api';
-import { darkTheme, cardStyle } from '../../theme';
 import type { AdminSubject } from '../../types';
-
-const inputStyle: React.CSSProperties = {
-  padding: '10px 12px',
-  background: darkTheme.colors.bgSecondary,
-  border: `1px solid ${darkTheme.colors.borderColor}`,
-  borderRadius: darkTheme.borderRadius.sm,
-  color: darkTheme.colors.textPrimary,
-  fontSize: '14px',
-  boxSizing: 'border-box',
-};
+import {
+  Button,
+  Callout,
+  EmptyState,
+  Panel,
+  Pill,
+  RowActions,
+  TableWrap,
+  TextField,
+} from '../../components/ops/ConsoleKit';
+import { ink, tdNumStyle, tdStyle, thStyle } from '../../components/ops/tokens';
 
 export default function SubjectsTab() {
   const [subjects, setSubjects] = useState<AdminSubject[]>([]);
@@ -23,6 +23,7 @@ export default function SubjectsTab() {
   const [editId, setEditId] = useState<number | null>(null);
   const [editName, setEditName] = useState('');
   const [editIcon, setEditIcon] = useState('');
+  const [confirmDelete, setConfirmDelete] = useState<number | null>(null);
 
   const loadSubjects = async () => {
     try {
@@ -31,6 +32,7 @@ export default function SubjectsTab() {
       setSubjects(res.subjects || []);
     } catch (err) {
       console.error('Failed to load subjects:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load subjects');
     } finally {
       setLoading(false);
     }
@@ -78,11 +80,11 @@ export default function SubjectsTab() {
   };
 
   const handleDelete = async (id: number) => {
-    if (!confirm('Delete this subject?')) return;
     setBusy(true);
     setError(null);
     try {
       await api.admin.deleteSubject(id);
+      setConfirmDelete(null);
       await loadSubjects();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to delete subject');
@@ -92,269 +94,152 @@ export default function SubjectsTab() {
   };
 
   return (
-    <div>
-      <h3
-        style={{
-          fontSize: '20px',
-          fontWeight: '600',
-          marginBottom: '16px',
-          color: darkTheme.colors.textPrimary,
-        }}
-      >
-        <i
-          className="fas fa-book"
-          style={{ marginRight: '8px', color: darkTheme.colors.accent }}
-        ></i>
-        Subjects ({subjects.length})
-      </h3>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+      {error && <Callout tone="crit">{error}</Callout>}
 
-      {/* Create form */}
-      <div
-        style={{
-          ...(cardStyle as React.CSSProperties),
-          display: 'flex',
-          gap: '12px',
-          alignItems: 'flex-end',
-          marginBottom: '24px',
-          flexWrap: 'wrap',
-        }}
-      >
-        <div style={{ flex: '2 1 200px' }}>
-          <label
-            style={{
-              fontSize: '12px',
-              color: darkTheme.colors.textSecondary,
-              marginBottom: '4px',
-              display: 'block',
-            }}
-          >
-            Name
-          </label>
-          <input
+      <Panel legend="Add a subject" sub="students file notes under these">
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+          <TextField
+            label="Subject name"
+            placeholder="e.g. Bedrijfseconomie"
             value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-            placeholder="Subject name"
-            style={{ ...inputStyle, width: '100%' }}
+            onChange={setNewName}
+            width="240px"
           />
-        </div>
-        <div style={{ flex: '1 1 120px' }}>
-          <label
-            style={{
-              fontSize: '12px',
-              color: darkTheme.colors.textSecondary,
-              marginBottom: '4px',
-              display: 'block',
-            }}
-          >
-            Icon
-          </label>
-          <input
+          <TextField
+            label="Icon"
+            placeholder="Icon — one character, e.g. €"
             value={newIcon}
-            onChange={(e) => setNewIcon(e.target.value)}
-            placeholder="e.g. 📐 or fa-flask"
-            style={{ ...inputStyle, width: '100%' }}
+            onChange={setNewIcon}
+            width="120px"
           />
+          <Button variant="primary" disabled={busy || !newName.trim()} onClick={handleCreate}>
+            {busy ? 'Saving…' : 'Add subject'}
+          </Button>
         </div>
-        <button
-          onClick={handleCreate}
-          disabled={busy || !newName.trim()}
-          style={{
-            padding: '10px 20px',
-            background: darkTheme.colors.accent,
-            border: 'none',
-            color: '#fff',
-            borderRadius: darkTheme.borderRadius.md,
-            cursor: busy ? 'not-allowed' : 'pointer',
-            fontSize: '14px',
-            fontWeight: '600',
-            opacity: busy || !newName.trim() ? 0.6 : 1,
-          }}
-        >
-          Add Subject
-        </button>
-      </div>
+      </Panel>
 
-      {error && (
-        <div
-          style={{
-            padding: '12px 16px',
-            marginBottom: '16px',
-            background: 'rgba(239, 68, 68, 0.1)',
-            border: '1px solid rgba(239, 68, 68, 0.3)',
-            borderRadius: darkTheme.borderRadius.md,
-            color: '#fca5a5',
-            fontSize: '13px',
-          }}
-        >
-          {error}
-        </div>
-      )}
-
-      {/* List */}
-      {loading ? (
-        <div
-          style={{ padding: '40px', textAlign: 'center', color: darkTheme.colors.textSecondary }}
-        >
-          Loading subjects...
-        </div>
-      ) : (
-        <div
-          style={{
-            ...(cardStyle as React.CSSProperties),
-            padding: 0,
-            overflow: 'auto',
-          }}
-        >
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead style={{ background: darkTheme.colors.bgSecondary }}>
+      <Panel
+        legend="Subjects"
+        sub={loading ? 'loading…' : `${subjects.length} active`}
+        bodyPadding="0"
+      >
+        {loading ? (
+          <EmptyState>Loading subjects…</EmptyState>
+        ) : subjects.length === 0 ? (
+          <EmptyState>No subjects yet. Add the first one above.</EmptyState>
+        ) : (
+          <TableWrap>
+            <thead>
               <tr>
-                {['Icon', 'Name', 'Notes', 'Actions'].map((h) => (
-                  <th
-                    key={h}
-                    style={{
-                      padding: '12px 16px',
-                      textAlign: 'left',
-                      borderBottom: `1px solid ${darkTheme.colors.borderColor}`,
-                      fontWeight: '600',
-                      fontSize: '13px',
-                    }}
-                  >
-                    {h}
-                  </th>
-                ))}
+                <th style={thStyle}>Subject</th>
+                <th style={thStyle}>Icon</th>
+                <th style={{ ...thStyle, textAlign: 'right' }}>Notes</th>
+                <th style={thStyle} aria-label="Actions" />
               </tr>
             </thead>
             <tbody>
-              {subjects.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={4}
-                    style={{
-                      padding: '40px',
-                      textAlign: 'center',
-                      color: darkTheme.colors.textSecondary,
-                    }}
-                  >
-                    No subjects yet
-                  </td>
-                </tr>
-              ) : (
-                subjects.map((subject) => (
-                  <tr
-                    key={subject.id}
-                    style={{ borderBottom: `1px solid ${darkTheme.colors.borderColor}` }}
-                  >
-                    {editId === subject.id ? (
-                      <>
-                        <td style={{ padding: '8px 16px' }}>
-                          <input
-                            value={editIcon}
-                            onChange={(e) => setEditIcon(e.target.value)}
-                            style={{ ...inputStyle, width: '80px' }}
-                          />
-                        </td>
-                        <td style={{ padding: '8px 16px' }}>
-                          <input
-                            value={editName}
-                            onChange={(e) => setEditName(e.target.value)}
-                            style={{ ...inputStyle, width: '100%' }}
-                          />
-                        </td>
-                        <td style={{ padding: '8px 16px', fontSize: '13px' }}>
-                          {subject.note_count}
-                        </td>
-                        <td style={{ padding: '8px 16px' }}>
-                          <div style={{ display: 'flex', gap: '6px' }}>
-                            <button
-                              onClick={() => handleSaveEdit(subject.id)}
-                              disabled={busy}
-                              style={{
-                                padding: '6px 12px',
-                                background: darkTheme.colors.accent,
-                                border: 'none',
-                                color: '#fff',
-                                borderRadius: darkTheme.borderRadius.sm,
-                                cursor: 'pointer',
-                                fontSize: '12px',
-                              }}
-                            >
-                              Save
-                            </button>
-                            <button
-                              onClick={() => setEditId(null)}
-                              style={{
-                                padding: '6px 12px',
-                                background: darkTheme.colors.bgSecondary,
-                                border: `1px solid ${darkTheme.colors.borderColor}`,
-                                color: darkTheme.colors.textPrimary,
-                                borderRadius: darkTheme.borderRadius.sm,
-                                cursor: 'pointer',
-                                fontSize: '12px',
-                              }}
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                        </td>
-                      </>
-                    ) : (
-                      <>
-                        <td style={{ padding: '12px 16px', fontSize: '18px' }}>
-                          {subject.icon || '—'}
-                        </td>
-                        <td style={{ padding: '12px 16px', fontSize: '14px', fontWeight: '500' }}>
-                          {subject.name}
-                        </td>
-                        <td
+              {subjects.map((subject) => {
+                const editing = editId === subject.id;
+                const pendingDelete = confirmDelete === subject.id;
+                return (
+                  <tr key={subject.id} className="ops-row">
+                    <td style={tdStyle}>
+                      {editing ? (
+                        <TextField
+                          label="Subject name"
+                          value={editName}
+                          onChange={setEditName}
+                          width="220px"
+                        />
+                      ) : (
+                        <span style={{ fontWeight: 500 }}>{subject.name}</span>
+                      )}
+                    </td>
+                    <td style={tdStyle}>
+                      {editing ? (
+                        <TextField
+                          label="Icon"
+                          value={editIcon}
+                          onChange={setEditIcon}
+                          width="70px"
+                        />
+                      ) : (
+                        <span style={{ fontSize: '15px' }}>{subject.icon || '—'}</span>
+                      )}
+                    </td>
+                    <td style={tdNumStyle}>{subject.note_count ?? 0}</td>
+                    <td style={tdStyle}>
+                      {editing ? (
+                        <div style={{ display: 'flex', gap: '4px', justifyContent: 'flex-end' }}>
+                          <Button size="xs" variant="ghost" onClick={() => setEditId(null)}>
+                            Cancel
+                          </Button>
+                          <Button
+                            size="xs"
+                            variant="primary"
+                            disabled={busy || !editName.trim()}
+                            onClick={() => handleSaveEdit(subject.id)}
+                          >
+                            Save
+                          </Button>
+                        </div>
+                      ) : pendingDelete ? (
+                        <div
                           style={{
-                            padding: '12px 16px',
-                            fontSize: '13px',
-                            color: darkTheme.colors.textSecondary,
+                            display: 'flex',
+                            gap: '6px',
+                            alignItems: 'center',
+                            justifyContent: 'flex-end',
                           }}
                         >
-                          {subject.note_count}
-                        </td>
-                        <td style={{ padding: '12px 16px' }}>
-                          <div style={{ display: 'flex', gap: '6px' }}>
-                            <button
-                              onClick={() => startEdit(subject)}
-                              style={{
-                                padding: '6px 12px',
-                                background: 'rgba(59, 130, 246, 0.15)',
-                                border: '1px solid rgba(59, 130, 246, 0.3)',
-                                color: '#60a5fa',
-                                borderRadius: darkTheme.borderRadius.sm,
-                                cursor: 'pointer',
-                                fontSize: '12px',
-                              }}
-                            >
-                              Edit
-                            </button>
-                            <button
-                              onClick={() => handleDelete(subject.id)}
-                              disabled={busy}
-                              style={{
-                                padding: '6px 12px',
-                                background: 'rgba(239, 68, 68, 0.2)',
-                                border: 'none',
-                                color: '#fca5a5',
-                                borderRadius: darkTheme.borderRadius.sm,
-                                cursor: 'pointer',
-                                fontSize: '12px',
-                              }}
-                            >
-                              Delete
-                            </button>
-                          </div>
-                        </td>
-                      </>
-                    )}
+                          <span style={{ fontSize: '11px', color: ink.crit }}>
+                            {(subject.note_count ?? 0) > 0
+                              ? `${subject.note_count} notes will lose their subject.`
+                              : 'Delete this subject?'}
+                          </span>
+                          <Button size="xs" variant="ghost" onClick={() => setConfirmDelete(null)}>
+                            Keep
+                          </Button>
+                          <Button
+                            size="xs"
+                            variant="danger"
+                            disabled={busy}
+                            onClick={() => handleDelete(subject.id)}
+                          >
+                            Delete
+                          </Button>
+                        </div>
+                      ) : (
+                        <RowActions>
+                          <Button size="xs" onClick={() => startEdit(subject)}>
+                            Rename
+                          </Button>
+                          <Button
+                            size="xs"
+                            variant="danger"
+                            onClick={() => setConfirmDelete(subject.id)}
+                          >
+                            Delete
+                          </Button>
+                        </RowActions>
+                      )}
+                    </td>
                   </tr>
-                ))
-              )}
+                );
+              })}
             </tbody>
-          </table>
-        </div>
+          </TableWrap>
+        )}
+      </Panel>
+
+      {subjects.some((s) => (s.note_count ?? 0) === 0) && (
+        <Callout tone="warn">
+          <Pill tone="warn" bare>
+            Empty
+          </Pill>{' '}
+          Some subjects have no notes at all. Worth an announcement, or worth removing.
+        </Callout>
       )}
     </div>
   );

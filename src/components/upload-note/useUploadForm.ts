@@ -32,6 +32,11 @@ export function useUploadForm({
   const [fullscreenImage, setFullscreenImage] = useState<number | null>(null);
   const [currentPage, setCurrentPage] = useState(0);
   const [ocrCompleted, setOcrCompleted] = useState(false);
+  // True when OCR ran but produced nothing usable — a failed call, or a
+  // successful call over a blank page. Publishing is still allowed, but not
+  // silently: an empty note is invisible to search and useless to the quiz
+  // builder, so the user has to say yes to it.
+  const [ocrFailed, setOcrFailed] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('image');
   const [saveAsDraft, setSaveAsDraft] = useState(false);
   const [scheduledDate, setScheduledDate] = useState('');
@@ -39,6 +44,17 @@ export function useUploadForm({
   const [selectedSubject, setSelectedSubject] = useState<number | undefined>(preselectedSubject);
   const [enhanceContrast, setEnhanceContrast] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Mirrors uploadImages so the OCR trigger can read the full page list without
+  // running inside a state updater — React invokes updaters twice under
+  // StrictMode, which fired OCR (and billed the AI call) twice per page.
+  const uploadImagesRef = useRef<string[]>([]);
+  // Re-entrancy guard. The isProcessingOCR *state* cannot do this job: a second
+  // trigger can arrive before React has committed the state update.
+  const ocrRunningRef = useRef(false);
+
+  useEffect(() => {
+    uploadImagesRef.current = uploadImages;
+  }, [uploadImages]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -69,13 +85,12 @@ export function useUploadForm({
           processedCount++;
 
           if (processedCount === fileArray.length) {
-            setUploadImages((prev) => {
-              const allImages = [...prev, ...newImages];
-              if (uploadMode === 'scan') {
-                setTimeout(() => processImagesOCR(allImages), 100);
-              }
-              return allImages;
-            });
+            const allImages = [...uploadImagesRef.current, ...newImages];
+            uploadImagesRef.current = allImages;
+            setUploadImages(allImages);
+            if (uploadMode === 'scan') {
+              processImagesOCR(allImages);
+            }
           }
         }
       };
@@ -92,25 +107,29 @@ export function useUploadForm({
       processed = await applyContrastEnhancement(processed);
     }
     const compressed = await compressImage(processed);
-    setUploadImages((prev) => {
-      const newImages = [...prev, compressed];
-      if (uploadMode === 'scan') {
-        setTimeout(() => processImagesOCR(newImages), 100);
-      }
-      return newImages;
-    });
+    const newImages = [...uploadImagesRef.current, compressed];
+    uploadImagesRef.current = newImages;
+    setUploadImages(newImages);
+    if (uploadMode === 'scan') {
+      processImagesOCR(newImages);
+    }
   };
 
   const processImagesOCR = async (images: string[]) => {
-    if (images.length === 0 || isProcessingOCR) {
-      logger.debug('ocr', 'Skipping:', { imagesLength: images.length, isProcessingOCR });
+    if (images.length === 0 || ocrRunningRef.current) {
+      logger.debug('ocr', 'Skipping:', {
+        imagesLength: images.length,
+        isProcessingOCR: ocrRunningRef.current,
+      });
       return;
     }
+    ocrRunningRef.current = true;
 
     logger.debug('ocr', 'Starting for', images.length, 'images');
     setIsProcessingOCR(true);
     setExtractedText('');
     setOcrCompleted(false);
+    setOcrFailed(false);
 
     try {
       let combinedText = '';
@@ -138,6 +157,7 @@ export function useUploadForm({
       }
 
       if (combinedText.length === 0) {
+        setOcrFailed(true);
         alert(
           'OCR completed but no text was extracted. The image may be blank or the API key may be invalid.',
         );
@@ -147,8 +167,10 @@ export function useUploadForm({
       logger.debug('ocr', 'Complete, total chars:', combinedText.length);
     } catch (error) {
       logger.error('ocr', 'Error:', error);
+      setOcrFailed(true);
       alert(`OCR failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
+      ocrRunningRef.current = false;
       setIsProcessingOCR(false);
     }
   };
@@ -162,6 +184,19 @@ export function useUploadForm({
     if (!selectedSubject) {
       alert('Please select a subject before uploading.');
       return;
+    }
+
+    if (isProcessingOCR) {
+      alert('Still reading your pages — wait for that to finish, then upload.');
+      return;
+    }
+
+    if (ocrFailed || !extractedText.trim()) {
+      const proceed = window.confirm(
+        'No text could be read from these pages, so this note will have no searchable ' +
+          'content and cannot be used to build a test.\n\nUpload it anyway?',
+      );
+      if (!proceed) return;
     }
 
     setIsSubmitting(true);
@@ -219,7 +254,7 @@ export function useUploadForm({
           title: noteTitle,
           description: quickSummary || 'No description available',
           subject_id: selectedSubject,
-          extracted_text: extractedText || 'No extracted text',
+          extracted_text: extractedText,
           images: imageChunk,
           quick_summary: quickSummary,
           tags: finalTags,

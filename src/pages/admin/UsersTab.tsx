@@ -1,7 +1,28 @@
-import { darkTheme, cardStyle } from '../../theme';
+import { useMemo, useState } from 'react';
 import type { AdminUser } from './types';
 import { safePhotoUrl } from '../../lib/safeUrl';
 import { formatDateTime } from '../../lib/datetime';
+import {
+  Avatar,
+  Button,
+  EmptyState,
+  Filters,
+  Panel,
+  Pill,
+  RowActions,
+  SelectField,
+  TableWrap,
+  TextField,
+  type Tone,
+} from '../../components/ops/ConsoleKit';
+import {
+  ink,
+  monoFace,
+  rowSubStyle,
+  tdNumStyle,
+  tdStyle,
+  thStyle,
+} from '../../components/ops/tokens';
 
 interface UsersTabProps {
   users: AdminUser[];
@@ -16,6 +37,17 @@ interface UsersTabProps {
   setShowActivityLog: React.Dispatch<React.SetStateAction<boolean>>;
 }
 
+type StateFilter = 'all' | 'warned' | 'suspended' | 'clean';
+type SortKey = 'name' | 'notes' | 'points';
+
+const ACTION_TONE: Record<string, Tone> = {
+  like: 'ok',
+  edit: 'info',
+  delete: 'crit',
+  suspend: 'crit',
+  warn: 'warn',
+};
+
 export default function UsersTab({
   users,
   actionLoading,
@@ -28,467 +60,245 @@ export default function UsersTab({
   showActivityLog,
   setShowActivityLog,
 }: UsersTabProps) {
+  const [query, setQuery] = useState('');
+  const [stateFilter, setStateFilter] = useState<StateFilter>('all');
+  const [classFilter, setClassFilter] = useState('all');
+  const [sort, setSort] = useState<SortKey>('name');
+
+  const classes = useMemo(() => {
+    const seen = new Set(users.map((u) => u.class).filter(Boolean));
+    return Array.from(seen).sort();
+  }, [users]);
+
+  // Filtering client-side is fine at school scale (~1-2k rows) and keeps the
+  // list responsive as you type. Swap for a server query if the roll grows.
+  const visible = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const rows = users.filter((u) => {
+      if (stateFilter === 'warned' && !u.warning) return false;
+      if (stateFilter === 'suspended' && !u.suspended) return false;
+      if (stateFilter === 'clean' && (u.warning || u.suspended)) return false;
+      if (classFilter !== 'all' && u.class !== classFilter) return false;
+      if (!q) return true;
+      return (
+        (u.display_name || u.name || '').toLowerCase().includes(q) ||
+        (u.email || '').toLowerCase().includes(q)
+      );
+    });
+    return [...rows].sort((a, b) => {
+      if (sort === 'notes') {
+        return (b.notes_uploaded || b.notes_count || 0) - (a.notes_uploaded || a.notes_count || 0);
+      }
+      if (sort === 'points') return (b.points || 0) - (a.points || 0);
+      return (a.display_name || a.name || '').localeCompare(b.display_name || b.name || '');
+    });
+  }, [users, query, stateFilter, classFilter, sort]);
+
   return (
-    <div>
-      {/* Users Section */}
-      <div style={{ marginBottom: '48px' }}>
-        <h3
-          style={{
-            fontSize: '20px',
-            fontWeight: '600',
-            marginBottom: '16px',
-            color: darkTheme.colors.textPrimary,
-          }}
-        >
-          <i
-            className="fas fa-users"
-            style={{ marginRight: '8px', color: darkTheme.colors.accent }}
-          ></i>
-          Users ({users.length})
-        </h3>
-        <div
-          style={
-            {
-              ...cardStyle,
-              padding: 0,
-              overflow: 'auto',
-              maxHeight: '400px',
-            } as React.CSSProperties
-          }
-        >
-          {users.length === 0 ? (
-            <div
-              style={{
-                padding: '40px',
-                textAlign: 'center',
-                color: darkTheme.colors.textSecondary,
-              }}
-            >
-              No users found
-            </div>
-          ) : (
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
-                gap: '16px',
-                padding: '16px',
-              }}
-            >
-              {users.map((user) => (
-                <div
-                  key={user.id}
-                  onClick={() => setSelectedUser(user)}
-                  style={{
-                    padding: '16px',
-                    background: darkTheme.colors.bgSecondary,
-                    borderRadius: darkTheme.borderRadius.md,
-                    border: `1px solid ${darkTheme.colors.borderColor}`,
-                    cursor: 'pointer',
-                    transition: darkTheme.transitions.default,
-                  }}
-                  onMouseOver={(e) => {
-                    e.currentTarget.style.transform = 'translateY(-2px)';
-                    e.currentTarget.style.boxShadow = darkTheme.shadows.lg;
-                  }}
-                  onMouseOut={(e) => {
-                    e.currentTarget.style.transform = 'translateY(0)';
-                    e.currentTarget.style.boxShadow = 'none';
-                  }}
-                >
-                  <div
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '12px',
-                      marginBottom: '12px',
-                    }}
-                  >
-                    <div
-                      style={{
-                        width: '48px',
-                        height: '48px',
-                        background: safePhotoUrl(user.photo_url)
-                          ? `url('${safePhotoUrl(user.photo_url)}') center/cover`
-                          : `linear-gradient(135deg, ${darkTheme.colors.accent}, #8b5cf6)`,
-                        borderRadius: '50%',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        color: 'white',
-                        fontWeight: 'bold',
-                        fontSize: '18px',
-                        flexShrink: 0,
-                      }}
-                    >
-                      {!safePhotoUrl(user.photo_url) &&
-                        (user.display_name || user.name)?.charAt(0).toUpperCase()}
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div
-                        style={{
-                          fontWeight: '600',
-                          fontSize: '14px',
-                          marginBottom: '2px',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        {user.display_name || user.name}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+      <Panel
+        legend="Students"
+        sub={
+          visible.length === users.length
+            ? `${users.length} on the roll`
+            : `${visible.length} of ${users.length}`
+        }
+        bodyPadding="0"
+        actions={
+          <Filters>
+            <TextField
+              type="search"
+              label="Search students"
+              placeholder="Name or email"
+              value={query}
+              onChange={setQuery}
+              width="200px"
+            />
+            <SelectField
+              label="Filter by class"
+              value={classFilter}
+              onChange={setClassFilter}
+              options={[
+                { value: 'all', label: 'All classes' },
+                ...classes.map((c) => ({ value: c, label: c })),
+              ]}
+            />
+            <SelectField<StateFilter>
+              label="Filter by standing"
+              value={stateFilter}
+              onChange={setStateFilter}
+              options={[
+                { value: 'all', label: 'Any standing' },
+                { value: 'clean', label: 'Good standing' },
+                { value: 'warned', label: 'Warned' },
+                { value: 'suspended', label: 'Suspended' },
+              ]}
+            />
+            <SelectField<SortKey>
+              label="Sort"
+              value={sort}
+              onChange={setSort}
+              options={[
+                { value: 'name', label: 'By name' },
+                { value: 'notes', label: 'Most notes' },
+                { value: 'points', label: 'Most points' },
+              ]}
+            />
+          </Filters>
+        }
+      >
+        {visible.length === 0 ? (
+          <EmptyState>
+            {users.length === 0
+              ? 'No students yet.'
+              : 'No student matches those filters. Clear the search or widen the standing filter.'}
+          </EmptyState>
+        ) : (
+          <TableWrap maxHeight="620px">
+            <thead>
+              <tr>
+                <th style={thStyle}>Student</th>
+                <th style={thStyle}>Class</th>
+                <th style={thStyle}>Standing</th>
+                <th style={{ ...thStyle, textAlign: 'right' }}>Notes</th>
+                <th style={{ ...thStyle, textAlign: 'right' }}>Points</th>
+                <th style={{ ...thStyle, textAlign: 'right' }}>Likes</th>
+                <th style={thStyle} aria-label="Actions" />
+              </tr>
+            </thead>
+            <tbody>
+              {visible.map((user) => {
+                const name = user.display_name || user.name;
+                const isBusy = actionLoading === user.id;
+                return (
+                  <tr key={user.id} className="ops-row">
+                    <td style={tdStyle}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '9px' }}>
+                        <Avatar name={name} photoUrl={safePhotoUrl(user.photo_url)} size={30} />
+                        <div style={{ minWidth: 0 }}>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedUser(user)}
+                            className="ops-focus"
+                            style={{
+                              border: 0,
+                              background: 'none',
+                              padding: 0,
+                              font: 'inherit',
+                              fontWeight: 500,
+                              color: 'inherit',
+                              cursor: 'pointer',
+                              textAlign: 'left',
+                            }}
+                          >
+                            {name}
+                          </button>
+                          <div style={rowSubStyle}>{user.email}</div>
+                        </div>
                       </div>
-                      <div
-                        style={{
-                          fontSize: '12px',
-                          color: darkTheme.colors.textSecondary,
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        {user.email}
-                      </div>
-                    </div>
-                  </div>
-                  <div
-                    style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      fontSize: '12px',
-                      marginBottom: '8px',
-                    }}
-                  >
-                    <span style={{ color: darkTheme.colors.textSecondary }}>Points:</span>
-                    <span style={{ fontWeight: '600', color: '#fbbf24' }}>
-                      {(user as any).points || 0}
-                    </span>
-                  </div>
-                  <div
-                    style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      fontSize: '12px',
-                      marginBottom: '8px',
-                    }}
-                  >
-                    <span style={{ color: darkTheme.colors.textSecondary }}>Total Points:</span>
-                    <span style={{ fontWeight: '600', color: darkTheme.colors.accent }}>
-                      {user.points || 0}
-                    </span>
-                  </div>
-                  <div
-                    style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      fontSize: '12px',
-                      marginBottom: '8px',
-                    }}
-                  >
-                    <span style={{ color: darkTheme.colors.textSecondary }}>Notes:</span>
-                    <span style={{ fontWeight: '600' }}>
-                      {user.notes_uploaded || user.notes_count || 0}
-                    </span>
-                  </div>
-                  <div
-                    style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      marginTop: '12px',
-                    }}
-                  >
-                    <span
-                      style={{
-                        padding: '4px 10px',
-                        borderRadius: darkTheme.borderRadius.sm,
-                        background: user.suspended
-                          ? 'rgba(239, 68, 68, 0.2)'
-                          : 'rgba(34, 197, 94, 0.2)',
-                        color: user.suspended ? '#fca5a5' : '#86efac',
-                        fontSize: '11px',
-                        fontWeight: '500',
-                      }}
-                    >
-                      {user.suspended ? 'Suspended' : 'Active'}
-                    </span>
-                    <div style={{ display: 'flex', gap: '6px' }}>
-                      {!user.suspended && !user.warning && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setWarningUser(user);
-                          }}
-                          disabled={actionLoading === user.id}
-                          style={{
-                            padding: '4px 8px',
-                            background: 'rgba(245, 158, 11, 0.15)',
-                            color: '#fbbf24',
-                            border: '1px solid rgba(245, 158, 11, 0.3)',
-                            borderRadius: darkTheme.borderRadius.sm,
-                            cursor: 'pointer',
-                            fontSize: '11px',
-                            fontWeight: '500',
-                          }}
-                        >
-                          Warn
-                        </button>
-                      )}
-                      {!user.suspended ? (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSuspendingUser(user);
-                          }}
-                          disabled={actionLoading === user.id}
-                          style={{
-                            padding: '4px 8px',
-                            background: 'rgba(239, 68, 68, 0.2)',
-                            color: '#fca5a5',
-                            border: 'none',
-                            borderRadius: darkTheme.borderRadius.sm,
-                            cursor: 'pointer',
-                            fontSize: '11px',
-                            fontWeight: '500',
-                          }}
-                        >
-                          Suspend
-                        </button>
+                    </td>
+                    <td style={tdStyle}>{user.class || '—'}</td>
+                    <td style={tdStyle}>
+                      {user.suspended ? (
+                        <Pill tone="crit">Suspended</Pill>
+                      ) : user.warning ? (
+                        <Pill tone="warn">Warned</Pill>
                       ) : (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleUnsuspendUser(user.id);
-                          }}
-                          disabled={actionLoading === user.id}
-                          style={{
-                            padding: '4px 8px',
-                            background: 'rgba(34, 197, 94, 0.2)',
-                            color: '#86efac',
-                            border: '1px solid rgba(34, 197, 94, 0.3)',
-                            borderRadius: darkTheme.borderRadius.sm,
-                            cursor: 'pointer',
-                            fontSize: '11px',
-                            fontWeight: '500',
-                          }}
-                        >
-                          Unsuspend
-                        </button>
+                        <Pill tone="ok">Good standing</Pill>
                       )}
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDeleteUser(user.id);
-                        }}
-                        disabled={actionLoading === user.id}
-                        style={{
-                          padding: '4px 8px',
-                          background: 'rgba(239, 68, 68, 0.2)',
-                          color: '#fca5a5',
-                          border: 'none',
-                          borderRadius: darkTheme.borderRadius.sm,
-                          cursor: 'pointer',
-                          fontSize: '11px',
-                          fontWeight: '500',
-                        }}
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Activity Log Section */}
-      <div>
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            marginBottom: '16px',
-          }}
-        >
-          <h3
-            style={{
-              fontSize: '20px',
-              fontWeight: '600',
-              margin: 0,
-              color: darkTheme.colors.textPrimary,
-            }}
-          >
-            <i
-              className="fas fa-history"
-              style={{ marginRight: '8px', color: darkTheme.colors.accent }}
-            ></i>
-            Activity Log ({activityLogs.length})
-          </h3>
-          <button
-            onClick={() => setShowActivityLog(!showActivityLog)}
-            style={{
-              padding: '8px 16px',
-              background: showActivityLog ? darkTheme.colors.accent : darkTheme.colors.bgSecondary,
-              border: 'none',
-              color: '#fff',
-              borderRadius: darkTheme.borderRadius.md,
-              cursor: 'pointer',
-              fontSize: '13px',
-              fontWeight: '500',
-            }}
-          >
-            {showActivityLog ? 'Hide Log' : 'Show Log'}
-          </button>
-        </div>
-
-        {showActivityLog && (
-          <div
-            style={
-              {
-                ...cardStyle,
-                padding: 0,
-                overflow: 'auto',
-                maxHeight: '500px',
-              } as React.CSSProperties
-            }
-          >
-            {activityLogs.length === 0 ? (
-              <div
-                style={{
-                  padding: '40px',
-                  textAlign: 'center',
-                  color: darkTheme.colors.textSecondary,
-                }}
-              >
-                No activity logs yet
-              </div>
-            ) : (
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead
-                  style={{
-                    background: darkTheme.colors.bgSecondary,
-                    position: 'sticky',
-                    top: 0,
-                  }}
-                >
-                  <tr>
-                    <th
-                      style={{
-                        padding: '12px 16px',
-                        textAlign: 'left',
-                        borderBottom: `1px solid ${darkTheme.colors.borderColor}`,
-                        fontWeight: '600',
-                        fontSize: '13px',
-                      }}
-                    >
-                      Time
-                    </th>
-                    <th
-                      style={{
-                        padding: '12px 16px',
-                        textAlign: 'left',
-                        borderBottom: `1px solid ${darkTheme.colors.borderColor}`,
-                        fontWeight: '600',
-                        fontSize: '13px',
-                      }}
-                    >
-                      Admin
-                    </th>
-                    <th
-                      style={{
-                        padding: '12px 16px',
-                        textAlign: 'left',
-                        borderBottom: `1px solid ${darkTheme.colors.borderColor}`,
-                        fontWeight: '600',
-                        fontSize: '13px',
-                      }}
-                    >
-                      Action
-                    </th>
-                    <th
-                      style={{
-                        padding: '12px 16px',
-                        textAlign: 'left',
-                        borderBottom: `1px solid ${darkTheme.colors.borderColor}`,
-                        fontWeight: '600',
-                        fontSize: '13px',
-                      }}
-                    >
-                      Details
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {activityLogs.map((log) => (
-                    <tr
-                      key={log.id}
-                      style={{
-                        borderBottom: `1px solid ${darkTheme.colors.borderColor}`,
-                        transition: darkTheme.transitions.default,
-                      }}
-                      onMouseOver={(e) =>
-                        (e.currentTarget.style.background = darkTheme.colors.bgSecondary)
-                      }
-                      onMouseOut={(e) => (e.currentTarget.style.background = 'transparent')}
-                    >
-                      <td
-                        style={{
-                          padding: '12px 16px',
-                          fontSize: '13px',
-                          color: darkTheme.colors.textSecondary,
-                        }}
-                      >
-                        {formatDateTime(log.created_at)}
-                      </td>
-                      <td style={{ padding: '12px 16px', fontSize: '13px' }}>{log.admin_email}</td>
-                      <td style={{ padding: '12px 16px', fontSize: '13px' }}>
-                        <span
-                          style={{
-                            padding: '4px 10px',
-                            borderRadius: darkTheme.borderRadius.sm,
-                            background:
-                              log.action_type === 'like'
-                                ? 'rgba(34, 197, 94, 0.2)'
-                                : log.action_type === 'edit'
-                                  ? 'rgba(59, 130, 246, 0.2)'
-                                  : log.action_type === 'delete'
-                                    ? 'rgba(239, 68, 68, 0.2)'
-                                    : 'rgba(156, 163, 175, 0.2)',
-                            color:
-                              log.action_type === 'like'
-                                ? '#86efac'
-                                : log.action_type === 'edit'
-                                  ? '#60a5fa'
-                                  : log.action_type === 'delete'
-                                    ? '#fca5a5'
-                                    : '#d1d5db',
-                            fontSize: '11px',
-                            fontWeight: '500',
-                            textTransform: 'uppercase',
-                          }}
+                    </td>
+                    <td style={tdNumStyle}>{user.notes_uploaded || user.notes_count || 0}</td>
+                    <td style={tdNumStyle}>{(user.points || 0).toLocaleString()}</td>
+                    <td style={tdNumStyle}>{(user.total_likes || 0).toLocaleString()}</td>
+                    <td style={tdStyle}>
+                      <RowActions>
+                        <Button size="xs" onClick={() => setSelectedUser(user)}>
+                          Open
+                        </Button>
+                        {!user.suspended && !user.warning && (
+                          <Button size="xs" disabled={isBusy} onClick={() => setWarningUser(user)}>
+                            Warn
+                          </Button>
+                        )}
+                        {user.suspended ? (
+                          <Button
+                            size="xs"
+                            disabled={isBusy}
+                            onClick={() => handleUnsuspendUser(user.id)}
+                          >
+                            Lift
+                          </Button>
+                        ) : (
+                          <Button
+                            size="xs"
+                            variant="danger"
+                            disabled={isBusy}
+                            onClick={() => setSuspendingUser(user)}
+                          >
+                            Suspend
+                          </Button>
+                        )}
+                        <Button
+                          size="xs"
+                          variant="danger"
+                          disabled={isBusy}
+                          onClick={() => handleDeleteUser(user.id)}
                         >
-                          {log.action_type}
-                        </span>
-                      </td>
-                      <td
-                        style={{
-                          padding: '12px 16px',
-                          fontSize: '13px',
-                          color: darkTheme.colors.textSecondary,
-                        }}
-                      >
-                        {log.details}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </div>
+                          Delete
+                        </Button>
+                      </RowActions>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </TableWrap>
         )}
-      </div>
+      </Panel>
+
+      <Panel
+        legend="Activity log"
+        sub={`${activityLogs.length} recent actions`}
+        bodyPadding={showActivityLog ? '0' : '14px'}
+        actions={
+          <Button onClick={() => setShowActivityLog(!showActivityLog)}>
+            {showActivityLog ? 'Hide' : 'Show'}
+          </Button>
+        }
+      >
+        {!showActivityLog ? (
+          <span style={{ fontSize: '12.5px', color: ink.faint }}>
+            Every moderator action, written by the server. It cannot be edited from here.
+          </span>
+        ) : activityLogs.length === 0 ? (
+          <EmptyState>No moderator actions recorded yet.</EmptyState>
+        ) : (
+          <TableWrap maxHeight="480px">
+            <thead>
+              <tr>
+                <th style={thStyle}>Time</th>
+                <th style={thStyle}>Account</th>
+                <th style={thStyle}>Action</th>
+                <th style={thStyle}>Detail</th>
+              </tr>
+            </thead>
+            <tbody>
+              {activityLogs.map((log) => (
+                <tr key={log.id} className="ops-row">
+                  <td style={{ ...tdStyle, fontFamily: monoFace, whiteSpace: 'nowrap' }}>
+                    {formatDateTime(log.created_at)}
+                  </td>
+                  <td style={{ ...tdStyle, fontFamily: monoFace }}>{log.admin_email}</td>
+                  <td style={tdStyle}>
+                    <Pill tone={ACTION_TONE[log.action_type] ?? 'mute'}>{log.action_type}</Pill>
+                  </td>
+                  <td style={{ ...tdStyle, color: ink.faint }}>{log.details}</td>
+                </tr>
+              ))}
+            </tbody>
+          </TableWrap>
+        )}
+      </Panel>
     </div>
   );
 }

@@ -145,3 +145,52 @@ export function zoneLabel(at: Date = new Date()): string {
     return '';
   }
 }
+
+/**
+ * An instant, as a relative day label: "Today", "Yesterday", "3 days ago",
+ * "2 weeks ago", falling back to an absolute date past a month.
+ *
+ * Counts CALENDAR days in the display zone, not elapsed hours. A note written
+ * at 23:00 is "Yesterday" at 01:00 the next morning even though barely two
+ * hours passed, which is what a reader means by the word. Elapsed-hours maths
+ * also makes "Today" unreachable the moment you round the wrong way.
+ *
+ * Future instants (a scheduled publish) get the absolute date — never
+ * "N days ago", which would read as though they had already happened.
+ */
+export function formatRelativeDay(value: Input, fallback = '—'): string {
+  const d = parse(value);
+  if (!d) return fallback;
+
+  const dayNumber = (at: Date): number => {
+    // en-CA renders as YYYY-MM-DD; Date.UTC of those parts gives a stable
+    // day index to subtract, with no DST arithmetic in between.
+    const [y, m, day] = new Intl.DateTimeFormat('en-CA', {
+      timeZone: displayZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    })
+      .format(at)
+      .split('-')
+      .map(Number);
+    return Date.UTC(y, m - 1, day) / 86_400_000;
+  };
+
+  let diffDays: number;
+  try {
+    diffDays = dayNumber(new Date()) - dayNumber(d);
+  } catch {
+    return formatDate(d, fallback);
+  }
+
+  if (diffDays < 0) return formatDate(d, fallback);
+  if (diffDays === 0) return 'Today';
+  if (diffDays === 1) return 'Yesterday';
+  if (diffDays < 7) return `${diffDays} days ago`;
+  if (diffDays < 30) {
+    const weeks = Math.floor(diffDays / 7);
+    return weeks === 1 ? '1 week ago' : `${weeks} weeks ago`;
+  }
+  return formatDate(d, fallback);
+}

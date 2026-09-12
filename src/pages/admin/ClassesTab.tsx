@@ -1,8 +1,24 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import api from '../../lib/api';
-import { darkTheme, cardStyle } from '../../theme';
 import type { AdminUser } from './types';
 import type { PromoteSummaryItem } from '../../types';
+import {
+  Button,
+  Callout,
+  ConfirmDialog,
+  EmptyState,
+  Field,
+  Guard,
+  Panel,
+  Pill,
+  RowActions,
+  SelectField,
+  SwitchRow,
+  TableWrap,
+  TextField,
+  type ConfirmSpec,
+} from '../../components/ops/ConsoleKit';
+import { ink, monoFace, tdNumStyle, tdStyle, thStyle } from '../../components/ops/tokens';
 
 interface ClassFormData {
   grade: string;
@@ -35,26 +51,81 @@ export default function ClassesTab({
   const [promoteYear, setPromoteYear] = useState('');
   const [promoteLoading, setPromoteLoading] = useState(false);
   const [promoteSummary, setPromoteSummary] = useState<PromoteSummaryItem[] | null>(null);
+  const [reassignUser, setReassignUser] = useState('');
+  const [reassignClass, setReassignClass] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [confirm, setConfirm] = useState<ConfirmSpec | null>(null);
 
-  const togglePromoteClass = (id: number) => {
+  const activeClasses = gradeClasses.filter((gc: any) => gc.is_active);
+  const students = useMemo(() => users.filter((u) => u.role === 'student'), [users]);
+
+  const headcount = (className: string) => users.filter((u) => u.class === className).length;
+
+  const togglePromoteClass = (id: number) =>
     setPromoteSelectedIds((prev) =>
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
     );
+
+  const handleCreateClass = async () => {
+    if (!classFormData.grade || !classFormData.class_name.trim()) return;
+    setClassActionLoading(true);
+    setError(null);
+    try {
+      await api.admin.createGradeClass({
+        grade: Number(classFormData.grade),
+        class_name: classFormData.class_name.trim(),
+        semester: classFormData.semester.trim() || undefined,
+      } as any);
+      setClassFormData({ grade: '', class_name: '', semester: '' });
+      const res = await api.admin.getGradeClasses();
+      setGradeClasses((res as any).grade_classes || []);
+      setNotice('Class added.');
+    } catch (e: any) {
+      setError(e?.message ?? 'Could not add the class.');
+    } finally {
+      setClassActionLoading(false);
+    }
   };
 
-  const handlePromote = async () => {
-    if (promoteSelectedIds.length === 0) {
-      alert('Select at least one class to promote');
-      return;
+  const handleToggleActive = async (gc: any) => {
+    setClassActionLoading(true);
+    setError(null);
+    try {
+      await api.admin.updateGradeClass(gc.id, { is_active: gc.is_active ? 0 : 1 });
+      const res = await api.admin.getGradeClasses();
+      setGradeClasses((res as any).grade_classes || []);
+    } catch (e: any) {
+      setError(e?.message ?? 'Could not update the class.');
+    } finally {
+      setClassActionLoading(false);
     }
-    const confirmed = window.confirm(
-      `Promote ${promoteSelectedIds.length} class(es) to the next grade? ` +
-        'This is NOT reversible and running it twice will promote twice.',
-    );
-    if (!confirmed) return;
+  };
 
+  const handleReassign = async () => {
+    if (!reassignUser || !reassignClass) return;
+    setClassActionLoading(true);
+    setError(null);
+    try {
+      await api.admin.reassignUserClass({
+        user_id: Number(reassignUser),
+        new_class: reassignClass,
+      });
+      await loadData();
+      setNotice(`Moved to ${reassignClass}.`);
+      setReassignUser('');
+      setReassignClass('');
+    } catch (e: any) {
+      setError(e?.message ?? 'Could not move that student.');
+    } finally {
+      setClassActionLoading(false);
+    }
+  };
+
+  const runPromote = async () => {
     setPromoteLoading(true);
     setPromoteSummary(null);
+    setError(null);
     try {
       const res = await api.admin.promoteClasses(
         promoteSelectedIds,
@@ -64,483 +135,264 @@ export default function ClassesTab({
       setPromoteSelectedIds([]);
       await loadData();
     } catch (e) {
-      alert(e instanceof Error ? e.message : 'Failed to promote classes');
+      setError(e instanceof Error ? e.message : 'Failed to promote classes');
     } finally {
       setPromoteLoading(false);
     }
   };
 
-  const activeClasses = gradeClasses.filter((gc: any) => gc.is_active);
+  const askPromote = () => {
+    const names = gradeClasses
+      .filter((gc: any) => promoteSelectedIds.includes(gc.id))
+      .map((gc: any) => gc.class_name);
+    const affected = names.reduce((sum: number, n: string) => sum + headcount(n), 0);
+    setConfirm({
+      title: `Promote ${names.length} class${names.length === 1 ? '' : 'es'}`,
+      body: 'Every student in these classes moves up a year. This cannot be undone, and running it twice promotes them twice.',
+      affected: `${names.join(', ')} · ${affected} student${affected === 1 ? '' : 's'}`,
+      phrase: `promote ${names.length}`,
+      confirmLabel: 'Promote',
+      onConfirm: runPromote,
+    });
+  };
 
   return (
-    <div>
-      <h3
-        style={{
-          fontSize: '20px',
-          fontWeight: '600',
-          marginBottom: '16px',
-          color: darkTheme.colors.textPrimary,
-        }}
-      >
-        Class Management
-      </h3>
-      {/* Add Class Form */}
-      <div style={{ ...cardStyle, marginBottom: '24px', padding: '20px' }}>
-        <h4
-          style={{
-            color: darkTheme.colors.textPrimary,
-            marginBottom: '12px',
-            fontSize: '15px',
-            fontWeight: '600',
-          }}
-        >
-          Add New Class
-        </h4>
-        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-          <select
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+      {error && <Callout tone="crit">{error}</Callout>}
+      {notice && <Callout>{notice}</Callout>}
+
+      <Panel legend="Add a class" sub="grade_classes">
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+          <SelectField
+            label="Year"
             value={classFormData.grade}
-            onChange={(e) => setClassFormData((p) => ({ ...p, grade: e.target.value }))}
-            style={{
-              padding: '8px 12px',
-              background: darkTheme.colors.bgTertiary,
-              border: `1px solid ${darkTheme.colors.borderColor}`,
-              borderRadius: '6px',
-              color: darkTheme.colors.textPrimary,
-              fontSize: '14px',
-            }}
-          >
-            <option value="">Grade</option>
-            <option value="10">Grade 10</option>
-            <option value="11">Grade 11</option>
-            <option value="12">Grade 12</option>
-          </select>
-          <input
-            placeholder="Class name (e.g. 10.4)"
+            onChange={(v) => setClassFormData((p) => ({ ...p, grade: v }))}
+            options={[
+              { value: '', label: 'Year…' },
+              { value: '10', label: 'Year 10' },
+              { value: '11', label: 'Year 11' },
+              { value: '12', label: 'Year 12' },
+            ]}
+          />
+          <TextField
+            label="Class name"
+            placeholder="Class name, e.g. 10.4"
             value={classFormData.class_name}
-            onChange={(e) => setClassFormData((p) => ({ ...p, class_name: e.target.value }))}
-            style={{
-              padding: '8px 12px',
-              background: darkTheme.colors.bgTertiary,
-              border: `1px solid ${darkTheme.colors.borderColor}`,
-              borderRadius: '6px',
-              color: darkTheme.colors.textPrimary,
-              fontSize: '14px',
-              flex: 1,
-              minWidth: '140px',
-            }}
+            onChange={(v) => setClassFormData((p) => ({ ...p, class_name: v }))}
+            width="180px"
           />
-          <input
-            placeholder="Semester (e.g. 2024/2025-1)"
+          <TextField
+            label="Semester"
+            placeholder="Semester, e.g. 2024/2025-1"
             value={classFormData.semester}
-            onChange={(e) => setClassFormData((p) => ({ ...p, semester: e.target.value }))}
-            style={{
-              padding: '8px 12px',
-              background: darkTheme.colors.bgTertiary,
-              border: `1px solid ${darkTheme.colors.borderColor}`,
-              borderRadius: '6px',
-              color: darkTheme.colors.textPrimary,
-              fontSize: '14px',
-              flex: 1,
-              minWidth: '160px',
-            }}
+            onChange={(v) => setClassFormData((p) => ({ ...p, semester: v }))}
+            width="200px"
           />
-          <button
-            disabled={classActionLoading || !classFormData.grade || !classFormData.class_name}
-            onClick={async () => {
-              setClassActionLoading(true);
-              try {
-                await api.admin.createGradeClass({
-                  grade: Number(classFormData.grade),
-                  class_name: classFormData.class_name,
-                  semester: classFormData.semester,
-                });
-                setClassFormData({ grade: '', class_name: '', semester: '' });
-                const res = await api.admin.getGradeClasses();
-                setGradeClasses((res as any).grade_classes || []);
-              } catch (e: any) {
-                alert(e.message);
-              } finally {
-                setClassActionLoading(false);
-              }
-            }}
-            style={{
-              padding: '8px 16px',
-              background: darkTheme.colors.accent,
-              border: 'none',
-              borderRadius: '6px',
-              color: 'white',
-              cursor: 'pointer',
-              fontWeight: '600',
-              fontSize: '14px',
-              opacity: classActionLoading ? 0.6 : 1,
-            }}
+          <Button
+            variant="primary"
+            disabled={
+              classActionLoading || !classFormData.grade || !classFormData.class_name.trim()
+            }
+            onClick={handleCreateClass}
           >
-            {classActionLoading ? 'Adding...' : 'Add Class'}
-          </button>
+            Add class
+          </Button>
         </div>
-      </div>
+      </Panel>
 
-      {/* Class List grouped by grade */}
-      {[10, 11, 12].map((grade) => {
-        const gradeList = gradeClasses.filter((gc: any) => gc.grade === grade);
-        return (
-          <div key={grade} style={{ ...cardStyle, marginBottom: '16px', padding: '20px' }}>
-            <h4
-              style={{
-                color: darkTheme.colors.textPrimary,
-                marginBottom: '12px',
-                fontWeight: '600',
-              }}
-            >
-              Grade {grade}
-            </h4>
-            {gradeList.length === 0 ? (
-              <p style={{ color: darkTheme.colors.textSecondary, fontSize: '13px' }}>
-                No classes for Grade {grade}
-              </p>
-            ) : (
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-                <thead>
-                  <tr style={{ color: darkTheme.colors.textSecondary, textAlign: 'left' }}>
-                    <th style={{ padding: '6px 8px' }}>Class</th>
-                    <th style={{ padding: '6px 8px' }}>Semester</th>
-                    <th style={{ padding: '6px 8px' }}>Students</th>
-                    <th style={{ padding: '6px 8px' }}>Status</th>
-                    <th style={{ padding: '6px 8px' }}>Actions</th>
+      <Panel
+        legend="Classes"
+        sub={`${activeClasses.length} active of ${gradeClasses.length}`}
+        bodyPadding="0"
+      >
+        {gradeClasses.length === 0 ? (
+          <EmptyState>No classes yet. Add the first one above.</EmptyState>
+        ) : (
+          <TableWrap maxHeight="420px">
+            <thead>
+              <tr>
+                <th style={thStyle}>Class</th>
+                <th style={thStyle}>Year</th>
+                <th style={thStyle}>Semester</th>
+                <th style={{ ...thStyle, textAlign: 'right' }}>Students</th>
+                <th style={thStyle}>State</th>
+                <th style={thStyle} aria-label="Actions" />
+              </tr>
+            </thead>
+            <tbody>
+              {[...gradeClasses]
+                .sort((a: any, b: any) =>
+                  a.grade === b.grade
+                    ? String(a.class_name).localeCompare(String(b.class_name))
+                    : a.grade - b.grade,
+                )
+                .map((gc: any) => (
+                  <tr key={gc.id} className="ops-row">
+                    <td style={{ ...tdStyle, fontWeight: 500 }}>{gc.class_name}</td>
+                    <td style={tdStyle}>Year {gc.grade}</td>
+                    <td style={{ ...tdStyle, fontFamily: monoFace, color: ink.faint }}>
+                      {gc.semester || '—'}
+                    </td>
+                    <td style={tdNumStyle}>{headcount(gc.class_name)}</td>
+                    <td style={tdStyle}>
+                      {gc.is_active ? (
+                        <Pill tone="ok">Active</Pill>
+                      ) : (
+                        <Pill tone="mute">Archived</Pill>
+                      )}
+                    </td>
+                    <td style={tdStyle}>
+                      <RowActions>
+                        <Button
+                          size="xs"
+                          disabled={classActionLoading}
+                          onClick={() => handleToggleActive(gc)}
+                        >
+                          {gc.is_active ? 'Archive' : 'Reactivate'}
+                        </Button>
+                      </RowActions>
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {gradeList.map((gc: any) => (
-                    <tr
-                      key={gc.id}
-                      style={{ borderTop: `1px solid ${darkTheme.colors.borderColor}` }}
-                    >
-                      <td
-                        style={{
-                          padding: '8px',
-                          color: darkTheme.colors.textPrimary,
-                          fontWeight: '500',
-                        }}
-                      >
-                        {gc.class_name}
-                      </td>
-                      <td style={{ padding: '8px', color: darkTheme.colors.textSecondary }}>
-                        {gc.semester || '—'}
-                      </td>
-                      <td style={{ padding: '8px', color: darkTheme.colors.textSecondary }}>
-                        {gc.student_count ?? 0}
-                      </td>
-                      <td style={{ padding: '8px' }}>
-                        <span
-                          style={{
-                            fontSize: '11px',
-                            padding: '2px 8px',
-                            borderRadius: '9999px',
-                            background: gc.is_active
-                              ? 'rgba(34,197,94,0.15)'
-                              : 'rgba(156,163,175,0.15)',
-                            color: gc.is_active ? '#4ade80' : '#9ca3af',
-                            fontWeight: '600',
-                          }}
-                        >
-                          {gc.is_active ? 'Active' : 'Archived'}
-                        </span>
-                      </td>
-                      <td style={{ padding: '8px' }}>
-                        <button
-                          onClick={async () => {
-                            setClassActionLoading(true);
-                            try {
-                              await api.admin.updateGradeClass(gc.id, {
-                                is_active: gc.is_active ? 0 : 1,
-                              });
-                              const res = await api.admin.getGradeClasses();
-                              setGradeClasses((res as any).grade_classes || []);
-                            } finally {
-                              setClassActionLoading(false);
-                            }
-                          }}
-                          style={{
-                            padding: '4px 10px',
-                            background: 'transparent',
-                            border: `1px solid ${darkTheme.colors.borderColor}`,
-                            borderRadius: '4px',
-                            color: darkTheme.colors.textSecondary,
-                            cursor: 'pointer',
-                            fontSize: '12px',
-                          }}
-                        >
-                          {gc.is_active ? 'Archive' : 'Restore'}
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </div>
-        );
-      })}
+                ))}
+            </tbody>
+          </TableWrap>
+        )}
+      </Panel>
 
-      {/* Reassign User */}
-      <div style={{ ...cardStyle, padding: '20px' }}>
-        <h4
-          style={{
-            color: darkTheme.colors.textPrimary,
-            marginBottom: '12px',
-            fontSize: '15px',
-            fontWeight: '600',
-          }}
-        >
-          Reassign Student to Class
-        </h4>
-        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
-          <select
-            style={{
-              padding: '8px 12px',
-              background: darkTheme.colors.bgTertiary,
-              border: `1px solid ${darkTheme.colors.borderColor}`,
-              borderRadius: '6px',
-              color: darkTheme.colors.textPrimary,
-              fontSize: '14px',
-              flex: 1,
-              minWidth: '160px',
-            }}
-            id="reassign-user-select"
+      <Panel legend="Move a student" sub="one at a time">
+        <Field label="Student" htmlFor="reassign-user-select">
+          <SelectField
+            label="Student to move"
+            value={reassignUser}
+            onChange={setReassignUser}
+            width="100%"
+            options={[
+              { value: '', label: 'Pick a student…' },
+              ...students.map((u) => ({
+                value: String(u.id),
+                label: `${u.display_name || u.name} · ${u.class || 'no class'}`,
+              })),
+            ]}
+          />
+        </Field>
+        <Field label="New class" htmlFor="reassign-class-select">
+          <SelectField
+            label="Destination class"
+            value={reassignClass}
+            onChange={setReassignClass}
+            width="100%"
+            options={[
+              { value: '', label: 'Pick a class…' },
+              ...activeClasses.map((gc: any) => ({
+                value: String(gc.class_name),
+                label: `${gc.class_name} · Year ${gc.grade}`,
+              })),
+            ]}
+          />
+        </Field>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: '12px' }}>
+          <Button
+            variant="primary"
+            disabled={classActionLoading || !reassignUser || !reassignClass}
+            onClick={handleReassign}
           >
-            <option value="">Select student</option>
-            {users
-              .filter((u) => u.role === 'student')
-              .map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.name} ({u.class || 'No class'})
-                </option>
-              ))}
-          </select>
-          <select
-            style={{
-              padding: '8px 12px',
-              background: darkTheme.colors.bgTertiary,
-              border: `1px solid ${darkTheme.colors.borderColor}`,
-              borderRadius: '6px',
-              color: darkTheme.colors.textPrimary,
-              fontSize: '14px',
-              flex: 1,
-              minWidth: '140px',
-            }}
-            id="reassign-class-select"
-          >
-            <option value="">New class</option>
-            {gradeClasses
-              .filter((gc: any) => gc.is_active)
-              .map((gc: any) => (
-                <option key={gc.id} value={gc.class_name}>
-                  {gc.class_name}
-                </option>
-              ))}
-          </select>
-          <button
-            disabled={classActionLoading}
-            onClick={async () => {
-              const userId = (document.getElementById('reassign-user-select') as HTMLSelectElement)
-                ?.value;
-              const newClass = (
-                document.getElementById('reassign-class-select') as HTMLSelectElement
-              )?.value;
-              if (!userId || !newClass) {
-                alert('Please select a student and a class');
-                return;
-              }
-              setClassActionLoading(true);
-              try {
-                await api.admin.reassignUserClass({
-                  user_id: Number(userId),
-                  new_class: newClass,
-                });
-                await loadData();
-                alert('Student reassigned successfully');
-              } catch (e: any) {
-                alert(e.message);
-              } finally {
-                setClassActionLoading(false);
-              }
-            }}
-            style={{
-              padding: '8px 16px',
-              background: darkTheme.colors.accent,
-              border: 'none',
-              borderRadius: '6px',
-              color: 'white',
-              cursor: 'pointer',
-              fontWeight: '600',
-              fontSize: '14px',
-            }}
-          >
-            Reassign
-          </button>
+            Move student
+          </Button>
         </div>
-      </div>
+      </Panel>
 
-      {/* Promote to next year */}
-      <div style={{ ...cardStyle, padding: '20px', marginTop: '16px' }}>
-        <h4
-          style={{
-            color: darkTheme.colors.textPrimary,
-            marginBottom: '4px',
-            fontSize: '15px',
-            fontWeight: '600',
-          }}
-        >
-          Promote to Next Year
-        </h4>
-        <p
-          style={{
-            color: darkTheme.colors.textSecondary,
-            fontSize: '13px',
-            margin: '0 0 12px',
-          }}
-        >
-          Advance the selected classes to the next grade (e.g. 10.1 → 11.1). Grade 12 classes will
-          graduate. This action is not reversible — do not run it twice.
-        </p>
+      <Panel legend="Promote a year" sub="end of term" tone="crit">
+        <div style={{ marginBottom: '12px' }}>
+          <Callout tone="crit">
+            Promotion is not reversible, and running it twice moves everyone up twice. Check the
+            student counts before you arm it.
+          </Callout>
+        </div>
 
         {activeClasses.length === 0 ? (
-          <p style={{ color: darkTheme.colors.textSecondary, fontSize: '13px' }}>
-            No active classes available to promote.
-          </p>
+          <EmptyState>No active classes to promote.</EmptyState>
         ) : (
-          <div
-            style={{
-              display: 'flex',
-              flexWrap: 'wrap',
-              gap: '8px',
-              marginBottom: '12px',
-            }}
-          >
+          <>
             {activeClasses.map((gc: any) => {
               const checked = promoteSelectedIds.includes(gc.id);
               return (
-                <label
+                <SwitchRow
                   key={gc.id}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    padding: '6px 10px',
-                    borderRadius: '6px',
-                    border: `1px solid ${
-                      checked ? darkTheme.colors.accent : darkTheme.colors.borderColor
-                    }`,
-                    background: checked ? 'rgba(59,130,246,0.12)' : 'transparent',
-                    color: darkTheme.colors.textPrimary,
-                    fontSize: '13px',
-                    cursor: 'pointer',
-                  }}
+                  name={`${gc.class_name} · Year ${gc.grade}`}
+                  desc={`${headcount(gc.class_name)} students → Year ${gc.grade + 1}`}
                 >
                   <input
                     type="checkbox"
                     checked={checked}
+                    aria-label={`Promote ${gc.class_name}`}
                     onChange={() => togglePromoteClass(gc.id)}
+                    className="ops-focus"
+                    style={{ accentColor: '#2e7d52', width: '15px', height: '15px' }}
                   />
-                  {gc.class_name}
-                </label>
+                </SwitchRow>
               );
             })}
-          </div>
-        )}
 
-        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
-          <input
-            placeholder="New academic year (optional, e.g. 2025/2026)"
-            value={promoteYear}
-            onChange={(e) => setPromoteYear(e.target.value)}
-            style={{
-              padding: '8px 12px',
-              background: darkTheme.colors.bgTertiary,
-              border: `1px solid ${darkTheme.colors.borderColor}`,
-              borderRadius: '6px',
-              color: darkTheme.colors.textPrimary,
-              fontSize: '14px',
-              flex: 1,
-              minWidth: '220px',
-            }}
-          />
-          <button
-            disabled={promoteLoading || promoteSelectedIds.length === 0}
-            onClick={handlePromote}
-            style={{
-              padding: '8px 16px',
-              background: darkTheme.colors.accent,
-              border: 'none',
-              borderRadius: '6px',
-              color: 'white',
-              cursor: 'pointer',
-              fontWeight: '600',
-              fontSize: '14px',
-              opacity: promoteLoading || promoteSelectedIds.length === 0 ? 0.6 : 1,
-            }}
-          >
-            {promoteLoading ? 'Promoting...' : `Promote ${promoteSelectedIds.length || ''}`.trim()}
-          </button>
-        </div>
-
-        {promoteSummary && (
-          <div style={{ marginTop: '16px' }}>
-            <h5
+            <div
               style={{
-                color: darkTheme.colors.textPrimary,
-                fontSize: '13px',
-                fontWeight: '600',
-                marginBottom: '8px',
+                display: 'flex',
+                gap: '8px',
+                alignItems: 'center',
+                flexWrap: 'wrap',
+                paddingTop: '12px',
               }}
             >
-              Promotion Result
-            </h5>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+              <TextField
+                label="New academic year"
+                placeholder="New academic year, optional — e.g. 2025/2026"
+                value={promoteYear}
+                onChange={setPromoteYear}
+                width="260px"
+              />
+              <span style={{ marginLeft: 'auto', fontSize: '11px', color: ink.fainter }}>
+                {promoteSelectedIds.length === 0
+                  ? 'Pick at least one class'
+                  : `${promoteSelectedIds.length} class${promoteSelectedIds.length === 1 ? '' : 'es'} selected`}
+              </span>
+              <Guard key={promoteSelectedIds.join(',')}>
+                <Button
+                  variant="danger"
+                  disabled={promoteLoading || promoteSelectedIds.length === 0}
+                  onClick={askPromote}
+                >
+                  {promoteLoading ? 'Promoting…' : 'Promote'}
+                </Button>
+              </Guard>
+            </div>
+          </>
+        )}
+
+        {promoteSummary && promoteSummary.length > 0 && (
+          <div style={{ marginTop: '14px' }}>
+            <TableWrap>
               <thead>
-                <tr style={{ color: darkTheme.colors.textSecondary, textAlign: 'left' }}>
-                  <th style={{ padding: '6px 8px' }}>Class</th>
-                  <th style={{ padding: '6px 8px' }}>Action</th>
-                  <th style={{ padding: '6px 8px' }}>Promoted To</th>
-                  <th style={{ padding: '6px 8px' }}>Students</th>
+                <tr>
+                  <th style={thStyle}>Class</th>
+                  <th style={{ ...thStyle, textAlign: 'right' }}>Moved</th>
                 </tr>
               </thead>
               <tbody>
-                {promoteSummary.map((item, idx) => (
-                  <tr
-                    key={`${item.class}-${idx}`}
-                    style={{ borderTop: `1px solid ${darkTheme.colors.borderColor}` }}
-                  >
-                    <td
-                      style={{
-                        padding: '8px',
-                        color: darkTheme.colors.textPrimary,
-                        fontWeight: '500',
-                      }}
-                    >
-                      {item.class}
+                {promoteSummary.map((item: any, idx: number) => (
+                  <tr key={idx} className="ops-row">
+                    <td style={tdStyle}>
+                      {item.class_name ?? item.from ?? '—'}
+                      {item.to ? ` → ${item.to}` : ''}
                     </td>
-                    <td
-                      style={{
-                        padding: '8px',
-                        color: item.error ? '#ef4444' : darkTheme.colors.textSecondary,
-                      }}
-                    >
-                      {item.error ? `Error: ${item.error}` : item.action}
-                    </td>
-                    <td style={{ padding: '8px', color: darkTheme.colors.textSecondary }}>
-                      {item.promoted_to || '—'}
-                    </td>
-                    <td style={{ padding: '8px', color: darkTheme.colors.textSecondary }}>
-                      {item.students_affected ?? '—'}
-                    </td>
+                    <td style={tdNumStyle}>{item.promoted ?? item.count ?? 0}</td>
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </TableWrap>
           </div>
         )}
-      </div>
+      </Panel>
+
+      <ConfirmDialog spec={confirm} onCancel={() => setConfirm(null)} />
     </div>
   );
 }

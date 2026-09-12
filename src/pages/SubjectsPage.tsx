@@ -5,6 +5,7 @@ import { logger } from '../lib/logger';
 import LoadingSpinner from '../components/LoadingSpinner';
 import { darkTheme } from '../theme';
 import { ArrowRight } from 'lucide-react';
+import { activatable } from '../lib/activatable';
 
 const SubjectsShaderScene = lazy(() => import('../components/ui/SubjectsShaderScene'));
 
@@ -109,7 +110,7 @@ export default function SubjectsPage({
             {subjects.map((subject) => (
               <div
                 key={subject.id}
-                onClick={() => onSelectSubject(subject)}
+                {...activatable(() => onSelectSubject(subject), `View notes for ${subject.name}`)}
                 className="group"
                 style={{
                   cursor: 'pointer',

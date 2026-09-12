@@ -303,3 +303,68 @@ html {
     @apply text-foreground;
   }
 }
+
+/* Admin console (ConsoleKit) — hover and focus states only. Layout and colour
+   live in the components as inline styles, matching the rest of the app; these
+   are the pseudo-class rules inline styles cannot express. */
+.ops-hud::-webkit-scrollbar {
+  display: none;
+}
+.ops-hud {
+  scrollbar-width: none;
+}
+
+.ops-focus:focus-visible {
+  outline: 2px solid var(--nt-accent);
+  outline-offset: 2px;
+}
+
+.ops-btn:not(:disabled):hover {
+  border-color: var(--nt-accent);
+  background: rgba(46, 125, 82, 0.09);
+}
+.ops-btn-primary:not(:disabled):hover {
+  background: var(--nt-accent-hover);
+  border-color: var(--nt-accent-hover);
+}
+.ops-btn-danger:not(:disabled):hover {
+  background: rgba(191, 107, 79, 0.1);
+  border-color: var(--nt-danger);
+}
+.ops-btn-ghost:not(:disabled):hover {
+  background: rgba(255, 255, 255, 0.8);
+  border-color: transparent;
+  color: var(--nt-text);
+}
+.ops-btn:not(:disabled):active {
+  transform: translateY(1px);
+}
+
+/* Console tables: actions appear on row hover / keyboard focus. */
+.ops-row:hover {
+  background: rgba(255, 255, 255, 0.7);
+}
+.ops-rowactions {
+  opacity: 0;
+  transition: opacity 0.12s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.ops-row:hover .ops-rowactions,
+.ops-row:focus-within .ops-rowactions {
+  opacity: 1;
+}
+
+/* The console HUD docks under AppShell's fixed header (92px desktop / 78px
+   mobile) and bleeds through <main>'s padding so it reads as chrome, not as a
+   card floating inside the content column. */
+.ops-hud-bar {
+  position: sticky;
+  top: 92px;
+  z-index: 40;
+  margin: -32px -32px 18px;
+}
+@media (max-width: 639px) {
+  .ops-hud-bar {
+    top: 78px;
+    margin: -16px -16px 14px;
+  }
+}

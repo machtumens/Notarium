@@ -1,6 +1,10 @@
 import { useState } from 'react';
-import { darkTheme } from '../../theme';
 import type { AdminUser } from './types';
+import { Button, Callout, Field, Modal } from '../../components/ops/ConsoleKit';
+import { ink, monoFace } from '../../components/ops/tokens';
+import { darkTheme } from '../../theme';
+
+const t = darkTheme;
 
 interface SuspendUserModalProps {
   user: AdminUser | null;
@@ -8,180 +12,119 @@ interface SuspendUserModalProps {
   onSuspend: (userId: number, days: number, reason: string) => Promise<void>;
 }
 
+const controlStyle: React.CSSProperties = {
+  width: '100%',
+  font: 'inherit',
+  fontSize: '12.5px',
+  padding: '6px 9px',
+  border: '1px solid rgba(28,42,34,.2)',
+  borderRadius: t.borderRadius.sm,
+  background: '#fff',
+  color: t.colors.textPrimary,
+  boxSizing: 'border-box',
+};
+
 export default function SuspendUserModal({ user, onClose, onSuspend }: SuspendUserModalProps) {
   const [days, setDays] = useState(7);
   const [reason, setReason] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   if (!user) return null;
+
+  const name = user.display_name || user.name;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
+    setError(null);
     try {
       await onSuspend(user.id, days, reason);
       onClose();
-    } catch (error) {
-      alert('Failed to suspend user');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not suspend this student. Try again.');
     } finally {
       setIsSubmitting(false);
     }
   };
 
   return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(20, 44, 30, 0.8)',
-        backdropFilter: 'blur(4px)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 1002,
-        padding: '16px',
-      }}
-      onClick={onClose}
-    >
-      <div
-        style={{
-          background: darkTheme.colors.bgPrimary,
-          borderRadius: darkTheme.borderRadius.lg,
-          width: '100%',
-          maxWidth: '500px',
-          color: darkTheme.colors.textPrimary,
-          boxShadow: darkTheme.shadows.lg,
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            padding: '24px',
-            borderBottom: `1px solid ${darkTheme.colors.borderColor}`,
-          }}
-        >
-          <h2 style={{ fontSize: '20px', margin: 0, fontWeight: '600' }}>Suspend User</h2>
-          <button
-            onClick={onClose}
-            style={{
-              fontSize: '24px',
-              background: 'none',
-              border: 'none',
-              cursor: 'pointer',
-              color: darkTheme.colors.textSecondary,
+    <Modal
+      title={`Suspend ${name}`}
+      sub={user.email}
+      tone="crit"
+      width="470px"
+      onClose={onClose}
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            variant="danger"
+            type="submit"
+            disabled={isSubmitting || !reason.trim()}
+            onClick={() => {
+              const form = document.getElementById('suspend-form') as HTMLFormElement | null;
+              form?.requestSubmit();
             }}
           >
-            ×
-          </button>
+            {isSubmitting ? 'Suspending…' : `Suspend for ${days} day${days === 1 ? '' : 's'}`}
+          </Button>
+        </>
+      }
+    >
+      <form id="suspend-form" onSubmit={handleSubmit}>
+        {error && (
+          <div style={{ marginBottom: '12px' }}>
+            <Callout tone="crit">{error}</Callout>
+          </div>
+        )}
+        <div style={{ marginBottom: '12px' }}>
+          <Callout tone="warn">
+            They cannot sign in until the suspension ends. Their notes stay visible unless you
+            remove them separately.
+          </Callout>
         </div>
 
-        {/* Content */}
-        <form onSubmit={handleSubmit} style={{ padding: '24px' }}>
-          <div style={{ marginBottom: '20px' }}>
-            <div
-              style={{ fontSize: '14px', color: darkTheme.colors.textPrimary, marginBottom: '8px' }}
-            >
-              User: <strong>{user.display_name || user.name}</strong>
-            </div>
-            <div style={{ fontSize: '13px', color: darkTheme.colors.textSecondary }}>
-              {user.email}
-            </div>
-          </div>
-
-          <div style={{ marginBottom: '20px' }}>
-            <label
-              style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: '500' }}
-            >
-              Suspension Duration (days)
-            </label>
+        <Field label="Length" htmlFor="suspend-days" hint="Between 1 and 365 days.">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <input
+              id="suspend-days"
+              aria-label="Suspension length in days"
               type="number"
-              min="1"
-              max="365"
+              min={1}
+              max={365}
+              required
               value={days}
-              onChange={(e) => setDays(parseInt(e.target.value))}
-              required
-              style={{
-                width: '100%',
-                padding: '10px 12px',
-                background: darkTheme.colors.bgSecondary,
-                border: `1px solid ${darkTheme.colors.borderColor}`,
-                borderRadius: darkTheme.borderRadius.md,
-                color: darkTheme.colors.textPrimary,
-                fontSize: '14px',
-                boxSizing: 'border-box',
-              }}
+              onChange={(e) =>
+                setDays(Math.min(365, Math.max(1, parseInt(e.target.value || '1', 10))))
+              }
+              className="ops-focus"
+              style={{ ...controlStyle, width: '90px', fontFamily: monoFace }}
             />
+            <span style={{ fontSize: '11.5px', color: ink.fainter }}>days</span>
           </div>
+        </Field>
 
-          <div style={{ marginBottom: '24px' }}>
-            <label
-              style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: '500' }}
-            >
-              Reason / Warning Message
-            </label>
-            <textarea
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              placeholder="Enter the reason for suspension (visible to user)..."
-              required
-              rows={4}
-              style={{
-                width: '100%',
-                padding: '10px 12px',
-                background: darkTheme.colors.bgSecondary,
-                border: `1px solid ${darkTheme.colors.borderColor}`,
-                borderRadius: darkTheme.borderRadius.md,
-                color: darkTheme.colors.textPrimary,
-                fontSize: '14px',
-                boxSizing: 'border-box',
-                resize: 'vertical',
-                fontFamily: 'inherit',
-              }}
-            />
-          </div>
-
-          <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
-            <button
-              type="button"
-              onClick={onClose}
-              style={{
-                padding: '10px 20px',
-                background: darkTheme.colors.bgSecondary,
-                border: `1px solid ${darkTheme.colors.borderColor}`,
-                color: darkTheme.colors.textPrimary,
-                borderRadius: darkTheme.borderRadius.md,
-                cursor: 'pointer',
-                fontSize: '14px',
-                fontWeight: '500',
-              }}
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              style={{
-                padding: '10px 20px',
-                background: 'rgba(245, 158, 11, 0.9)',
-                border: 'none',
-                color: '#1c2a22',
-                borderRadius: darkTheme.borderRadius.md,
-                cursor: isSubmitting ? 'not-allowed' : 'pointer',
-                fontSize: '14px',
-                fontWeight: '600',
-                opacity: isSubmitting ? 0.7 : 1,
-              }}
-            >
-              {isSubmitting ? 'Suspending...' : `Suspend for ${days} day${days !== 1 ? 's' : ''}`}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+        <Field
+          label="Reason"
+          htmlFor="suspend-reason"
+          hint="The student sees this word for word, so write it to them."
+        >
+          <textarea
+            id="suspend-reason"
+            aria-label="Reason the student will see"
+            required
+            rows={4}
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="What they did, and what happens if it happens again."
+            className="ops-focus"
+            style={{ ...controlStyle, resize: 'vertical', fontFamily: 'inherit' }}
+          />
+        </Field>
+      </form>
+    </Modal>
   );
 }

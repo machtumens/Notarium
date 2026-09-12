@@ -16,6 +16,11 @@ export interface AdminUser {
   total_likes?: number;
   total_admin_upvotes?: number;
   photo_url?: string;
+  // Economy fields the moderator editor writes back. Optional because
+  // getAllUsers does not always project them.
+  diamonds?: number;
+  learning_points?: number;
+  grade?: number;
 }
 
 export interface AdminNote {

@@ -14,7 +14,7 @@ export async function logAiUsage(
 ): Promise<void> {
   try {
     await env.DB.prepare(
-      `INSERT INTO ai_usage (provider, endpoint, ok, duration_ms, tokens) VALUES (?, ?, ?, ?, ?)`,
+      `INSERT INTO ai_usage (provider, endpoint, ok, duration_ms, tokens, ts) VALUES (?, ?, ?, ?, ?, ${SQL_NOW_ISO})`,
     )
       .bind(provider, endpoint, ok ? 1 : 0, durationMs, tokens)
       .run();

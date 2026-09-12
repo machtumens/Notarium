@@ -21,7 +21,10 @@ export async function getSubjects(_request: Request, env: Env) {
 
 export async function getPublicGradeClasses(env: Env) {
   const { results } = await env.DB.prepare(
-    `SELECT id, grade, class_name, semester FROM grade_classes WHERE is_active = 1 ORDER BY grade, class_name`,
+    // is_active is SELECTed as well as filtered on: the signup form filters the
+    // returned rows on it client-side, and an absent field is falsy — which
+    // silently empties the class dropdown and blocks every signup.
+    `SELECT id, grade, class_name, semester, is_active FROM grade_classes WHERE is_active = 1 ORDER BY grade, class_name`,
   ).all();
   const grouped: Record<number, typeof results> = {};
   for (const row of results) {

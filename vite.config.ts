@@ -5,6 +5,12 @@ import path from 'path';
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [react()],
+  server: {
+    // Honour PORT so a second dev server (another agent session, a colleague on
+    // the same box) can be assigned a free port instead of colliding on 5173.
+    // Unset behaves exactly as before.
+    port: Number(process.env.PORT) || 5173,
+  },
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),

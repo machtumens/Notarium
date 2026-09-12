@@ -6,8 +6,10 @@ import {
   createToken,
   verifyToken,
   timingSafeEqualStr,
+  touchLastSeen,
 } from '../lib/auth';
 import { checkRateLimit, validateRequestSize } from '../lib/ratelimit';
+import { RATE_LIMIT_MAX_ATTEMPTS_PER_IP } from '../lib/env';
 import { signupSchema, loginSchema } from '../lib/validation';
 import { createMfaChallenge } from '../lib/totp';
 import { currentAcademicYear } from '../lib/academicYear';
@@ -19,7 +21,7 @@ export async function signupEndpoint(request: Request, env: Env) {
       return jsonResponse({ error: 'Request too large' }, 413, env);
     }
     const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
-    const canProceed = await checkRateLimit(ip, 'signup', env);
+    const canProceed = await checkRateLimit(ip, 'signup', env, RATE_LIMIT_MAX_ATTEMPTS_PER_IP);
     if (!canProceed) {
       return jsonResponse(
         { error: 'Too many signup attempts. Please try again in 15 minutes.' },
@@ -157,14 +159,6 @@ export async function loginEndpoint(request: Request, env: Env) {
       return jsonResponse({ error: 'Request too large' }, 413, env);
     }
     const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
-    const canProceed = await checkRateLimit(ip, 'login', env);
-    if (!canProceed) {
-      return jsonResponse(
-        { error: 'Too many login attempts. Please try again in 15 minutes.' },
-        429,
-        env,
-      );
-    }
     let body;
     try {
       body = (await request.json()) as any;
@@ -185,6 +179,19 @@ export async function loginEndpoint(request: Request, env: Env) {
     }
 
     const { email, password } = validation.data;
+
+    // Keyed on IP *and* account, not IP alone. The school sits behind one NAT,
+    // so an IP-only key gives the entire school five logins per quarter hour —
+    // one student mistyping a password locks out the class. Including the email
+    // keeps the brute-force ceiling at five guesses per account from any one
+    // origin, which is the property that actually matters here.
+    if (!(await checkRateLimit(`${ip}|${email.toLowerCase()}`, 'login', env))) {
+      return jsonResponse(
+        { error: 'Too many login attempts. Please try again in 15 minutes.' },
+        429,
+        env,
+      );
+    }
 
     let user;
     try {
@@ -430,6 +437,7 @@ export async function meEndpoint(request: Request, env: Env) {
             warning_view_count,
             totp_enabled,
             timezone,
+            last_seen_at,
             (notes_uploaded + total_likes + total_admin_upvotes) as points
           FROM users WHERE id = ?
         `,
@@ -574,6 +582,11 @@ export async function meEndpoint(request: Request, env: Env) {
         // null = no override; the client falls back to the school default.
         timezone: userData.timezone || null,
       };
+
+      // The client calls this on every page load, which makes it the most
+      // reliable signal that someone is actually using the app. The row is
+      // already in hand, so a user seen recently costs no extra query.
+      await touchLastSeen(env, userId, userData.last_seen_at);
 
       return jsonResponse({ user });
     } catch (dbError: any) {

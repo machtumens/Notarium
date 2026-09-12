@@ -1,6 +1,13 @@
+/**
+ * Moderator dashboard — the people-and-content half of the admin console.
+ *
+ * Shares ConsoleKit with the ops dashboard, so both surfaces read as one tool.
+ * Data wiring is untouched: still `useAdminData()`, still the same handlers.
+ */
 import LoadingSpinner from '../components/LoadingSpinner';
-// AdminNoteEditModal import removed (TS6133: declared but never read)
 import AdminUsageReport from './AdminUsageReport';
+import { Hud, Readout, Readouts, type HudReadout } from '../components/ops/ConsoleKit';
+import { displayFace } from '../components/ops/tokens';
 import { darkTheme } from '../theme';
 import { useAdminData } from './admin/useAdminData';
 import AdminTabs from './admin/AdminTabs';
@@ -12,6 +19,17 @@ import NotesTab from './admin/NotesTab';
 import SuspendUserModal from './admin/SuspendUserModal';
 import WarnUserModal from './admin/WarnUserModal';
 import UserDetailModal from './admin/UserDetailModal';
+
+const t = darkTheme;
+
+const TAB_BLURB: Record<string, string> = {
+  users: 'Every account and what it has been up to. Suspensions and warnings are reversible.',
+  notes: 'The library as moderators see it — feature, edit, or take a note down.',
+  subjects: 'The subject list students file notes under.',
+  classes: 'Year groups, class membership, and promoting a year at the end of term.',
+  notifications: 'A notification in every targeted student’s inbox. Sent ones can be taken down.',
+  usage: 'How much Notarium is being used, and where the gaps are.',
+};
 
 export default function AdminPage() {
   const {
@@ -52,64 +70,84 @@ export default function AdminPage() {
   const activeSuspensions = users.filter((u) => u.suspended).length;
   const activeWarnings = users.filter((u) => u.warning).length;
   const notesCount = users.reduce((sum, u) => sum + (u.notes_uploaded || u.notes_count || 0), 0);
+  const num = (n: number) => n.toLocaleString();
 
-  const summaryCards = [
-    { label: 'Total Users', value: totalUsers, color: darkTheme.colors.accent },
-    { label: 'Active Suspensions', value: activeSuspensions, color: '#fca5a5' },
-    { label: 'Active Warnings', value: activeWarnings, color: '#fbbf24' },
-    { label: 'Notes Uploaded', value: notesCount, color: '#86efac' },
+  const hudItems: HudReadout[] = [
+    { label: 'Students', value: num(totalUsers) },
+    { label: 'Notes', value: num(notesCount) },
+    {
+      label: 'Suspended',
+      value: num(activeSuspensions),
+      tone: activeSuspensions > 0 ? 'warn' : undefined,
+    },
+    {
+      label: 'Warnings',
+      value: num(activeWarnings),
+      tone: activeWarnings > 0 ? 'warn' : undefined,
+    },
+    { label: 'Classes', value: num(gradeClasses.length) },
+    { label: 'Announcements', value: num(sentNotifications.length) },
+    { label: 'Logged actions', value: num(activityLogs.length) },
   ];
 
   return (
     <div>
-      <h2
-        style={{
-          fontSize: '28px',
-          fontWeight: 'bold',
-          marginBottom: '24px',
-          color: darkTheme.colors.textPrimary,
-        }}
-      >
-        Admin Dashboard
-      </h2>
+      <Hud title="Flight Deck" scope="Moderation" items={hudItems} />
 
-      {/* Summary cards */}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
-          gap: '16px',
-          marginBottom: '24px',
-        }}
-      >
-        {summaryCards.map((card) => (
-          <div
-            key={card.label}
-            style={{
-              padding: '20px',
-              background: darkTheme.colors.bgSecondary,
-              borderRadius: darkTheme.borderRadius.md,
-              border: `1px solid ${darkTheme.colors.borderColor}`,
-            }}
-          >
-            <div style={{ fontSize: '28px', fontWeight: 700, color: card.color }}>{card.value}</div>
-            <div
-              style={{
-                fontSize: '13px',
-                color: darkTheme.colors.textSecondary,
-                marginTop: '4px',
-              }}
-            >
-              {card.label}
-            </div>
-          </div>
-        ))}
+      <div style={{ marginBottom: '14px' }}>
+        <h1
+          style={{
+            margin: 0,
+            fontFamily: displayFace,
+            fontSize: '23px',
+            fontWeight: 600,
+            letterSpacing: '-.02em',
+          }}
+        >
+          Moderation
+        </h1>
+        <p
+          style={{
+            margin: '4px 0 0',
+            fontSize: '12.5px',
+            color: t.colors.textSecondary,
+            maxWidth: '70ch',
+          }}
+        >
+          {TAB_BLURB[activeTab]}
+        </p>
       </div>
 
-      {/* Tabs */}
-      <AdminTabs activeTab={activeTab} setActiveTab={setActiveTab} />
+      <div style={{ marginBottom: '16px' }}>
+        <Readouts>
+          <Readout label="Students" value={num(totalUsers)} delta="on the roll" />
+          <Readout
+            label="Suspended"
+            value={num(activeSuspensions)}
+            state={activeSuspensions > 0 ? 'crit' : undefined}
+            delta={activeSuspensions > 0 ? 'cannot sign in' : 'none active'}
+          />
+          <Readout
+            label="Active warnings"
+            value={num(activeWarnings)}
+            state={activeWarnings > 0 ? 'warn' : undefined}
+            delta={activeWarnings > 0 ? 'shown on next sign-in' : 'none active'}
+          />
+          <Readout label="Notes uploaded" value={num(notesCount)} delta="across all students" />
+          <Readout label="Year groups" value={num(gradeClasses.length)} />
+        </Readouts>
+      </div>
 
-      {/* Tab Content */}
+      <AdminTabs
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
+        counts={{
+          users: { count: totalUsers },
+          classes: { count: gradeClasses.length },
+          notifications: { count: sentNotifications.length },
+        }}
+      />
+
       {activeTab === 'usage' ? (
         <AdminUsageReport />
       ) : activeTab === 'notes' ? (
@@ -139,7 +177,7 @@ export default function AdminPage() {
           setSentNotifications={setSentNotifications}
         />
       ) : loading ? (
-        <LoadingSpinner message="Loading admin data..." />
+        <LoadingSpinner message="Loading students…" />
       ) : (
         <UsersTab
           users={users}
@@ -155,7 +193,6 @@ export default function AdminPage() {
         />
       )}
 
-      {/* Modals */}
       {selectedUser && (
         <UserDetailModal
           user={selectedUser}

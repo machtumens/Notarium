@@ -10,7 +10,7 @@ import {
 } from './lib/auth';
 import { checkRateLimit } from './lib/ratelimit';
 import { initializeDatabase, MOCK_SUBJECTS, SCHEMA_VERSION } from './lib/db';
-import { isValidZone, isoUtc } from './lib/time';
+import { isValidZone, isoUtc, SQL_NOW_ISO } from './lib/time';
 import { handleOAuthRoutes } from './routes/oauth';
 
 import {
@@ -156,7 +156,7 @@ function recordMetric(
     const sample = isError || Date.now() % 5 === 0;
     if (!sample) return;
     const task = env.DB.prepare(
-      `INSERT INTO request_metrics (path, method, status, duration_ms) VALUES (?, ?, ?, ?)`,
+      `INSERT INTO request_metrics (path, method, status, duration_ms, ts) VALUES (?, ?, ?, ?, ${SQL_NOW_ISO})`,
     )
       .bind(path, method, status, ms)
       .run()
@@ -646,10 +646,6 @@ export default {
           return jsonResponse({ error: 'Database not available' }, 503);
         }
         try {
-          const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
-          if (!(await checkRateLimit(ip, 'change-password', env))) {
-            return jsonResponse({ error: 'Too many requests. Try again later.' }, 429, env);
-          }
           const auth = request.headers.get('Authorization');
           const token = auth?.startsWith('Bearer ') ? auth.slice(7) : null;
 
@@ -663,6 +659,12 @@ export default {
           }
 
           const userId = decoded.id;
+
+          // Keyed on the account, not the IP: the caller is already
+          // authenticated, and the whole school shares one public IP.
+          if (!(await checkRateLimit(String(userId), 'change-password', env))) {
+            return jsonResponse({ error: 'Too many requests. Try again later.' }, 429, env);
+          }
 
           const body = (await request.json()) as any;
           const { currentPassword, newPassword } = body;

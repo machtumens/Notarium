@@ -55,7 +55,7 @@ Token mismatch to bridge: legacy = **HS256** (symmetric `JWT_SECRET`); Firebase 
 - [x] `env.ts`: add `FIREBASE_PROJECT_ID`
 - [x] `db.ts` + migration `0015`: add `firebase_uid TEXT` + unique index
 - [x] `auth.ts`: `verifyFirebaseToken` (RS256/JWKS) + `resolveIdentity` (Firebase → legacy fallback); JIT-link by verified email, JIT-provision new
-- [ ] Test: identity-resolution decision logic (verified-email link gate, uid match, legacy fallback)
+- [x] Test: identity-resolution decision logic (verified-email link gate, uid match, legacy fallback) — `backend/src/lib/__tests__/identity-resolution.test.ts`, 7 tests, mutation-checked on the link gate
 - [ ] Set `FIREBASE_PROJECT_ID` via `wrangler secret`/var; deploy
 
 ### Phase 2 — Frontend swap (new logins → Firebase)

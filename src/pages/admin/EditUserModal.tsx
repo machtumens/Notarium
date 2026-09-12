@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import api from '../../lib/api';
-import { darkTheme } from '../../theme';
 import type { AdminUser } from './types';
+import { Button, Callout, Field, Modal, TextField } from '../../components/ops/ConsoleKit';
+import { ink } from '../../components/ops/tokens';
 
 interface EditUserModalProps {
   user: AdminUser;
@@ -9,33 +10,31 @@ interface EditUserModalProps {
   onSaved: () => void;
 }
 
-const inputStyle: React.CSSProperties = {
-  width: '100%',
-  padding: '10px 12px',
-  background: darkTheme.colors.bgSecondary,
-  border: `1px solid ${darkTheme.colors.borderColor}`,
-  borderRadius: darkTheme.borderRadius.sm,
-  color: darkTheme.colors.textPrimary,
-  fontSize: '14px',
-  boxSizing: 'border-box',
-};
-
-const labelStyle: React.CSSProperties = {
-  fontSize: '12px',
-  color: darkTheme.colors.textSecondary,
-  marginBottom: '4px',
-  display: 'block',
-};
-
 // Moderator-facing profile editor. Deliberately omits any role field —
-// role editing is super-only and stays backend-only for now (Phase 2).
+// access follows the email allowlist, so there is nothing to grant here.
 export default function EditUserModal({ user, onClose, onSaved }: EditUserModalProps) {
   const [displayName, setDisplayName] = useState(user.display_name || user.name || '');
   const [userClass, setUserClass] = useState(user.class || '');
-  const [diamonds, setDiamonds] = useState(String((user as any).diamonds ?? 0));
-  const [learningPoints, setLearningPoints] = useState(String((user as any).learning_points ?? 0));
+  const [diamonds, setDiamonds] = useState(String(user.diamonds ?? 0));
+  const [learningPoints, setLearningPoints] = useState(String(user.learning_points ?? 0));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const startDiamonds = String(user.diamonds ?? 0);
+  const startPoints = String(user.learning_points ?? 0);
+  const changed =
+    displayName !== (user.display_name || user.name || '') ||
+    userClass !== (user.class || '') ||
+    diamonds !== startDiamonds ||
+    learningPoints !== startPoints;
+
+  // Points and diamonds are a manual override, so the delta is spelled out
+  // rather than left for the moderator to work out from two numbers.
+  const delta = (next: string, before: string) => {
+    const d = (Number(next) || 0) - (Number(before) || 0);
+    if (d === 0) return null;
+    return `${d > 0 ? '+' : ''}${d.toLocaleString()} from ${Number(before).toLocaleString()}`;
+  };
 
   const handleSave = async () => {
     setSaving(true);
@@ -57,134 +56,87 @@ export default function EditUserModal({ user, onClose, onSaved }: EditUserModalP
   };
 
   return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(20, 44, 30, 0.8)',
-        backdropFilter: 'blur(4px)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 1002,
-        padding: '16px',
-      }}
-      onClick={onClose}
+    <Modal
+      title={`Edit ${user.display_name || user.name}`}
+      sub={user.email}
+      width="470px"
+      onClose={onClose}
+      footer={
+        <>
+          <Button variant="ghost" disabled={saving} onClick={onClose}>
+            Cancel
+          </Button>
+          <Button variant="primary" disabled={saving || !changed} onClick={handleSave}>
+            {saving ? 'Saving…' : 'Save changes'}
+          </Button>
+        </>
+      }
     >
-      <div
-        style={{
-          background: darkTheme.colors.bgPrimary,
-          borderRadius: darkTheme.borderRadius.lg,
-          width: '100%',
-          maxWidth: '440px',
-          color: darkTheme.colors.textPrimary,
-          boxShadow: darkTheme.shadows.lg,
-        }}
-        onClick={(e) => e.stopPropagation()}
+      {error && (
+        <div style={{ marginBottom: '12px' }}>
+          <Callout tone="crit">{error}</Callout>
+        </div>
+      )}
+
+      <Field label="Display name" htmlFor="edit-name">
+        <TextField
+          id="edit-name"
+          label="Display name"
+          value={displayName}
+          onChange={setDisplayName}
+        />
+      </Field>
+
+      <Field label="Class" htmlFor="edit-class" hint="Must match a class from the Classes tab.">
+        <TextField
+          id="edit-class"
+          label="Class"
+          placeholder="e.g. 10.1"
+          value={userClass}
+          onChange={setUserClass}
+        />
+      </Field>
+
+      <Field label="Diamonds" htmlFor="edit-diamonds" hint={delta(diamonds, startDiamonds)}>
+        <TextField
+          id="edit-diamonds"
+          type="number"
+          label="Diamonds"
+          value={diamonds}
+          onChange={setDiamonds}
+          mono
+          width="130px"
+        />
+      </Field>
+
+      <Field
+        label="Learning points"
+        htmlFor="edit-points"
+        hint={delta(learningPoints, startPoints)}
       >
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            padding: '20px 24px',
-            borderBottom: `1px solid ${darkTheme.colors.borderColor}`,
-          }}
-        >
-          <h2 style={{ fontSize: '18px', margin: 0, fontWeight: '600' }}>Edit User</h2>
-          <button
-            onClick={onClose}
-            style={{
-              fontSize: '24px',
-              background: 'none',
-              border: 'none',
-              cursor: 'pointer',
-              color: darkTheme.colors.textSecondary,
-            }}
-          >
-            ×
-          </button>
-        </div>
+        <TextField
+          id="edit-points"
+          type="number"
+          label="Learning points"
+          value={learningPoints}
+          onChange={setLearningPoints}
+          mono
+          width="130px"
+        />
+      </Field>
 
-        <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          <div>
-            <label style={labelStyle}>Display Name</label>
-            <input
-              value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
-              style={inputStyle}
-            />
-          </div>
-          <div>
-            <label style={labelStyle}>Class</label>
-            <input
-              value={userClass}
-              onChange={(e) => setUserClass(e.target.value)}
-              placeholder="e.g. 10.1"
-              style={inputStyle}
-            />
-          </div>
-          <div style={{ display: 'flex', gap: '12px' }}>
-            <div style={{ flex: 1 }}>
-              <label style={labelStyle}>Diamonds</label>
-              <input
-                type="number"
-                value={diamonds}
-                onChange={(e) => setDiamonds(e.target.value)}
-                style={inputStyle}
-              />
-            </div>
-            <div style={{ flex: 1 }}>
-              <label style={labelStyle}>Learning Points</label>
-              <input
-                type="number"
-                value={learningPoints}
-                onChange={(e) => setLearningPoints(e.target.value)}
-                style={inputStyle}
-              />
-            </div>
-          </div>
-
-          {error && <div style={{ color: '#fca5a5', fontSize: '13px' }}>{error}</div>}
-
-          <div
-            style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '8px' }}
-          >
-            <button
-              onClick={onClose}
-              disabled={saving}
-              style={{
-                padding: '10px 16px',
-                background: darkTheme.colors.bgSecondary,
-                border: `1px solid ${darkTheme.colors.borderColor}`,
-                color: darkTheme.colors.textPrimary,
-                borderRadius: darkTheme.borderRadius.md,
-                cursor: 'pointer',
-                fontSize: '14px',
-              }}
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleSave}
-              disabled={saving}
-              style={{
-                padding: '10px 16px',
-                background: darkTheme.colors.accent,
-                border: 'none',
-                color: '#fff',
-                borderRadius: darkTheme.borderRadius.md,
-                cursor: saving ? 'not-allowed' : 'pointer',
-                fontSize: '14px',
-                fontWeight: '600',
-                opacity: saving ? 0.6 : 1,
-              }}
-            >
-              {saving ? 'Saving...' : 'Save Changes'}
-            </button>
-          </div>
-        </div>
+      <div style={{ marginTop: '14px' }}>
+        <Callout>
+          Changing points or diamonds by hand is recorded in the activity log under your name.
+          Access level is not editable here — it follows the email allowlist.
+        </Callout>
       </div>
-    </div>
+
+      {!changed && (
+        <div style={{ marginTop: '10px', fontSize: '11px', color: ink.fainter }}>
+          Nothing has changed yet.
+        </div>
+      )}
+    </Modal>
   );
 }

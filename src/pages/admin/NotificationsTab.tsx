@@ -1,7 +1,24 @@
+import { useState } from 'react';
 import api from '../../lib/api';
-import { darkTheme, cardStyle } from '../../theme';
 import type { AdminUser } from './types';
 import { formatDate } from '../../lib/datetime';
+import {
+  Button,
+  Callout,
+  EmptyState,
+  Field,
+  Panel,
+  Pill,
+  RowActions,
+  SelectField,
+  TableWrap,
+  TextField,
+  type Tone,
+} from '../../components/ops/ConsoleKit';
+import { ink, rowSubStyle, tdStyle, thStyle } from '../../components/ops/tokens';
+import { darkTheme } from '../../theme';
+
+const t = darkTheme;
 
 interface NotifForm {
   target_type: string;
@@ -24,6 +41,22 @@ interface NotificationsTabProps {
   setSentNotifications: React.Dispatch<React.SetStateAction<any[]>>;
 }
 
+const EMPTY_FORM: NotifForm = {
+  target_type: 'all',
+  target_grade: '',
+  target_class: '',
+  target_user_id: '',
+  notification_type: 'announcement',
+  title: '',
+  message: '',
+};
+
+const TYPE_TONE: Record<string, Tone> = {
+  announcement: 'info',
+  warning: 'warn',
+  class_reassignment: 'mute',
+};
+
 export default function NotificationsTab({
   users,
   gradeClasses,
@@ -34,381 +67,269 @@ export default function NotificationsTab({
   sentNotifications,
   setSentNotifications,
 }: NotificationsTabProps) {
-  return (
-    <div>
-      <h3
-        style={{
-          fontSize: '20px',
-          fontWeight: '600',
-          marginBottom: '16px',
-          color: darkTheme.colors.textPrimary,
-        }}
-      >
-        Send Notification
-      </h3>
-      {/* Compose Form */}
-      <div style={{ ...cardStyle, marginBottom: '24px', padding: '20px' }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-            <div style={{ flex: 1, minWidth: '160px' }}>
-              <label
-                style={{
-                  display: 'block',
-                  fontSize: '12px',
-                  color: darkTheme.colors.textSecondary,
-                  marginBottom: '4px',
-                }}
-              >
-                Target
-              </label>
-              <select
-                value={notifForm.target_type}
-                onChange={(e) =>
-                  setNotifForm((p) => ({
-                    ...p,
-                    target_type: e.target.value,
-                    target_grade: '',
-                    target_class: '',
-                    target_user_id: '',
-                  }))
-                }
-                style={{
-                  width: '100%',
-                  padding: '8px 12px',
-                  background: darkTheme.colors.cardBg,
-                  border: `1px solid ${darkTheme.colors.borderColor}`,
-                  borderRadius: '6px',
-                  color: darkTheme.colors.textPrimary,
-                  fontSize: '14px',
-                }}
-              >
-                <option value="all">All Users</option>
-                <option value="grade">Specific Grade</option>
-                <option value="class">Specific Class</option>
-                <option value="user">Specific Student</option>
-              </select>
-            </div>
-            {notifForm.target_type === 'grade' && (
-              <div style={{ flex: 1, minWidth: '140px' }}>
-                <label
-                  style={{
-                    display: 'block',
-                    fontSize: '12px',
-                    color: darkTheme.colors.textSecondary,
-                    marginBottom: '4px',
-                  }}
-                >
-                  Grade
-                </label>
-                <select
-                  value={notifForm.target_grade}
-                  onChange={(e) => setNotifForm((p) => ({ ...p, target_grade: e.target.value }))}
-                  style={{
-                    width: '100%',
-                    padding: '8px 12px',
-                    background: darkTheme.colors.cardBg,
-                    border: `1px solid ${darkTheme.colors.borderColor}`,
-                    borderRadius: '6px',
-                    color: darkTheme.colors.textPrimary,
-                    fontSize: '14px',
-                  }}
-                >
-                  <option value="">Select grade</option>
-                  <option value="10">Grade 10</option>
-                  <option value="11">Grade 11</option>
-                  <option value="12">Grade 12</option>
-                </select>
-              </div>
-            )}
-            {notifForm.target_type === 'class' && (
-              <div style={{ flex: 1, minWidth: '140px' }}>
-                <label
-                  style={{
-                    display: 'block',
-                    fontSize: '12px',
-                    color: darkTheme.colors.textSecondary,
-                    marginBottom: '4px',
-                  }}
-                >
-                  Class
-                </label>
-                <select
-                  value={notifForm.target_class}
-                  onChange={(e) => setNotifForm((p) => ({ ...p, target_class: e.target.value }))}
-                  style={{
-                    width: '100%',
-                    padding: '8px 12px',
-                    background: darkTheme.colors.cardBg,
-                    border: `1px solid ${darkTheme.colors.borderColor}`,
-                    borderRadius: '6px',
-                    color: darkTheme.colors.textPrimary,
-                    fontSize: '14px',
-                  }}
-                >
-                  <option value="">Select class</option>
-                  {gradeClasses
-                    .filter((gc: any) => gc.is_active)
-                    .map((gc: any) => (
-                      <option key={gc.id} value={gc.class_name}>
-                        {gc.class_name}
-                      </option>
-                    ))}
-                </select>
-              </div>
-            )}
-            {notifForm.target_type === 'user' && (
-              <div style={{ flex: 1, minWidth: '160px' }}>
-                <label
-                  style={{
-                    display: 'block',
-                    fontSize: '12px',
-                    color: darkTheme.colors.textSecondary,
-                    marginBottom: '4px',
-                  }}
-                >
-                  Student
-                </label>
-                <select
-                  value={notifForm.target_user_id}
-                  onChange={(e) => setNotifForm((p) => ({ ...p, target_user_id: e.target.value }))}
-                  style={{
-                    width: '100%',
-                    padding: '8px 12px',
-                    background: darkTheme.colors.cardBg,
-                    border: `1px solid ${darkTheme.colors.borderColor}`,
-                    borderRadius: '6px',
-                    color: darkTheme.colors.textPrimary,
-                    fontSize: '14px',
-                  }}
-                >
-                  <option value="">Select student</option>
-                  {users
-                    .filter((u) => u.role === 'student')
-                    .map((u) => (
-                      <option key={u.id} value={u.id}>
-                        {u.name}
-                      </option>
-                    ))}
-                </select>
-              </div>
-            )}
-            <div style={{ flex: 1, minWidth: '160px' }}>
-              <label
-                style={{
-                  display: 'block',
-                  fontSize: '12px',
-                  color: darkTheme.colors.textSecondary,
-                  marginBottom: '4px',
-                }}
-              >
-                Type
-              </label>
-              <select
-                value={notifForm.notification_type}
-                onChange={(e) => setNotifForm((p) => ({ ...p, notification_type: e.target.value }))}
-                style={{
-                  width: '100%',
-                  padding: '8px 12px',
-                  background: darkTheme.colors.cardBg,
-                  border: `1px solid ${darkTheme.colors.borderColor}`,
-                  borderRadius: '6px',
-                  color: darkTheme.colors.textPrimary,
-                  fontSize: '14px',
-                }}
-              >
-                <option value="announcement">Announcement</option>
-                <option value="class_reassignment">Class Reassignment</option>
-                <option value="warning">Warning</option>
-              </select>
-            </div>
-          </div>
-          <input
-            placeholder="Title"
-            value={notifForm.title}
-            onChange={(e) => setNotifForm((p) => ({ ...p, title: e.target.value }))}
-            style={{
-              padding: '8px 12px',
-              background: darkTheme.colors.cardBg,
-              border: `1px solid ${darkTheme.colors.borderColor}`,
-              borderRadius: '6px',
-              color: darkTheme.colors.textPrimary,
-              fontSize: '14px',
-            }}
-          />
-          <textarea
-            placeholder="Message"
-            value={notifForm.message}
-            onChange={(e) => setNotifForm((p) => ({ ...p, message: e.target.value }))}
-            rows={3}
-            style={{
-              padding: '8px 12px',
-              background: darkTheme.colors.cardBg,
-              border: `1px solid ${darkTheme.colors.borderColor}`,
-              borderRadius: '6px',
-              color: darkTheme.colors.textPrimary,
-              fontSize: '14px',
-              resize: 'vertical',
-            }}
-          />
-          <button
-            disabled={notifLoading || !notifForm.title || !notifForm.message}
-            onClick={async () => {
-              setNotifLoading(true);
-              try {
-                await api.admin.createNotification({
-                  target_type: notifForm.target_type,
-                  target_grade: notifForm.target_grade ? Number(notifForm.target_grade) : undefined,
-                  target_class: notifForm.target_class || undefined,
-                  target_user_id: notifForm.target_user_id
-                    ? Number(notifForm.target_user_id)
-                    : undefined,
-                  notification_type: notifForm.notification_type,
-                  title: notifForm.title,
-                  message: notifForm.message,
-                });
-                setNotifForm({
-                  target_type: 'all',
-                  target_grade: '',
-                  target_class: '',
-                  target_user_id: '',
-                  notification_type: 'announcement',
-                  title: '',
-                  message: '',
-                });
-                const res = await api.admin.getNotifications();
-                setSentNotifications((res as any).notifications || []);
-                alert('Notification sent!');
-              } catch (e: any) {
-                alert(e.message);
-              } finally {
-                setNotifLoading(false);
-              }
-            }}
-            style={{
-              alignSelf: 'flex-start',
-              padding: '8px 20px',
-              background: darkTheme.colors.accent,
-              border: 'none',
-              borderRadius: '6px',
-              color: 'white',
-              cursor: 'pointer',
-              fontWeight: '600',
-              fontSize: '14px',
-              opacity: notifLoading ? 0.6 : 1,
-            }}
-          >
-            {notifLoading ? 'Sending...' : 'Send Notification'}
-          </button>
-        </div>
-      </div>
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<number | null>(null);
 
-      {/* Sent Notifications */}
-      <h3
-        style={{
-          fontSize: '18px',
-          fontWeight: '600',
-          marginBottom: '12px',
-          color: darkTheme.colors.textPrimary,
-        }}
-      >
-        Sent Notifications
-      </h3>
-      {sentNotifications.length === 0 ? (
-        <p style={{ color: darkTheme.colors.textSecondary, fontSize: '14px' }}>
-          No notifications sent yet.
-        </p>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          {sentNotifications.map((n: any) => (
-            <div
-              key={n.id}
-              style={{
-                ...cardStyle,
-                padding: '16px',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'flex-start',
-                gap: '12px',
-              }}
-            >
-              <div style={{ flex: 1 }}>
-                <div
-                  style={{
-                    display: 'flex',
-                    gap: '8px',
-                    alignItems: 'center',
-                    marginBottom: '4px',
-                    flexWrap: 'wrap',
-                  }}
-                >
-                  <span
-                    style={{
-                      fontSize: '11px',
-                      fontWeight: '600',
-                      padding: '2px 8px',
-                      borderRadius: '9999px',
-                      background: 'rgba(59,130,246,0.15)',
-                      color: '#60a5fa',
-                    }}
-                  >
-                    {n.notification_type}
-                  </span>
-                  <span style={{ fontSize: '11px', color: darkTheme.colors.textSecondary }}>
-                    → {n.target_type}
-                    {n.target_grade ? ` ${n.target_grade}` : ''}
-                    {n.target_class ? ` ${n.target_class}` : ''}
-                  </span>
-                  <span style={{ fontSize: '11px', color: darkTheme.colors.textSecondary }}>
-                    {formatDate(n.created_at)}
-                  </span>
-                </div>
-                <p
-                  style={{
-                    margin: 0,
-                    fontWeight: '600',
-                    color: darkTheme.colors.textPrimary,
-                    fontSize: '14px',
-                  }}
-                >
-                  {n.title}
-                </p>
-                <p
-                  style={{
-                    margin: '4px 0 0',
-                    color: darkTheme.colors.textSecondary,
-                    fontSize: '13px',
-                  }}
-                >
-                  {n.message}
-                </p>
-              </div>
-              <button
-                onClick={async () => {
-                  if (!confirm('Delete this notification?')) return;
-                  try {
-                    await api.admin.deleteNotification(n.id);
-                    setSentNotifications((prev) => prev.filter((x: any) => x.id !== n.id));
-                  } catch (e: any) {
-                    alert(e.message);
-                  }
-                }}
-                style={{
-                  padding: '4px 10px',
-                  background: 'transparent',
-                  border: '1px solid #ef4444',
-                  borderRadius: '4px',
-                  color: '#ef4444',
-                  cursor: 'pointer',
-                  fontSize: '12px',
-                  flexShrink: 0,
-                }}
-              >
-                Delete
-              </button>
-            </div>
-          ))}
+  const set = (patch: Partial<NotifForm>) => setNotifForm((p) => ({ ...p, ...patch }));
+
+  // Spelled out so the send button says exactly who receives it.
+  const audienceCount =
+    notifForm.target_type === 'all'
+      ? users.length
+      : notifForm.target_type === 'grade'
+        ? users.filter((u) => String(u.grade ?? '') === notifForm.target_grade).length
+        : notifForm.target_type === 'class'
+          ? users.filter((u) => u.class === notifForm.target_class).length
+          : notifForm.target_user_id
+            ? 1
+            : 0;
+
+  const targetChosen =
+    notifForm.target_type === 'all' ||
+    (notifForm.target_type === 'grade' && notifForm.target_grade) ||
+    (notifForm.target_type === 'class' && notifForm.target_class) ||
+    (notifForm.target_type === 'user' && notifForm.target_user_id);
+
+  const canSend =
+    !notifLoading && Boolean(notifForm.title.trim() && notifForm.message.trim() && targetChosen);
+
+  const handleSend = async () => {
+    setNotifLoading(true);
+    setError(null);
+    try {
+      await api.admin.createNotification({
+        target_type: notifForm.target_type,
+        target_grade: notifForm.target_grade ? Number(notifForm.target_grade) : undefined,
+        target_class: notifForm.target_class || undefined,
+        target_user_id: notifForm.target_user_id ? Number(notifForm.target_user_id) : undefined,
+        notification_type: notifForm.notification_type,
+        title: notifForm.title,
+        message: notifForm.message,
+      });
+      setNotifForm(EMPTY_FORM);
+      const res = await api.admin.getNotifications();
+      setSentNotifications((res as any).notifications || []);
+      setNotice(
+        `Sent to ${audienceCount.toLocaleString()} student${audienceCount === 1 ? '' : 's'}.`,
+      );
+    } catch (e: any) {
+      setError(e?.message ?? 'Could not send the announcement.');
+    } finally {
+      setNotifLoading(false);
+    }
+  };
+
+  const handleDelete = async (id: number) => {
+    setError(null);
+    try {
+      await api.admin.deleteNotification(id);
+      setSentNotifications((prev) => prev.filter((x: any) => x.id !== id));
+      setPendingDelete(null);
+      setNotice('Taken down. Students no longer see it.');
+    } catch (e: any) {
+      setError(e?.message ?? 'Could not take it down.');
+    }
+  };
+
+  const controlStyle: React.CSSProperties = {
+    width: '100%',
+    font: 'inherit',
+    fontSize: '12.5px',
+    padding: '6px 9px',
+    border: '1px solid rgba(28,42,34,.2)',
+    borderRadius: t.borderRadius.sm,
+    background: '#fff',
+    color: t.colors.textPrimary,
+    boxSizing: 'border-box',
+  };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+      {error && <Callout tone="crit">{error}</Callout>}
+      {notice && <Callout>{notice}</Callout>}
+
+      <Panel legend="Write an announcement" sub="lands in the inbox of everyone you target">
+        <Field label="Audience" htmlFor="notif-audience">
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            <SelectField
+              label="Who receives this"
+              value={notifForm.target_type}
+              onChange={(v) =>
+                set({ target_type: v, target_grade: '', target_class: '', target_user_id: '' })
+              }
+              options={[
+                { value: 'all', label: 'Everyone' },
+                { value: 'grade', label: 'One year group' },
+                { value: 'class', label: 'One class' },
+                { value: 'user', label: 'One student' },
+              ]}
+            />
+
+            {notifForm.target_type === 'grade' && (
+              <SelectField
+                label="Year group"
+                value={notifForm.target_grade}
+                onChange={(v) => set({ target_grade: v })}
+                options={[
+                  { value: '', label: 'Pick a year…' },
+                  { value: '10', label: 'Year 10' },
+                  { value: '11', label: 'Year 11' },
+                  { value: '12', label: 'Year 12' },
+                ]}
+              />
+            )}
+
+            {notifForm.target_type === 'class' && (
+              <SelectField
+                label="Class"
+                value={notifForm.target_class}
+                onChange={(v) => set({ target_class: v })}
+                options={[
+                  { value: '', label: 'Pick a class…' },
+                  ...gradeClasses.map((gc: any) => ({
+                    value: String(gc.class_name),
+                    label: String(gc.class_name),
+                  })),
+                ]}
+              />
+            )}
+
+            {notifForm.target_type === 'user' && (
+              <SelectField
+                label="Student"
+                value={notifForm.target_user_id}
+                onChange={(v) => set({ target_user_id: v })}
+                options={[
+                  { value: '', label: 'Pick a student…' },
+                  ...users.map((u) => ({
+                    value: String(u.id),
+                    label: `${u.display_name || u.name} · ${u.email}`,
+                  })),
+                ]}
+              />
+            )}
+          </div>
+        </Field>
+
+        <Field label="Kind" hint="Warnings render with a yellow banner rather than a plain card.">
+          <SelectField
+            label="Announcement kind"
+            value={notifForm.notification_type}
+            onChange={(v) => set({ notification_type: v })}
+            options={[
+              { value: 'announcement', label: 'Announcement' },
+              { value: 'warning', label: 'Warning' },
+              { value: 'class_reassignment', label: 'Class reassignment' },
+            ]}
+          />
+        </Field>
+
+        <Field label="Title" htmlFor="notif-title">
+          <TextField
+            id="notif-title"
+            label="Announcement title"
+            placeholder="e.g. Notarium is down Saturday 09:00"
+            value={notifForm.title}
+            onChange={(v) => set({ title: v })}
+          />
+        </Field>
+
+        <Field
+          label="Message"
+          htmlFor="notif-message"
+          hint="What students need to know, and what they should do about it."
+        >
+          <textarea
+            id="notif-message"
+            aria-label="Announcement message"
+            rows={4}
+            value={notifForm.message}
+            onChange={(e) => set({ message: e.target.value })}
+            placeholder="Keep it short. They read this on a phone between lessons."
+            className="ops-focus"
+            style={{ ...controlStyle, resize: 'vertical', fontFamily: 'inherit' }}
+          />
+        </Field>
+
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px',
+            justifyContent: 'flex-end',
+            paddingTop: '12px',
+          }}
+        >
+          <span style={{ fontSize: '11px', color: ink.fainter }}>
+            {targetChosen
+              ? `${audienceCount.toLocaleString()} student${audienceCount === 1 ? '' : 's'} will receive this`
+              : 'Pick an audience first'}
+          </span>
+          <Button variant="primary" disabled={!canSend} onClick={handleSend}>
+            {notifLoading ? 'Sending…' : 'Send'}
+          </Button>
         </div>
-      )}
+      </Panel>
+
+      <Panel legend="Sent" sub={`${sentNotifications.length} live`} bodyPadding="0">
+        {sentNotifications.length === 0 ? (
+          <EmptyState>Nothing sent yet.</EmptyState>
+        ) : (
+          <TableWrap maxHeight="480px">
+            <thead>
+              <tr>
+                <th style={thStyle}>Announcement</th>
+                <th style={thStyle}>Kind</th>
+                <th style={thStyle}>Audience</th>
+                <th style={thStyle}>Sent</th>
+                <th style={thStyle} aria-label="Actions" />
+              </tr>
+            </thead>
+            <tbody>
+              {sentNotifications.map((n: any) => (
+                <tr key={n.id} className="ops-row">
+                  <td style={tdStyle}>
+                    <div style={{ fontWeight: 500 }}>{n.title}</div>
+                    <div style={rowSubStyle}>{n.message}</div>
+                  </td>
+                  <td style={tdStyle}>
+                    <Pill tone={TYPE_TONE[n.notification_type] ?? 'mute'}>
+                      {String(n.notification_type).replace(/_/g, ' ')}
+                    </Pill>
+                  </td>
+                  <td style={tdStyle}>
+                    {n.target_type === 'all'
+                      ? 'Everyone'
+                      : `${n.target_type}${n.target_grade ? ` ${n.target_grade}` : ''}${
+                          n.target_class ? ` ${n.target_class}` : ''
+                        }`}
+                  </td>
+                  <td style={tdStyle}>{formatDate(n.created_at)}</td>
+                  <td style={tdStyle}>
+                    {pendingDelete === n.id ? (
+                      <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
+                        <Button size="xs" variant="ghost" onClick={() => setPendingDelete(null)}>
+                          Keep
+                        </Button>
+                        <Button size="xs" variant="danger" onClick={() => handleDelete(n.id)}>
+                          Take down
+                        </Button>
+                      </div>
+                    ) : (
+                      <RowActions>
+                        <Button size="xs" variant="danger" onClick={() => setPendingDelete(n.id)}>
+                          Take down
+                        </Button>
+                      </RowActions>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </TableWrap>
+        )}
+      </Panel>
     </div>
   );
 }
