@@ -20,13 +20,17 @@ tutors. Cloudflare Worker + D1 behind a Vite/React frontend on Vercel.
   signup had 500'd since launch — production had 45 users, all grade 10.
 - 706 space-form timestamps across 13 columns were rewritten to ISO-8601 UTC.
   The audit now reads 0. New rows are covered by 24 AFTER INSERT triggers.
-- Google sign-in: `OAUTH_REDIRECT_URI` is set and `/auth/google/start` 302s
-  to Google with the worker's `/auth/google/callback`. Not yet verified: that
-  URI being registered in Google Cloud Console. Before 12 Sep this returned
-  501 — it had never worked in production.
-- AI is broken in production for a non-code reason: DeepSeek returns
-  "Insufficient Balance". Every LLM feature (summaries, quiz, Primer, study
-  plan, concept explain) 500s until the DeepSeek account is topped up. OCR
+- Google sign-in: `OAUTH_REDIRECT_URI` set; the callback URI is registered in
+  Google Cloud Console (verified 12 Sep — Google serves its sign-in page, no
+  `redirect_uri_mismatch`). The full round-trip into a session has not been
+  done from a browser yet. Before 12 Sep this returned 501.
+- AI is broken in production for a non-code reason: DeepSeek answers
+  "Insufficient Balance" — still, after Richard topped up on 12 Sep. That error
+  means the key is valid and its account has no credit, so the top-up most
+  likely landed on a different DeepSeek account than the one that issued
+  `DEEPSEEK_API_KEY`. Fix: new key from the topped-up account,
+  `npx wrangler secret put DEEPSEEK_API_KEY` in `backend/`. Every LLM feature
+  (summaries, quiz, Primer, study plan, concept explain) 500s until then. OCR
   goes to Google Vision and was not tested. AI chat was removed on purpose.
 - Vercel production has no environment variables. `VITE_API_URL` falls back
   to the right default. `VITE_FEATURE_GOOGLE_OAUTH` unset → the "link Google"
@@ -76,11 +80,10 @@ NOT EXISTS` never repairs an existing table — that is why `users` needed a
 
 ## Next
 
-1. Top up the DeepSeek account, then call `POST /api/ai/primer` once with a
-   real login and confirm structured JSON comes back.
-2. Add `https://notarium-backend.notarium-backend.workers.dev/auth/google/callback`
-   to the OAuth client's authorised redirect URIs in Google Cloud Console, then
-   sign in with Google on notarium-site.vercel.app.
+1. Put a DeepSeek key from the topped-up account on the worker, then call
+   `POST /api/ai/primer` once with a real login and confirm structured JSON.
+2. Sign in with Google on notarium-site.vercel.app from a browser — the only
+   part of that flow not yet exercised.
 3. Walk the app as a student: upload a note (exercises Vision OCR), check a
    date reads "Today", book a tutor session.
 
