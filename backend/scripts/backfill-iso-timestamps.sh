@@ -94,7 +94,10 @@ scalar() {
 # Emits "table.column <n>" per line.
 audit() {
   local out
-  out="$(d1 --file "$AUDIT_SQL")" || { printf '%s\n' "$out" >&2; die "audit query failed"; }
+  # --command, not --file: against --remote, wrangler sends a file through D1's
+  # import path and returns only a row-count summary, never the SELECT result.
+  # Comment lines are stripped so the whole query fits one --command string.
+  out="$(d1 --command "$(grep -vE '^[[:space:]]*--' "$AUDIT_SQL")")" || { printf '%s\n' "$out" >&2; die "audit query failed"; }
   printf '%s' "$out" \
     | grep -oE '"[a-z_]+__[a-z_]+": *[0-9]+' \
     | tr -d '"' \
