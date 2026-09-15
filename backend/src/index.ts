@@ -655,7 +655,7 @@ CONTENT:
       content: contextualMessage
     });
 
-    const deepseekApiKey = env.DEEPSEEK_API_KEY || 'sk-5691768e614e4bfc9f563f0a45741be1';
+    const deepseekApiKey = env.DEEPSEEK_API_KEY;
 
     const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
       method: 'POST',
@@ -695,7 +695,7 @@ CONTENT:
 // OCR using Google Cloud Vision API + Gemini 2.0 for text formatting
 async function performOCR(imageBase64: string, mimeType: string, env: Env) {
   try {
-    const apiKey = env.GOOGLE_CLOUD_VISION_API_KEY || env.GEMINI_API_KEY || 'AIzaSyAXy40iGkSBoxidqqrhoz9ZjNlLcyxYO7A';
+    const apiKey = env.GOOGLE_CLOUD_VISION_API_KEY || env.GEMINI_API_KEY;
 
     if (!apiKey) {
       throw new Error('Google Cloud Vision API key is not configured');
@@ -749,7 +749,7 @@ async function performOCR(imageBase64: string, mimeType: string, env: Env) {
 
     // Step 2: Use DeepSeek to clean up and format the text
     try {
-      const deepseekApiKey = env.DEEPSEEK_API_KEY || 'sk-5691768e614e4bfc9f563f0a45741be1';
+      const deepseekApiKey = env.DEEPSEEK_API_KEY;
 
       const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
         method: 'POST',
@@ -793,7 +793,7 @@ ${rawText}`
 // Generate note summary - EXACTLY 2 sentences (Uses DeepSeek)
 async function generateNoteSummary(content: string, title: string, env: Env) {
   try {
-    const deepseekApiKey = env.DEEPSEEK_API_KEY || 'sk-5691768e614e4bfc9f563f0a45741be1';
+    const deepseekApiKey = env.DEEPSEEK_API_KEY;
 
     const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
       method: 'POST',
@@ -841,7 +841,7 @@ IMPORTANT: Your response must be EXACTLY 2 sentences, no more, no less. Write th
 // Generate quiz from note
 async function generateQuiz(content: string, title: string, env: Env) {
   try {
-    const deepseekApiKey = env.DEEPSEEK_API_KEY || 'sk-5691768e614e4bfc9f563f0a45741be1';
+    const deepseekApiKey = env.DEEPSEEK_API_KEY;
 
     const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
       method: 'POST',
@@ -899,7 +899,7 @@ ${content}`
 // Generate study plan
 async function generateStudyPlan(subject: string, topic: string, env: Env) {
   try {
-    const deepseekApiKey = env.DEEPSEEK_API_KEY || 'sk-5691768e614e4bfc9f563f0a45741be1';
+    const deepseekApiKey = env.DEEPSEEK_API_KEY;
 
     const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
       method: 'POST',
@@ -943,7 +943,7 @@ Format as a detailed markdown text with clear daily breakdowns. Write the entire
 // Explain concept
 async function explainConcept(concept: string, subject: string, env: Env) {
   try {
-    const deepseekApiKey = env.DEEPSEEK_API_KEY || 'sk-5691768e614e4bfc9f563f0a45741be1';
+    const deepseekApiKey = env.DEEPSEEK_API_KEY;
 
     const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
       method: 'POST',
@@ -3678,7 +3678,7 @@ export default {
           const body = await request.json() as any;
           const { title, content } = body;
 
-          const deepseekApiKey = env.DEEPSEEK_API_KEY || 'sk-5691768e614e4bfc9f563f0a45741be1';
+          const deepseekApiKey = env.DEEPSEEK_API_KEY;
 
           const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
             method: 'POST',

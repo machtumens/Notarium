@@ -9,7 +9,8 @@ const app = express();
 const port = 8787;
 
 // Get Gemini API Key from environment
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || 'AIzaSyAN0B5T7psGFbnoiKMe8eVyH6w5S6LP4Co';
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+if (!GEMINI_API_KEY) console.warn('GEMINI_API_KEY not set — AI routes will return their error fallback');
 
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
@@ -311,7 +312,6 @@ app.post('/api/chat/sessions/:sessionId/messages', async (req, res) => {
         }]
       }));
 
-      const GEMINI_API_KEY = 'AIzaSyAN0B5T7psGFbnoiKMe8eVyH6w5S6LP4Co';
       const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
 
       const systemPrompt = `You are an expert study tutor trained to help students learn effectively. Your role is to:
@@ -413,7 +413,6 @@ app.post('/api/chat/sessions/:sessionId/ai-response', async (req, res) => {
       }]
     }));
 
-    const GEMINI_API_KEY = process.env.GEMINI_API_KEY || 'AIzaSyAXy40iGkSBoxidqqrhoz9ZjNlLcyxYO7A';
     const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
 
     const systemPrompt = `You are an expert study tutor trained to help students learn effectively. Your role is to:
@@ -497,7 +496,6 @@ app.post('/api/gemini/auto-tags', async (req, res) => {
     return res.status(400).json({ error: 'title and content are required' });
   }
 
-  const GEMINI_API_KEY = process.env.GEMINI_API_KEY || 'AIzaSyAXy40iGkSBoxidqqrhoz9ZjNlLcyxYO7A';
   const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
 
   try {
@@ -566,7 +564,6 @@ app.post('/api/gemini/quick-summary', async (req, res) => {
     return res.status(400).json({ error: 'title and content are required' });
   }
 
-  const GEMINI_API_KEY = process.env.GEMINI_API_KEY || 'AIzaSyAXy40iGkSBoxidqqrhoz9ZjNlLcyxYO7A';
   const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
 
   try {
@@ -617,7 +614,6 @@ app.post('/api/gemini/summarize', async (req, res) => {
     return res.status(400).json({ error: 'title and description are required' });
   }
 
-  const GEMINI_API_KEY = process.env.GEMINI_API_KEY || 'AIzaSyAXy40iGkSBoxidqqrhoz9ZjNlLcyxYO7A';
   const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
 
   try {
@@ -672,7 +668,7 @@ app.post('/api/gemini/ocr', async (req, res) => {
     return res.status(400).json({ error: 'imageBase64 is required' });
   }
 
-  const CLOUD_VISION_API_KEY = process.env.GOOGLE_CLOUD_VISION_API_KEY || process.env.GEMINI_API_KEY || 'AIzaSyAN0B5T7psGFbnoiKMe8eVyH6w5S6LP4Co';
+  const CLOUD_VISION_API_KEY = process.env.GOOGLE_CLOUD_VISION_API_KEY || process.env.GEMINI_API_KEY;
 
   try {
     // Clean base64 string
@@ -757,7 +753,6 @@ app.post('/api/chat/analyze-notes', async (req, res) => {
     return res.status(400).json({ error: 'subject is required' });
   }
 
-  const GEMINI_API_KEY = 'AIzaSyAN0B5T7psGFbnoiKMe8eVyH6w5S6LP4Co';
   const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
 
   try {
