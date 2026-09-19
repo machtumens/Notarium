@@ -316,3 +316,52 @@ describe('W2.1a — refresh tokens never reach the logs', () => {
     expect(joined).not.toContain(user.token);
   });
 });
+
+// ---------------------------------------------------------------------------
+describe('W2.1c — expiry + rotation matrix', () => {
+  /** Re-encode the payload with `patch` applied but keep the original header + signature. */
+  function tamper(jwt: string, patch: Record<string, unknown>): string {
+    const [header, payload, signature] = jwt.split('.');
+    const claims = JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/')));
+    const forged = btoa(JSON.stringify({ ...claims, ...patch })).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    return `${header}.${forged}.${signature}`;
+  }
+
+  it('the runtime creates refresh_tokens with the 0008 shape plus family/revoked_at, and its indexes', async () => {
+    const columns = await env.DB.prepare('PRAGMA table_info(refresh_tokens)').all<{ name: string; notnull: number }>();
+    const names = columns.results.map((c) => c.name);
+    expect(names).toEqual(expect.arrayContaining(['id', 'user_id', 'token', 'expires_at', 'created_at', 'family', 'revoked_at']));
+    expect(columns.results.find((c) => c.name === 'token')?.notnull).toBe(1);
+    const indexes = await env.DB.prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'refresh_tokens'").all<{ name: string }>();
+    expect(indexes.results.map((i) => i.name)).toEqual(expect.arrayContaining([
+      'idx_refresh_tokens_user_id', 'idx_refresh_tokens_token', 'idx_refresh_tokens_expires_at', 'idx_refresh_tokens_family',
+    ]));
+  });
+
+  it('a JWT whose exp was pushed into the future without re-signing → 401', async () => {
+    const user = await signup(uniqueEmail('forged-exp'));
+    const stale = await expiredAccessToken({ id: user.user.id, email: user.user.email, role: 'student' });
+    const extended = tamper(stale, { exp: Math.floor(Date.now() / 1000) + 3600 });
+    expect((await api('/api/auth/me', { token: extended })).status).toBe(401);
+    expect((await api('/api/auth/me', { token: tamper(user.token, { exp: Math.floor(Date.now() / 1000) + 30 * 24 * 3600 }) })).status).toBe(401);
+  });
+
+  it('refresh mints the JWT from the current users row: a demoted admin gets a student token', async () => {
+    const admin = await adminLogin();
+    expect(JSON.parse(atob(admin.token.split('.')[1])).role).toBe('admin');
+    await env.DB.prepare("UPDATE users SET role = 'student' WHERE id = ?").bind(admin.user.id).run();
+    const rotated = await json(await refresh(admin.refreshToken));
+    expect(JSON.parse(atob(rotated.token.split('.')[1])).role).toBe('student');
+    expect((await api('/api/admin/users', { token: rotated.token })).status).toBe(403);
+  });
+
+  it('a refresh token is bound to one user: rows of user A never mint a token for user B', async () => {
+    const a = await signup(uniqueEmail('a'));
+    const b = await signup(uniqueEmail('b'));
+    const rotated = await json(await refresh(a.refreshToken));
+    expect(decodeClaims(rotated.token).id).toBe(a.user.id);
+    expect(decodeClaims(rotated.token).id).not.toBe(b.user.id);
+    const me = await json(await api('/api/auth/me', { token: rotated.token }));
+    expect(me.user.email).toBe(a.user.email);
+  });
+});
