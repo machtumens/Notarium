@@ -60,6 +60,6 @@ This will:
 
 After migration, test the admin login at `/admin-login` with:
 - Email: `admin@notarium.site` (or any email ending with @notarium.site)
-- Password: `notariumanagers`
+- Password: the value of the `ADMIN_PASSWORD` secret — set it with `wrangler secret put ADMIN_PASSWORD` (never write it into a tracked file)
 
 The login should now work without constraint errors.
