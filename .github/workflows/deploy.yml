@@ -2,10 +2,13 @@ name: Deploy Notarium
 
 on:
   push:
-    branches: [ main ]
+    branches: [ master ]
 
 jobs:
   deploy:
+    # Disabled: re-enabled in Wave 4 after staging exists and secrets are set. Every run
+    # since January failed at the missing VERCEL_TOKEN, so a push must not trigger this.
+    if: false
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -31,7 +34,9 @@ jobs:
           vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
           production: true
 
-      - name: Deploy Backend + R2
+      # The source-zip-to-R2 backup step that used to follow `wrangler deploy` is gone:
+      # R2 is not enabled on the account (owner decision H4).
+      - name: Deploy Backend
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -39,5 +44,3 @@ jobs:
           cd backend
           npm install
           npx wrangler deploy
-          zip -r ../source_code.zip . -x "*.git*" "*node_modules*"
-          npx wrangler r2 put notarium-backups/source_code_latest.zip --file=../source_code.zip
