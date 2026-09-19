@@ -16,6 +16,7 @@ interface Env {
   DEEPSEEK_API_KEY?: string;
   GOOGLE_CLOUD_VISION_API_KEY?: string;
   FRONTEND_URL?: string;
+  EXTRA_ORIGINS?: string; // optional comma-separated extra CORS origins
   ENVIRONMENT?: string;
 }
 
@@ -35,21 +36,40 @@ interface User {
 }
 
 // Security constants
-const MAX_REQUEST_SIZE = 10 * 1024 * 1024; // 10MB
+const MAX_REQUEST_SIZE = 10 * 1024 * 1024; // 10MB — routes that carry base64 images
+const MAX_JSON_BODY_SIZE = 1 * 1024 * 1024; // 1MB — every other JSON route
 const RATE_LIMIT_WINDOW = 900; // 15 minutes in seconds
 const RATE_LIMIT_MAX_ATTEMPTS = 5;
 const JWT_EXPIRATION = '24h';
 const REFRESH_TOKEN_EXPIRATION = '7d';
 
-// CORS headers function (will use env.FRONTEND_URL or fallback)
-function getCorsHeaders(env: Env) {
-  const allowedOrigin = env.FRONTEND_URL || 'https://notarium-site.vercel.app';
-  return {
-    'Access-Control-Allow-Origin': allowedOrigin,
+// Routes whose bodies legitimately carry base64 images keep the larger cap
+const LARGE_BODY_ROUTES = [/^\/api\/notes$/, /^\/api\/notes\/\d+$/, /^\/api\/admin\/notes\/\d+$/, /^\/api\/gemini\/ocr$/];
+function bodyLimitFor(path: string): number {
+  return LARGE_BODY_ROUTES.some((route) => route.test(path)) ? MAX_REQUEST_SIZE : MAX_JSON_BODY_SIZE;
+}
+
+// CORS allow-list: env.FRONTEND_URL + optional env.EXTRA_ORIGINS (comma-separated) + the local Vite dev server
+const ALWAYS_ALLOWED_ORIGINS = ['http://localhost:5173'];
+function allowedOrigins(env: Env): string[] {
+  return [env.FRONTEND_URL, ...(env.EXTRA_ORIGINS || '').split(','), ...ALWAYS_ALLOWED_ORIGINS]
+    .map((origin) => (origin || '').trim())
+    .filter((origin) => origin.length > 0);
+}
+
+// Echo the request Origin only when it is allow-listed; otherwise grant nothing.
+function corsHeaders(request: Request, env: Env): Record<string, string> {
+  const headers: Record<string, string> = {
     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Encrypted-Yw-ID, X-Is-Login',
-    'Access-Control-Allow-Credentials': 'true',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    'Vary': 'Origin',
   };
+  const origin = request.headers.get('Origin');
+  if (origin && allowedOrigins(env).includes(origin)) {
+    headers['Access-Control-Allow-Origin'] = origin;
+    headers['Access-Control-Allow-Credentials'] = 'true';
+  }
+  return headers;
 }
 
 // Security headers
@@ -61,22 +81,22 @@ const SECURITY_HEADERS = {
   'Permissions-Policy': 'geolocation=(), microphone=(), camera=()',
 };
 
-// Helper function to create JSON responses with security headers
+// Applied to every response at the fetch boundary (including 404/500 and env-less
+// jsonResponse calls): security headers + origin-checked CORS.
+function withSecurityHeaders(response: Response, request: Request, env: Env): Response {
+  const headers = new Headers(response.headers);
+  for (const [name, value] of Object.entries(SECURITY_HEADERS)) headers.set(name, value);
+  for (const [name, value] of Object.entries(corsHeaders(request, env))) headers.set(name, value);
+  return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+}
+
+// Helper function to create JSON responses with security headers.
+// `env` is kept for call-site compatibility; CORS is decided per request in withSecurityHeaders.
 function jsonResponse(data: any, status: number = 200, env?: Env) {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
+    ...SECURITY_HEADERS,
   };
-
-  if (env) {
-    Object.assign(headers, getCorsHeaders(env), SECURITY_HEADERS);
-  } else {
-    // Fallback for backward compatibility
-    Object.assign(headers, {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Encrypted-Yw-ID, X-Is-Login',
-    });
-  }
 
   return new Response(JSON.stringify(data), {
     status,
@@ -169,9 +189,9 @@ function sanitizeAIInput(input: string): string {
 }
 
 // Request size validation
-function validateRequestSize(request: Request): boolean {
+function validateRequestSize(request: Request, limit: number = MAX_REQUEST_SIZE): boolean {
   const contentLength = request.headers.get('content-length');
-  if (contentLength && parseInt(contentLength) > MAX_REQUEST_SIZE) {
+  if (contentLength && parseInt(contentLength) > limit) {
     return false;
   }
   return true;
@@ -3074,20 +3094,13 @@ const MOCK_SUBJECTS = [
   { id: 14, name: 'Kimia', icon: '🧪', note_count: 0 },
 ];
 
-export default {
+const handler = {
   async fetch(request: Request, env: Env): Promise<Response> {
     // Handle CORS preflight FIRST - before any other logic
     if (request.method === 'OPTIONS') {
-      const allowedOrigin = env.FRONTEND_URL || 'https://notarium-site.vercel.app';
       return new Response(null, {
         status: 204,
-        headers: {
-          'Access-Control-Allow-Origin': allowedOrigin,
-          'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS, PATCH',
-          'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Encrypted-Yw-ID, X-Is-Login',
-          'Access-Control-Allow-Credentials': 'true',
-          'Access-Control-Max-Age': '86400',
-        }
+        headers: { ...corsHeaders(request, env), 'Access-Control-Max-Age': '86400' },
       });
     }
 
@@ -3103,6 +3116,21 @@ export default {
 
     const url = new URL(request.url);
     const path = url.pathname;
+
+    // One body-size gate for every route (the signup limiter, reused). Bodies without a
+    // Content-Length (chunked) are measured after buffering so the cap cannot be skipped.
+    if (request.method !== 'GET' && request.method !== 'HEAD') {
+      const limit = bodyLimitFor(path);
+      if (!validateRequestSize(request, limit)) {
+        return jsonResponse({ error: 'Request too large' }, 413, env);
+      }
+      if (!request.headers.has('content-length') && request.body) {
+        const buffered = await request.clone().arrayBuffer();
+        if (buffered.byteLength > limit) {
+          return jsonResponse({ error: 'Request too large' }, 413, env);
+        }
+      }
+    }
 
     console.log(`[DEBUG] Request: ${request.method} ${path}`);
     console.log(`[DEBUG] env.DB available: ${!!env.DB}`);
@@ -3638,5 +3666,12 @@ Tags:`
       console.error('API Error:', error);
       return jsonResponse({ error: error.message || 'Internal server error' }, 500);
     }
+  },
+};
+
+export default {
+  async fetch(request: Request, env: Env): Promise<Response> {
+    const response = await handler.fetch(request, env);
+    return withSecurityHeaders(response, request, env);
   },
 };

@@ -415,4 +415,35 @@ describe('W1.9 — security headers, CORS allow-list, body size cap', () => {
     expect(res.status).toBe(413);
     expect((await json(res)).error).toBeDefined();
   });
+
+  it('a streamed 2 MB body with no Content-Length → 413 too (cap cannot be skipped via chunked encoding)', async () => {
+    const { token } = await signup();
+    const chunk = new TextEncoder().encode('x'.repeat(64 * 1024));
+    let sent = 0;
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        if (sent >= 2 * 1024 * 1024) { controller.close(); return; }
+        controller.enqueue(chunk);
+        sent += chunk.byteLength;
+      },
+    });
+    const res = await SELF.fetch(`${BASE}/api/chat/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: stream,
+    });
+    expect(res.status).toBe(413);
+  });
+
+  it('a small streamed body without Content-Length still reaches the route', async () => {
+    const { token } = await signup();
+    const bytes = new TextEncoder().encode(JSON.stringify({ subject: 'Fisika', topic: 'Gaya' }));
+    const stream = new ReadableStream<Uint8Array>({ start(c) { c.enqueue(bytes); c.close(); } });
+    const res = await SELF.fetch(`${BASE}/api/chat/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: stream,
+    });
+    expect(res.status).toBe(200);
+  });
 });
