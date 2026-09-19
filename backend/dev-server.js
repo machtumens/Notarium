@@ -22,6 +22,45 @@ const mockMessages = new Map();
 let sessionCounter = 1;
 let messageCounter = 1;
 
+// Bearer-token identity, mirroring the Worker since W1.4 (no X-Encrypted-Yw-ID fallback)
+const mockTokens = new Map(); // token -> user
+let nextUserId = 1000; // accounts from signup/login get unique ids so ownership checks mean something
+const mockNotes = []; // notes created through POST /api/notes (served by /api/notes/my-notes)
+let noteCounter = 1;
+
+function issueToken(user) {
+  const token = 'mock-token-' + Date.now() + '-' + Math.random().toString(36).slice(2);
+  mockTokens.set(token, user);
+  return token;
+}
+
+// 401 unless the request carries a token issued by this mock's signup/login
+function requireUser(req, res) {
+  const token = req.headers.authorization?.split(' ')[1];
+  const user = token ? mockTokens.get(token) : null;
+  if (!user) {
+    res.status(401).json({ error: 'Unauthorized - Invalid or missing token' });
+    return null;
+  }
+  return user;
+}
+
+// Mirrors the Worker's chat gate: 401 no token, 404 unknown session, 403 not the owner
+function requireOwnedSession(req, res) {
+  const user = requireUser(req, res);
+  if (!user) return null;
+  const session = mockSessions.get(parseInt(req.params.sessionId));
+  if (!session) {
+    res.status(404).json({ error: 'Chat session not found' });
+    return null;
+  }
+  if (session.user_id !== user.id) {
+    res.status(403).json({ error: 'Unauthorized - Not your chat session' });
+    return null;
+  }
+  return { user, session };
+}
+
 // Indonesian school subjects with FontAwesome icons
 const mockSubjects = [
   { id: 1, name: 'Filsafat', icon: 'fa-brain', note_count: 0 },
@@ -77,7 +116,7 @@ app.post('/api/auth/signup', (req, res) => {
   }
 
   const user = {
-    id: mockUsers.size + 1,
+    id: nextUserId++,
     email,
     name,
     class: userClass || '10-A',
@@ -87,7 +126,7 @@ app.post('/api/auth/signup', (req, res) => {
   };
 
   // Mock JWT token
-  const token = 'mock-token-' + Date.now();
+  const token = issueToken(user);
 
   res.json({
     success: true,
@@ -110,7 +149,7 @@ app.post('/api/auth/login', (req, res) => {
   }
 
   const user = {
-    id: Math.floor(Math.random() * 1000),
+    id: nextUserId++,
     email,
     name: isAdmin ? 'Administrator' : email.split('@')[0],
     class: isAdmin ? 'Admin' : '10-A',
@@ -120,7 +159,7 @@ app.post('/api/auth/login', (req, res) => {
   };
 
   // Mock JWT token
-  const token = 'mock-token-' + Date.now();
+  const token = issueToken(user);
 
   res.json({
     success: true,
@@ -212,21 +251,44 @@ app.get('/api/notes/search', (req, res) => {
 
 // Create note
 app.post('/api/notes', (req, res) => {
-  const userId = req.headers['x-encrypted-yw-id'];
-  const user = getOrCreateUser(userId);
-  const { title, description, subject_id } = req.body;
+  const user = requireUser(req, res);
+  if (!user) return;
+  const { title, description, content, subject_id, tags, status, visibility } = req.body;
+  if (!title || !subject_id) {
+    return res.status(400).json({ error: 'Invalid input' });
+  }
 
-  res.json({
-    note: {
-      id: Math.random() * 1000,
-      title,
-      description,
-      author_id: user.id,
-      subject_id,
-      likes: 0,
-      created_at: new Date().toISOString(),
-    }
-  });
+  const note = {
+    id: noteCounter++,
+    title,
+    description: description || 'No description',
+    content: content || description || '',
+    extracted_text: '',
+    summary: description || '',
+    tags: JSON.stringify(tags || []),
+    author_id: user.id,
+    author_name: user.name || user.display_name,
+    subject_id,
+    subject_name: (mockSubjects.find(s => s.id === subject_id) || {}).name,
+    likes: 0,
+    admin_upvotes: 0,
+    status: status === 'draft' ? 'draft' : 'published',
+    visibility: visibility || 'everyone',
+    created_at: new Date().toISOString(),
+  };
+  mockNotes.push(note);
+
+  res.json({ note, notes: [note], success: true, totalParts: 1 });
+});
+
+// The caller's own notes — same field set the Worker returns after W1.7
+// (content, description, author_name included)
+app.get('/api/notes/my-notes', (req, res) => {
+  const user = requireUser(req, res);
+  if (!user) return;
+  const statusFilter = req.query.status;
+  const notes = mockNotes.filter(n => n.author_id === user.id && (!statusFilter || n.status === statusFilter));
+  res.json({ notes });
 });
 
 // Get leaderboard
@@ -248,8 +310,8 @@ app.get('/api/leaderboard', (req, res) => {
 
 // Create chat session
 app.post('/api/chat/sessions', (req, res) => {
-  const userId = req.headers['x-encrypted-yw-id'];
-  const user = getOrCreateUser(userId);
+  const user = requireUser(req, res);
+  if (!user) return;
   const { subject, topic } = req.body;
 
   const sessionId = sessionCounter++;
@@ -268,22 +330,27 @@ app.post('/api/chat/sessions', (req, res) => {
 
 // Get chat sessions
 app.get('/api/chat/sessions', (req, res) => {
-  const userId = req.headers['x-encrypted-yw-id'];
-  const user = getOrCreateUser(userId);
+  const user = requireUser(req, res);
+  if (!user) return;
   const sessions = Array.from(mockSessions.values()).filter(s => s.user_id === user.id);
   res.json({ sessions });
 });
 
 // Get chat messages
 app.get('/api/chat/sessions/:sessionId/messages', (req, res) => {
+  if (!requireOwnedSession(req, res)) return;
   const messages = mockMessages.get(parseInt(req.params.sessionId)) || [];
   res.json({ messages });
 });
 
 // Add chat message with Gemini AI response
 app.post('/api/chat/sessions/:sessionId/messages', async (req, res) => {
+  if (!requireOwnedSession(req, res)) return;
   const { role, content } = req.body;
   const sessionId = parseInt(req.params.sessionId);
+  if (!['user', 'assistant'].includes(role) || typeof content !== 'string' || content.length === 0) {
+    return res.status(400).json({ error: 'Invalid input' });
+  }
 
   const message = {
     id: messageCounter++,
@@ -393,9 +460,9 @@ Always be encouraging, patient, and adapt your teaching style to the student's l
 
 // Get AI response for message
 app.post('/api/chat/sessions/:sessionId/ai-response', async (req, res) => {
+  if (!requireOwnedSession(req, res)) return;
   const { message, subject } = req.body;
   const sessionId = parseInt(req.params.sessionId);
-  const userId = req.headers['x-encrypted-yw-id'];
 
   if (!message) {
     return res.status(400).json({ error: 'Message is required' });
