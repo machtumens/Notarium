@@ -202,6 +202,7 @@ const chatMessageSchema = z.object({
 });
 
 const profileUpdateSchema = z.object({
+  name: z.string().min(1).max(100).optional(), // old-frontend alias for display_name
   display_name: z.string().min(1).max(100).optional(),
   class: z.string().max(50).optional(),
   description: z.string().max(500).optional(),
@@ -3177,43 +3178,12 @@ export default {
           return jsonResponse({ error: 'Database not available' }, 503);
         }
         try {
-          const auth = request.headers.get('Authorization');
-          console.log('[PROFILE] Auth header:', {
-            hasAuth: !!auth,
-            authLength: auth?.length || 0,
-            authPreview: auth ? auth.substring(0, 30) + '...' : 'NO_AUTH'
-          });
-
-          const token = auth?.startsWith('Bearer ') ? auth.slice(7) : null;
-
-          if (!token) {
-            console.error('[PROFILE] No token provided');
-            return jsonResponse({ error: 'Unauthorized - No token provided' }, 401);
+          // Identity comes only from a signature-verified JWT (was: unsigned base64 JSON, F2)
+          const caller = await getUserFromToken(request, env);
+          if (!caller) {
+            return jsonResponse({ error: 'Unauthorized - Invalid or missing token' }, 401, env);
           }
-
-          console.log('[PROFILE] Token received:', {
-            tokenLength: token.length,
-            tokenPreview: token.substring(0, 20) + '...'
-          });
-
-          // Validate and decode token
-          let decoded;
-          try {
-            const decodedStr = Buffer.from(token, 'base64').toString();
-            console.log('[PROFILE] Decoded token string:', decodedStr);
-            decoded = JSON.parse(decodedStr);
-            console.log('[PROFILE] Parsed token:', { id: decoded.id, email: decoded.email });
-          } catch (tokenError) {
-            console.error('[PROFILE] Token decode error:', tokenError);
-            return jsonResponse({ error: 'Invalid token format' }, 401);
-          }
-
-          if (!decoded.id) {
-            console.error('[PROFILE] Token missing user ID:', decoded);
-            return jsonResponse({ error: 'Invalid token - missing user ID' }, 401);
-          }
-
-          const userId = decoded.id;
+          const userId = caller.id;
 
           // Parse request body
           let body;
@@ -3221,82 +3191,64 @@ export default {
             body = await request.json() as any;
           } catch (bodyError) {
             console.error('Body parse error:', bodyError);
-            return jsonResponse({ error: 'Invalid request body' }, 400);
+            return jsonResponse({ error: 'Invalid request body' }, 400, env);
           }
 
-          // Update user profile - build update query dynamically
-          console.log('[PROFILE] Request body:', body);
-          console.log('[PROFILE] User ID from token:', userId);
+          const validation = profileUpdateSchema.safeParse(body);
+          if (!validation.success) {
+            return jsonResponse({ error: 'Invalid input', details: validation.error.errors }, 400, env);
+          }
+          const fields = validation.data;
 
           const updates: string[] = [];
           const values: any[] = [];
 
-          // Add fields to update
-          if (body.name) {
+          // `name` is the old frontend's alias for display_name
+          const displayName = fields.display_name ?? fields.name;
+          if (displayName !== undefined) {
             updates.push('display_name = ?');
-            values.push(body.name);
+            values.push(displayName);
           }
-          if (body.display_name) {
-            updates.push('display_name = ?');
-            values.push(body.display_name);
-          }
-          if (body.photo_url) {
+          if (fields.photo_url !== undefined) {
             updates.push('photo_url = ?');
-            values.push(body.photo_url);
+            values.push(fields.photo_url);
           }
-          if (body.email) {
-            updates.push('email = ?');
-            values.push(body.email);
-          }
-          if (body.class) {
+          if (fields.class !== undefined) {
             updates.push('class = ?');
-            values.push(body.class);
+            values.push(fields.class);
           }
-          if (body.description !== undefined) {
+          if (fields.description !== undefined) {
             updates.push('description = ?');
-            values.push(body.description || null);
+            values.push(fields.description || null);
           }
 
           // Always update the timestamp
           updates.push('updated_at = ?');
           values.push(new Date().toISOString());
 
-          console.log('[PROFILE] Fields to update:', updates);
-
           if (updates.length === 1) {
             // Only updated_at, no real changes
-            console.log('[PROFILE] No fields to update, only timestamp');
-            return jsonResponse({ success: true, updated: false });
+            return jsonResponse({ success: true, updated: false }, 200, env);
           }
 
           try {
             values.push(userId); // Add userId for WHERE clause
             const sql = `UPDATE users SET ${updates.join(', ')} WHERE id = ?`;
-            console.log('[PROFILE] SQL:', sql);
-            console.log('[PROFILE] Values count:', values.length);
-
-            const result = await env.DB.prepare(sql)
-              .bind(...values)
-              .run();
-
-            console.log('[PROFILE] Update result:', result);
-            console.log('[PROFILE] Changes made:', result?.meta?.changes || 0);
+            await env.DB.prepare(sql).bind(...values).run();
 
             // Verify the update by reading it back
             const updated = await env.DB.prepare(`
               SELECT id, display_name, photo_url, email, class, description FROM users WHERE id = ?
             `).bind(userId).first() as any;
 
-            console.log('[PROFILE] Verification - Updated user data:', updated);
-
-            return jsonResponse({ success: true, updated: true, user: updated });
+            return jsonResponse({ success: true, updated: true, user: updated }, 200, env);
           } catch (dbError: any) {
             console.error('[PROFILE] Database update error:', dbError);
-            return jsonResponse({ error: `Failed to update profile: ${dbError.message}` }, 500);
+            return jsonResponse({ error: 'Failed to update profile' }, 500, env);
           }
         } catch (error: any) {
           console.error('Profile update error:', error);
-          return jsonResponse({ error: error.message || 'Internal server error' }, 500);
+          return jsonResponse({ error: error.message || 'Internal server error' }, 500, env);
         }
       }
 
