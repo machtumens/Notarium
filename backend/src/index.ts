@@ -167,6 +167,30 @@ async function checkRateLimit(ip: string, endpoint: string, env: Env): Promise<b
   }
 }
 
+// Shared-secret comparison for the admin password. Both sides are SHA-256 hashed
+// first so the compared buffers always have the same length (the length of the
+// real secret never leaks), then compared in constant time. An unset/empty
+// ADMIN_PASSWORD never matches anything.
+async function secretsMatch(provided: unknown, expected: unknown): Promise<boolean> {
+  if (typeof provided !== 'string' || typeof expected !== 'string' || expected.length === 0) {
+    return false;
+  }
+  const encoder = new TextEncoder();
+  const [a, b] = await Promise.all([
+    crypto.subtle.digest('SHA-256', encoder.encode(provided)),
+    crypto.subtle.digest('SHA-256', encoder.encode(expected)),
+  ]);
+  return crypto.subtle.timingSafeEqual(a, b);
+}
+
+// Both admin-password endpoints guard the same secret, so they share one
+// per-IP bucket (same window and attempt count as login).
+const ADMIN_RATE_LIMIT_BUCKET = 'admin';
+async function adminAttemptAllowed(request: Request, env: Env): Promise<boolean> {
+  const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
+  return checkRateLimit(ip, ADMIN_RATE_LIMIT_BUCKET, env);
+}
+
 // Prompt injection sanitization for AI inputs
 function sanitizeAIInput(input: string): string {
   if (!input) return '';
@@ -1732,13 +1756,17 @@ async function getUsageStatistics(request: Request, env: Env) {
   }
 }
 
-// Admin verification
+// Admin verification (rate limited per IP; constant-time secret compare)
 async function verifyAdmin(request: Request, env: Env) {
+  if (!(await adminAttemptAllowed(request, env))) {
+    return jsonResponse({ success: false, isAdmin: false, error: 'Too many attempts. Please try again in 15 minutes.' }, 429, env);
+  }
+
   const body = await request.json() as any;
   const { email, password } = body;
 
-  // Check if email ends with @notarium.site and password matches environment variable
-  if (email && email.endsWith('@notarium.site') && password === env.ADMIN_PASSWORD) {
+  const isAdminEmail = typeof email === 'string' && email.endsWith('@notarium.site');
+  if (isAdminEmail && await secretsMatch(password, env.ADMIN_PASSWORD)) {
     return jsonResponse({ success: true, isAdmin: true }, 200, env);
   }
 
@@ -3169,13 +3197,19 @@ const handler = {
           return jsonResponse({ error: 'Database not available' }, 503);
         }
         try {
+          // Same per-IP throttle as login; every attempt counts (W1.11)
+          if (!(await adminAttemptAllowed(request, env))) {
+            return jsonResponse({ error: 'Too many admin login attempts. Please try again in 15 minutes.' }, 429, env);
+          }
+
           const body = await request.json() as any;
           const { email, password, class: classValue } = body;
 
           console.log('[ADMIN-LOGIN] Request:', { email, hasPassword: !!password, classValue });
 
-          // Check admin credentials - use environment variable for password
-          if (!email.endsWith('@notarium.site') || password !== env.ADMIN_PASSWORD) {
+          // Check admin credentials - constant-time compare against the ADMIN_PASSWORD secret
+          const isAdminEmail = typeof email === 'string' && email.endsWith('@notarium.site');
+          if (!isAdminEmail || !(await secretsMatch(password, env.ADMIN_PASSWORD))) {
             return jsonResponse({ error: 'Invalid admin credentials' }, 401, env);
           }
 

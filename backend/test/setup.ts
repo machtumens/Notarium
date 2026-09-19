@@ -77,11 +77,14 @@ export async function signup(email = uniqueEmail(), name = 'Test User'): Promise
   return { token: body.token, user: body.user };
 }
 
-/** Admin JWT via `POST /api/auth/admin-login` (shared-secret from the test-only ADMIN_PASSWORD binding). */
+/**
+ * Admin JWT via `POST /api/auth/admin-login` (shared-secret from the test-only ADMIN_PASSWORD binding).
+ * Unique client IP per call: the admin endpoints share a 5-per-15-min bucket per IP since W1.11.
+ */
 export async function adminLogin(email = uniqueEmail('admin').replace('@example.test', '@notarium.site')): Promise<Session> {
   const res = await SELF.fetch(`${BASE}/api/auth/admin-login`, {
     method: 'POST',
-    headers: JSON_HEADERS,
+    headers: { ...JSON_HEADERS, 'CF-Connecting-IP': uniqueIp() },
     body: JSON.stringify({ email, password: env.ADMIN_PASSWORD, class: '10.1' }),
   });
   const body = (await res.json()) as Partial<Session> & { error?: string };
