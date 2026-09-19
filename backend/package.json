@@ -11,7 +11,8 @@
     "migrate": "wrangler d1 execute notarium-db --file=migrations/0001_allow_null_class.sql && wrangler d1 execute notarium-db --file=migrations/0002_add_suspension_fields.sql && wrangler d1 execute notarium-db --file=migrations/0003_add_warning_system.sql",
     "migrate:local": "wrangler d1 execute notarium-db-local --local --file=migrations/0001_allow_null_class.sql && wrangler d1 execute notarium-db-local --local --file=migrations/0002_add_suspension_fields.sql && wrangler d1 execute notarium-db-local --local --file=migrations/0003_add_warning_system.sql",
     "migrate:suspension": "wrangler d1 execute notarium-db --file=migrations/0002_add_suspension_fields.sql",
-    "migrate:warning": "wrangler d1 execute notarium-db --file=migrations/0003_add_warning_system.sql"
+    "migrate:warning": "wrangler d1 execute notarium-db --file=migrations/0003_add_warning_system.sql",
+    "test": "vitest run"
   },
   "dependencies": {
     "@google/generative-ai": "^0.21.0",
@@ -23,10 +24,12 @@
     "zod": "^3.22.4"
   },
   "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "0.10.5",
     "@cloudflare/workers-types": "^4.20240604.0",
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^20.10.0",
     "typescript": "^5.3.3",
+    "vitest": "3.2.7",
     "wrangler": "^4.46.0"
   }
 }
