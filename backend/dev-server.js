@@ -12,11 +12,18 @@ const port = 8787;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 if (!GEMINI_API_KEY) console.warn('GEMINI_API_KEY not set — AI routes will return their error fallback');
 
+// Admin password comes from the environment like the Worker's ADMIN_PASSWORD secret;
+// when it is unset, admin login and /api/admin/verify are disabled (401).
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
+if (!ADMIN_PASSWORD) console.warn('ADMIN_PASSWORD not set — admin login is disabled in the mock');
+function isAdminCredential(email, password) {
+  return Boolean(ADMIN_PASSWORD) && typeof email === 'string' && email.endsWith('@notarium.site') && password === ADMIN_PASSWORD;
+}
+
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
 // Mock database
-const mockUsers = new Map();
 const mockSessions = new Map();
 const mockMessages = new Map();
 let sessionCounter = 1;
@@ -79,25 +86,6 @@ const mockSubjects = [
   { id: 14, name: 'Kimia', icon: 'fa-vial', note_count: 0 },
 ];
 
-// Helper to get or create user
-function getOrCreateUser(userId) {
-  if (!mockUsers.has(userId)) {
-    mockUsers.set(userId, {
-      id: mockUsers.size + 1,
-      encrypted_yw_id: userId,
-      display_name: 'Student ' + mockUsers.size,
-      email: `student${mockUsers.size}@test.com`,
-      class: '10-A',
-      role: 'student',
-      notes_uploaded: 0,
-      total_likes: 0,
-      total_admin_upvotes: 0,
-      created_at: new Date().toISOString(),
-    });
-  }
-  return mockUsers.get(userId);
-}
-
 // Health check
 app.get('/', (req, res) => {
   res.json({
@@ -142,9 +130,9 @@ app.post('/api/auth/login', (req, res) => {
     return res.status(400).json({ error: 'Missing email or password' });
   }
 
-  // Check if admin login
+  // Admin login: env-based password, disabled when ADMIN_PASSWORD is unset
   const isAdmin = email.endsWith('@notarium.site');
-  if (isAdmin && password !== 'notariumanagers') {
+  if (isAdmin && !isAdminCredential(email, password)) {
     return res.status(401).json({ error: 'Invalid admin credentials' });
   }
 
@@ -193,31 +181,32 @@ app.get('/api/auth/me', (req, res) => {
   res.json({ user });
 });
 
-// Get current user
+// Get current user (bearer token, like the Worker since W1.4)
 app.get('/api/user/me', (req, res) => {
-  const userId = req.headers['x-encrypted-yw-id'];
-  if (!userId) {
-    return res.status(400).json({ error: 'User ID not found' });
-  }
-  const user = getOrCreateUser(userId);
+  const user = requireUser(req, res);
+  if (!user) return;
   res.json({ user });
 });
 
-// Update user info
+// Update user info — only the given fields change; email is not writable (W1.14)
 app.post('/api/user/update', (req, res) => {
-  const userId = req.headers['x-encrypted-yw-id'];
-  const { display_name, photo_url, email } = req.body;
-  const user = getOrCreateUser(userId);
-  Object.assign(user, { display_name, photo_url, email });
-  res.json({ success: true });
+  const user = requireUser(req, res);
+  if (!user) return;
+  const { display_name, name, photo_url, class: userClass, description } = req.body || {};
+  const updates = {};
+  if (display_name !== undefined || name !== undefined) updates.display_name = display_name ?? name;
+  if (photo_url !== undefined) updates.photo_url = photo_url;
+  if (userClass !== undefined) updates.class = userClass;
+  if (description !== undefined) updates.description = description;
+  Object.assign(user, updates);
+  res.json({ success: true, updated: Object.keys(updates).length > 0 });
 });
 
 // Update user class
 app.put('/api/user/class', (req, res) => {
-  const userId = req.headers['x-encrypted-yw-id'];
-  const { class: userClass } = req.body;
-  const user = getOrCreateUser(userId);
-  user.class = userClass;
+  const user = requireUser(req, res);
+  if (!user) return;
+  user.class = req.body?.class;
   res.json({ success: true });
 });
 
@@ -226,8 +215,9 @@ app.get('/api/subjects', (req, res) => {
   res.json({ subjects: mockSubjects });
 });
 
-// Get notes by subject
+// Get notes by subject (bearer token required, like the Worker)
 app.get('/api/notes/subject/:subjectId', (req, res) => {
+  if (!requireUser(req, res)) return;
   res.json({
     notes: [
       {
@@ -244,8 +234,9 @@ app.get('/api/notes/subject/:subjectId', (req, res) => {
   });
 });
 
-// Search notes
+// Search notes (bearer token required, like the Worker)
 app.get('/api/notes/search', (req, res) => {
+  if (!requireUser(req, res)) return;
   res.json({ notes: [] });
 });
 
@@ -291,18 +282,18 @@ app.get('/api/notes/my-notes', (req, res) => {
   res.json({ notes });
 });
 
-// Get leaderboard
+// Get leaderboard — the public scoreboard shape the Worker returns since W1.5
+// (no email, no encrypted_yw_id, no photo_url; `points`, not `score`)
 app.get('/api/leaderboard', (req, res) => {
   res.json({
     leaderboard: [
       {
-        encrypted_yw_id: 'user-1',
         display_name: 'Top Student',
-        email: 'top@test.com',
+        class: '10.1',
         notes_uploaded: 15,
         total_likes: 50,
         total_admin_upvotes: 5,
-        score: 300,
+        points: 70,
       },
     ]
   });
@@ -550,8 +541,9 @@ Always be encouraging, patient, and adapt your teaching style to the student's l
   }
 });
 
-// Like note
+// Like note (bearer token required, like the Worker)
 app.post('/api/notes/:noteId/like', (req, res) => {
+  if (!requireUser(req, res)) return;
   res.json({ liked: true });
 });
 
@@ -906,11 +898,17 @@ app.post('/api/chat/upload-document', (req, res) => {
 
 // Admin endpoints
 app.post('/api/admin/verify', (req, res) => {
+  const { email, password } = req.body || {};
+  if (!isAdminCredential(email, password)) {
+    return res.status(401).json({ success: false, isAdmin: false, error: 'Invalid credentials' });
+  }
   res.json({ success: true, isAdmin: true });
 });
 
 app.get('/api/admin/users', (req, res) => {
-  res.json({ users: Array.from(mockUsers.values()) });
+  // every account this mock has issued a token for (unique by id)
+  const users = Array.from(new Map(Array.from(mockTokens.values()).map((u) => [u.id, u])).values());
+  res.json({ users });
 });
 
 app.get('/api/admin/notes', (req, res) => {

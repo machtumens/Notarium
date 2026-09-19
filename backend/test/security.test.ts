@@ -205,11 +205,12 @@ describe('S5a — public leaderboard leaks nothing identifying (F4)', () => {
 
 // ---------------------------------------------------------------------------
 describe('S5b — X-Encrypted-Yw-ID is no longer an identity (F4, F10)', () => {
-  const HEADER = { 'X-Encrypted-Yw-ID': 'legacy-yw-id-1' };
+  // Distinct from S5a's 'legacy-yw-id-1': users.encrypted_yw_id is UNIQUE.
+  const HEADER = { 'X-Encrypted-Yw-ID': 'legacy-yw-id-2' };
 
   it('a harvested id on former fallback routes → 401, and no user is created', async () => {
     const legacy = await signup(uniqueEmail('legacy'));
-    await env.DB.prepare('UPDATE users SET encrypted_yw_id = ? WHERE id = ?').bind('legacy-yw-id-1', legacy.user.id).run();
+    await env.DB.prepare('UPDATE users SET encrypted_yw_id = ? WHERE id = ?').bind('legacy-yw-id-2', legacy.user.id).run();
     const before = await userCount();
 
     const attempts: Array<[string, { method?: string; body?: unknown }]> = [
