@@ -60,10 +60,12 @@ function uniqueIp(): string {
 
 export interface Session {
   token: string;
+  /** Issued alongside `token` since W2.1; '' when the response carried none (session.test.ts asserts the shape). */
+  refreshToken: string;
   user: { id: number; email: string; name: string; class: string | null; role: string };
 }
 
-/** Calls the Worker's real `POST /api/auth/signup` and returns `{token, user}`. */
+/** Calls the Worker's real `POST /api/auth/signup` and returns `{token, refreshToken, user}`. */
 export async function signup(email = uniqueEmail(), name = 'Test User'): Promise<Session> {
   const res = await SELF.fetch(`${BASE}/api/auth/signup`, {
     method: 'POST',
@@ -74,7 +76,7 @@ export async function signup(email = uniqueEmail(), name = 'Test User'): Promise
   if (res.status !== 201 || !body.token || !body.user) {
     throw new Error(`signup failed: ${res.status} ${body.error ?? JSON.stringify(body)}`);
   }
-  return { token: body.token, user: body.user };
+  return { token: body.token, refreshToken: body.refreshToken ?? '', user: body.user };
 }
 
 /**
@@ -91,7 +93,7 @@ export async function adminLogin(email = uniqueEmail('admin').replace('@example.
   if (res.status !== 200 || !body.token || !body.user) {
     throw new Error(`admin login failed: ${res.status} ${body.error ?? JSON.stringify(body)}`);
   }
-  return { token: body.token, user: body.user };
+  return { token: body.token, refreshToken: body.refreshToken ?? '', user: body.user };
 }
 
 export interface RequestOptions {

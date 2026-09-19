@@ -48,8 +48,11 @@ const MAX_REQUEST_SIZE = 10 * 1024 * 1024; // 10MB — routes that carry base64 
 const MAX_JSON_BODY_SIZE = 1 * 1024 * 1024; // 1MB — every other JSON route
 const RATE_LIMIT_WINDOW = 900; // 15 minutes in seconds
 const RATE_LIMIT_MAX_ATTEMPTS = 5;
-const JWT_EXPIRATION = '24h';
-const REFRESH_TOKEN_EXPIRATION = '7d';
+// Access JWTs are short-lived (W2.1); a rotating refresh token (7 days, stored hashed
+// in `refresh_tokens`) mints the next one via POST /api/auth/refresh.
+const JWT_EXPIRATION = '15m';
+const REFRESH_TOKEN_TTL_SECONDS = 7 * 24 * 60 * 60;
+const REFRESH_TOKEN_BYTES = 32;
 
 // Routes whose bodies legitimately carry base64 images keep the larger cap
 // (/api/auth/profile: the old frontend posts the avatar inline — see photoUrlSchema)
@@ -147,6 +150,20 @@ async function verifyToken(token: string, env: Env): Promise<{ id: number; email
   } catch (error) {
     return null;
   }
+}
+
+// Refresh tokens: 32 random bytes, base64url on the wire. Only sha256(token) is stored,
+// so a database read never yields a usable credential (F-refresh); the raw token is never logged.
+function newRefreshToken(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(REFRESH_TOKEN_BYTES));
+  let binary = '';
+  for (const b of bytes) binary += String.fromCharCode(b);
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+async function hashRefreshToken(token: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(token));
+  return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 // Rate limiting
@@ -619,6 +636,36 @@ async function initializeDatabase(env: Env) {
         FOREIGN KEY (admin_id) REFERENCES users(id)
       )
     `).run();
+
+    // Refresh tokens (migration 0008 + W2.1): `token` holds sha256(token), `family` groups the
+    // rotation chain of one login, `revoked_at` retires a row (rotation, logout, reuse detection).
+    await env.DB.prepare(`
+      CREATE TABLE IF NOT EXISTS refresh_tokens (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        token TEXT NOT NULL UNIQUE,
+        expires_at DATETIME NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        family TEXT,
+        revoked_at DATETIME,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      )
+    `).run();
+    // A database that already ran 0008 has the table without the two W2.1 columns
+    try {
+      await env.DB.prepare(`ALTER TABLE refresh_tokens ADD COLUMN family TEXT`).run();
+    } catch (e) {
+      // Column already exists
+    }
+    try {
+      await env.DB.prepare(`ALTER TABLE refresh_tokens ADD COLUMN revoked_at DATETIME`).run();
+    } catch (e) {
+      // Column already exists
+    }
+    await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_refresh_tokens_user_id ON refresh_tokens(user_id)`).run();
+    await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_refresh_tokens_token ON refresh_tokens(token)`).run();
+    await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_refresh_tokens_expires_at ON refresh_tokens(expires_at)`).run();
+    await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_refresh_tokens_family ON refresh_tokens(family)`).run();
 
     // Ensure all default subjects exist (add missing ones if deleted)
     const defaultSubjects = [
@@ -1175,9 +1222,7 @@ async function resolveBearerUser(request: Request, env: Env): Promise<User | nul
   if (!decoded?.id) {
     return null;
   }
-  const user = await env.DB.prepare(`SELECT ${USER_COLUMNS} FROM users WHERE id = ?`)
-    .bind(decoded.id)
-    .first<User>();
+  const user = await findUserById(decoded.id, env);
   if (!user) {
     return null;
   }
@@ -1185,6 +1230,12 @@ async function resolveBearerUser(request: Request, env: Env): Promise<User | nul
     throw new HttpError(403, 'Account suspended');
   }
   return user;
+}
+
+// The row behind an id, or null when the account is gone. Shared by the bearer path and
+// the refresh path so both re-check existence and suspension the same way.
+async function findUserById(userId: number, env: Env): Promise<User | null> {
+  return env.DB.prepare(`SELECT ${USER_COLUMNS} FROM users WHERE id = ?`).bind(userId).first<User>();
 }
 
 // Caller identity for admin/ownership decisions — role comes from the DB row, never the claim.
@@ -2841,8 +2892,8 @@ async function signupEndpoint(request: Request, env: Env) {
       return jsonResponse({ error: 'Failed to create user' }, 500, env);
     }
 
-    // Create secure JWT token
-    const token = await createToken({
+    // Access JWT + refresh token (W2.1)
+    const { token, refreshToken } = await issueSession({
       id: (user as any).id,
       email: (user as any).email,
       role: (user as any).role
@@ -2853,6 +2904,7 @@ async function signupEndpoint(request: Request, env: Env) {
 
     return jsonResponse({
       token,
+      refreshToken,
       user: {
         id: (user as any).id,
         email: (user as any).email,
@@ -3019,8 +3071,8 @@ async function loginEndpoint(request: Request, env: Env) {
 
     console.log('[LOGIN] Creating token for user:', (user as any).id);
 
-    // Create secure JWT token
-    const token = await createToken({
+    // Access JWT + refresh token (W2.1)
+    const { token, refreshToken } = await issueSession({
       id: (user as any).id,
       email: (user as any).email,
       role: (user as any).role || 'student'
@@ -3034,6 +3086,7 @@ async function loginEndpoint(request: Request, env: Env) {
     return jsonResponse({
       success: true,
       token,
+      refreshToken,
       user: {
         id: (user as any).id,
         email: (user as any).email,
@@ -3237,6 +3290,127 @@ async function meEndpoint(request: Request, env: Env) {
   }
 }
 
+// ============ SESSION (REFRESH TOKEN) ENDPOINTS ============
+
+interface RefreshTokenRow {
+  id: number;
+  user_id: number;
+  family: string | null;
+  expires_at: string;
+  revoked_at: string | null;
+}
+
+// One login = one family. Rotation inserts the successor into the same family so a
+// replayed (already rotated) token can retire every descendant at once.
+async function issueRefreshToken(userId: number, env: Env, family: string = crypto.randomUUID()): Promise<string> {
+  const token = newRefreshToken();
+  const expiresAt = new Date(Date.now() + REFRESH_TOKEN_TTL_SECONDS * 1000).toISOString();
+  await env.DB.prepare('INSERT INTO refresh_tokens (user_id, token, expires_at, family) VALUES (?, ?, ?, ?)')
+    .bind(userId, await hashRefreshToken(token), expiresAt, family)
+    .run();
+  return token;
+}
+
+// The pair every sign-in hands out: a 15-minute access JWT plus a fresh refresh family.
+async function issueSession(user: { id: number; email: string; role: string }, env: Env): Promise<{ token: string; refreshToken: string }> {
+  const [token, refreshToken] = await Promise.all([createToken(user, env), issueRefreshToken(user.id, env)]);
+  return { token, refreshToken };
+}
+
+async function revokeRefreshFamily(family: string | null, rowId: number, env: Env): Promise<void> {
+  if (family) {
+    await env.DB.prepare("UPDATE refresh_tokens SET revoked_at = datetime('now') WHERE family = ? AND revoked_at IS NULL").bind(family).run();
+  } else {
+    await env.DB.prepare("UPDATE refresh_tokens SET revoked_at = datetime('now') WHERE id = ? AND revoked_at IS NULL").bind(rowId).run();
+  }
+}
+
+const refreshSchema = z.object({ refreshToken: z.string().min(1).max(512) });
+
+// POST /api/auth/refresh {refreshToken} → {token, refreshToken}. Every failure is 401 with
+// the same message so nothing about the token's state leaks; a replayed token is treated
+// as theft and kills its whole family (reuse detection).
+async function refreshEndpoint(request: Request, env: Env) {
+  const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
+  if (!(await checkRateLimit(ip, 'refresh', env))) {
+    return jsonResponse({ error: 'Too many refresh attempts. Please try again in 15 minutes.' }, 429, env);
+  }
+
+  const body = await request.json().catch(() => null);
+  const validation = refreshSchema.safeParse(body);
+  if (!validation.success) {
+    return jsonResponse({ error: 'Invalid input', details: validation.error.errors }, 400, env);
+  }
+
+  const denied = () => jsonResponse({ error: 'Invalid or expired refresh token' }, 401, env);
+  const row = await env.DB.prepare('SELECT id, user_id, family, expires_at, revoked_at FROM refresh_tokens WHERE token = ?')
+    .bind(await hashRefreshToken(validation.data.refreshToken))
+    .first<RefreshTokenRow>();
+  if (!row) {
+    return denied();
+  }
+  if (row.revoked_at) {
+    console.warn('[REFRESH] Reuse of a retired refresh token for user:', row.user_id);
+    await revokeRefreshFamily(row.family, row.id, env);
+    return denied();
+  }
+  const expiresAt = new Date(row.expires_at).getTime();
+  if (Number.isNaN(expiresAt) || expiresAt <= Date.now()) {
+    return denied();
+  }
+
+  // Same existence + suspension re-check as every bearer route (W1.12), by id.
+  const user = await findUserById(row.user_id, env);
+  if (!user || isSuspended(user)) {
+    return denied();
+  }
+
+  // Retire this row atomically; if a concurrent request already did, this is a replay.
+  const retired = await env.DB.prepare("UPDATE refresh_tokens SET revoked_at = datetime('now') WHERE id = ? AND revoked_at IS NULL")
+    .bind(row.id)
+    .run();
+  if ((retired.meta?.changes ?? 0) !== 1) {
+    console.warn('[REFRESH] Concurrent reuse of a refresh token for user:', row.user_id);
+    await revokeRefreshFamily(row.family, row.id, env);
+    return denied();
+  }
+
+  const [token, refreshToken] = await Promise.all([
+    createToken({ id: user.id, email: user.email ?? '', role: user.role || 'student' }, env),
+    issueRefreshToken(user.id, env, row.family ?? crypto.randomUUID()),
+  ]);
+  console.log('[REFRESH] Rotated session for user:', user.id);
+  return jsonResponse({ token, refreshToken }, 200, env);
+}
+
+const logoutSchema = z.object({ refreshToken: z.string().min(1).max(512).optional() }).partial();
+
+// POST /api/auth/logout (bearer) {refreshToken?} → {success}. Revokes the presented token's
+// family when it belongs to the caller, or every refresh token of the caller when the body
+// names none. The access JWT stays valid until it expires (15 minutes, stateless).
+async function logoutEndpoint(request: Request, env: Env) {
+  const caller = await resolveBearerUser(request, env);
+  if (!caller) {
+    return jsonResponse({ error: 'Unauthorized - Invalid or missing token' }, 401, env);
+  }
+  const body = await request.json().catch(() => null);
+  const validation = logoutSchema.safeParse(body ?? {});
+  const presented = validation.success ? validation.data.refreshToken : undefined;
+
+  if (presented) {
+    const row = await env.DB.prepare('SELECT id, user_id, family, expires_at, revoked_at FROM refresh_tokens WHERE token = ? AND user_id = ?')
+      .bind(await hashRefreshToken(presented), caller.id)
+      .first<RefreshTokenRow>();
+    if (row) {
+      await revokeRefreshFamily(row.family, row.id, env);
+    }
+  } else {
+    await env.DB.prepare("UPDATE refresh_tokens SET revoked_at = datetime('now') WHERE user_id = ? AND revoked_at IS NULL").bind(caller.id).run();
+  }
+  console.log('[LOGOUT] Revoked refresh tokens for user:', caller.id, presented ? '(one family)' : '(all)');
+  return jsonResponse({ success: true }, 200, env);
+}
+
 // Main request handler
 let dbInitialized = false;
 
@@ -3332,6 +3506,20 @@ const handler = {
         return await meEndpoint(request, env);
       }
 
+      if (path === '/api/auth/refresh' && request.method === 'POST') {
+        if (!env.DB) {
+          return jsonResponse({ error: 'Database not available' }, 503);
+        }
+        return await refreshEndpoint(request, env);
+      }
+
+      if (path === '/api/auth/logout' && request.method === 'POST') {
+        if (!env.DB) {
+          return jsonResponse({ error: 'Database not available' }, 503);
+        }
+        return await logoutEndpoint(request, env);
+      }
+
       if (path === '/api/auth/admin-login' && request.method === 'POST') {
         if (!env.DB) {
           return jsonResponse({ error: 'Database not available' }, 503);
@@ -3397,8 +3585,8 @@ const handler = {
             }
           }
 
-          // Create secure JWT token
-          const token = await createToken({
+          // Access JWT + refresh token (W2.1)
+          const { token, refreshToken } = await issueSession({
             id: (admin as any).id,
             email: (admin as any).email,
             role: 'admin'
@@ -3406,6 +3594,7 @@ const handler = {
 
           return jsonResponse({
             token,
+            refreshToken,
             user: {
               id: (admin as any).id,
               email: (admin as any).email,
