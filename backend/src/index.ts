@@ -73,10 +73,11 @@ function corsHeaders(request: Request, env: Env): Record<string, string> {
     'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     'Vary': 'Origin',
   };
+  // Bearer-only API: no Access-Control-Allow-Credentials, so an allow-listed
+  // origin can never send cookies or get a credentialed CORS grant.
   const origin = request.headers.get('Origin');
   if (origin && allowedOrigins(env).includes(origin)) {
     headers['Access-Control-Allow-Origin'] = origin;
-    headers['Access-Control-Allow-Credentials'] = 'true';
   }
   return headers;
 }
@@ -228,6 +229,34 @@ function validateRequestSize(request: Request, limit: number = MAX_REQUEST_SIZE)
     return false;
   }
   return true;
+}
+
+// Counts a body that has no Content-Length against the cap without buffering it:
+// a clone is read chunk by chunk and cancelled the moment the running total
+// passes `limit`, so at most limit + one chunk is ever pulled. A stream that
+// errors (client went away) reports 'aborted' instead of throwing.
+type BodyVerdict = 'ok' | 'too-large' | 'aborted';
+async function measureStreamedBody(request: Request, limit: number): Promise<BodyVerdict> {
+  const body = request.clone().body;
+  if (!body) return 'ok';
+  const reader = body.getReader();
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) return 'ok';
+      total += value.byteLength;
+      if (total > limit) {
+        await reader.cancel('Request too large').catch(() => undefined);
+        return 'too-large';
+      }
+    }
+  } catch (error) {
+    console.error('[BODY_GATE] Request body stream failed:', error instanceof Error ? error.message : String(error));
+    return 'aborted';
+  } finally {
+    try { reader.releaseLock(); } catch { /* already released by cancel */ }
+  }
 }
 
 // Zod validation schemas
@@ -2869,7 +2898,7 @@ async function loginEndpoint(request: Request, env: Env) {
     let body;
     try {
       body = await request.json() as any;
-      console.log('[LOGIN] Body parsed:', { email: body?.email, hasPassword: !!body?.password });
+      console.log('[LOGIN] Body parsed:', { hasEmail: !!body?.email, hasPassword: !!body?.password });
     } catch (parseError) {
       console.error('[LOGIN] Body parse error:', parseError);
       return jsonResponse({ error: 'Invalid request body format' }, 400, env);
@@ -2885,8 +2914,6 @@ async function loginEndpoint(request: Request, env: Env) {
     }
 
     const { email, password } = validation.data;
-
-    console.log('[LOGIN] Querying user:', email);
 
     // Query user from database
     let user;
@@ -2948,14 +2975,14 @@ async function loginEndpoint(request: Request, env: Env) {
     }
 
     if (!user) {
-      console.log('[LOGIN] User not found:', email);
+      console.log('[LOGIN] User not found');
       return jsonResponse({ error: 'Invalid email or password' }, 401);
     }
 
     // Verify password with bcrypt
     const isPasswordValid = await verifyPassword(password, (user as any).password_hash);
     if (!isPasswordValid) {
-      console.log('[LOGIN] Password mismatch for user:', email);
+      console.log('[LOGIN] Password mismatch for user:', (user as any).id);
       return jsonResponse({ error: 'Invalid email or password' }, 401, env);
     }
 
@@ -3032,12 +3059,6 @@ async function loginEndpoint(request: Request, env: Env) {
 async function meEndpoint(request: Request, env: Env) {
   try {
     const auth = request.headers.get('Authorization');
-    console.log('[ME] Auth header:', {
-      hasAuth: !!auth,
-      authLength: auth?.length || 0,
-      authPreview: auth ? auth.substring(0, 30) + '...' : 'NO_AUTH'
-    });
-
     const token = auth?.startsWith('Bearer ') ? auth.slice(7) : null;
 
     if (!token) {
@@ -3045,19 +3066,14 @@ async function meEndpoint(request: Request, env: Env) {
       return jsonResponse({ error: 'Unauthorized - No token provided' }, 401, env);
     }
 
-    console.log('[ME] Token received:', {
-      tokenLength: token.length,
-      tokenPreview: token.substring(0, 20) + '...'
-    });
-
-    // Validate and decode JWT token
+    // Validate and decode JWT token (never log the header or token, F16)
     const decoded = await verifyToken(token, env);
     if (!decoded || !decoded.id) {
       console.error('[ME] Invalid or expired token');
       return jsonResponse({ error: 'Invalid or expired token' }, 401, env);
     }
 
-    console.log('[ME] Token verified:', { id: decoded.id, email: decoded.email });
+    console.log('[ME] Token verified for user:', decoded.id);
     const userId = decoded.id;
 
     try {
@@ -3266,16 +3282,20 @@ const handler = {
     const path = url.pathname;
 
     // One body-size gate for every route (the signup limiter, reused). Bodies without a
-    // Content-Length (chunked) are measured after buffering so the cap cannot be skipped.
+    // Content-Length (chunked) are stream-counted so the cap cannot be skipped and the
+    // Worker never holds more than the cap in memory.
     if (request.method !== 'GET' && request.method !== 'HEAD') {
       const limit = bodyLimitFor(path);
       if (!validateRequestSize(request, limit)) {
         return jsonResponse({ error: 'Request too large' }, 413, env);
       }
       if (!request.headers.has('content-length') && request.body) {
-        const buffered = await request.clone().arrayBuffer();
-        if (buffered.byteLength > limit) {
+        const verdict = await measureStreamedBody(request, limit);
+        if (verdict === 'too-large') {
           return jsonResponse({ error: 'Request too large' }, 413, env);
+        }
+        if (verdict === 'aborted') {
+          return jsonResponse({ error: 'Request body could not be read' }, 400, env);
         }
       }
     }
@@ -3325,7 +3345,7 @@ const handler = {
           const body = await request.json() as any;
           const { email, password, class: classValue } = body;
 
-          console.log('[ADMIN-LOGIN] Request:', { email, hasPassword: !!password, classValue });
+          console.log('[ADMIN-LOGIN] Request:', { hasEmail: typeof email === 'string', hasPassword: !!password, classValue });
 
           // Check admin credentials - constant-time compare against the ADMIN_PASSWORD secret
           const isAdminEmail = typeof email === 'string' && email.endsWith('@notarium.site');
@@ -3358,8 +3378,7 @@ const handler = {
             admin = result;
           } else {
             // Update existing user: set role to admin and update class
-            console.log('[ADMIN-LOGIN] Updating existing user:', email, 'with class:', validClass);
-            console.log('[ADMIN-LOGIN] Current user data:', admin);
+            console.log('[ADMIN-LOGIN] Updating existing user:', (admin as any).id, 'with class:', validClass);
             try {
               await env.DB.prepare(
                 `UPDATE users SET role = 'admin', class = ?, updated_at = datetime('now') WHERE email = ?`
@@ -3370,7 +3389,7 @@ const handler = {
               admin = await env.DB.prepare(
                 `SELECT * FROM users WHERE email = ?`
               ).bind(email).first();
-              console.log('[ADMIN-LOGIN] Re-fetched user:', admin);
+              console.log('[ADMIN-LOGIN] Re-fetched user:', (admin as any)?.id);
             } catch (updateError: any) {
               console.error('[ADMIN-LOGIN] Update failed:', updateError);
               console.error('[ADMIN-LOGIN] Error details:', JSON.stringify(updateError));

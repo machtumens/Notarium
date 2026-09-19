@@ -3,9 +3,10 @@
  * findings on the Worker. Written RED before each fix; every block asserts the
  * post-fix contract.
  */
-import { env } from 'cloudflare:test';
-import { beforeAll, describe, expect, it } from 'vitest';
-import { adminLogin, api, initTestDatabase, json, signup, uniqueEmail } from './setup';
+import { env, SELF } from 'cloudflare:test';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import worker from '../src/index';
+import { BASE, adminLogin, api, initTestDatabase, json, signup, uniqueEmail } from './setup';
 
 beforeAll(initTestDatabase);
 
@@ -335,5 +336,99 @@ describe('W1.14 — non-destructive user update; profile photo parity; descripti
     expect(ok.status).toBe(200);
     const row = await env.DB.prepare('SELECT warning, warning_message FROM users WHERE id = ?').bind(target.user.id).first<any>();
     expect(row).toMatchObject({ warning: 1, warning_message: 'be nice' });
+  });
+});
+
+// ---------------------------------------------------------------------------
+describe('W1.15 — stream-counted body cap; no Allow-Credentials; quieter auth logs', () => {
+  const MB = 1024 * 1024;
+
+  /** A chunked body of `total` bytes that records how many bytes the Worker actually pulled. */
+  function countingStream(total: number, chunkSize = 16 * 1024) {
+    const chunk = new TextEncoder().encode('x'.repeat(chunkSize));
+    const counter = { pulled: 0, cancelled: false };
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        if (counter.pulled >= total) { controller.close(); return; }
+        controller.enqueue(chunk);
+        counter.pulled += chunk.byteLength;
+      },
+      cancel() { counter.cancelled = true; },
+    });
+    return { stream, counter };
+  }
+
+  it('a streamed 12 MB body to a 10 MB route → 413 after reading no more than the cap (+64 KB), not the whole body', async () => {
+    const { token } = await signup();
+    const { stream, counter } = countingStream(12 * MB);
+    // Direct call: the Request owns the stream, so `pulled` is exactly what the gate read
+    // (the SELF transport path is covered by the 2 MB chunked test in security.test.ts).
+    const res = await worker.fetch(new Request(`${BASE}/api/notes`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: stream,
+    }), env);
+    expect(res.status).toBe(413);
+    expect((await json(res)).error).toBeDefined();
+    expect(counter.pulled).toBeLessThan(10 * MB + 64 * 1024);
+    expect(counter.pulled).toBeGreaterThan(10 * MB); // it did read up to the cap before giving up
+  });
+
+  it('a body stream that errors mid-way (client abort) → 400 JSON with the security headers, never an unhandled throw', async () => {
+    const { token } = await signup();
+    const first = new TextEncoder().encode('{"subject":"Fisika",');
+    const aborting = new ReadableStream<Uint8Array>({
+      start(controller) { controller.enqueue(first); },
+      pull(controller) { controller.error(new Error('client aborted')); },
+    });
+    const res = await worker.fetch(new Request(`${BASE}/api/chat/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: aborting,
+    }), env);
+    expect(res.status).toBe(400);
+    expect(res.headers.get('Content-Type')).toContain('application/json');
+    expect((await json(res)).error).toBeDefined();
+    expect(res.headers.get('X-Content-Type-Options')).toBe('nosniff');
+    expect(res.headers.get('X-Frame-Options')).toBe('DENY');
+  });
+
+  it('Access-Control-Allow-Credentials is never sent (bearer-only API)', async () => {
+    const get = await SELF.fetch(`${BASE}/api/leaderboard`, { headers: { Origin: 'http://localhost:5173' } });
+    expect(get.headers.get('Access-Control-Allow-Origin')).toBe('http://localhost:5173');
+    expect(get.headers.get('Access-Control-Allow-Credentials')).toBeNull();
+    const preflight = await SELF.fetch(`${BASE}/api/leaderboard`, { method: 'OPTIONS', headers: { Origin: 'http://localhost:5173' } });
+    expect(preflight.status).toBe(204);
+    expect(preflight.headers.get('Access-Control-Allow-Credentials')).toBeNull();
+  });
+
+  describe('auth logs (F16)', () => {
+    const lines: string[] = [];
+    const spies = (['log', 'info', 'warn', 'error', 'debug'] as const).map((level) =>
+      vi.spyOn(console, level).mockImplementation((...args: unknown[]) => {
+        lines.push(args.map((a) => (typeof a === 'string' ? a : JSON.stringify(a))).join(' '));
+      }));
+    afterEach(() => { lines.length = 0; });
+
+    it('login, /api/auth/me and admin-login never log an email, a token or an Authorization preview', async () => {
+      const me = await signup(uniqueEmail('quiet'));
+      lines.length = 0;
+
+      await api('/api/auth/login', { body: { email: me.user.email, password: 'password-123' } });
+      await api('/api/auth/login', { body: { email: me.user.email, password: 'wrong-password' } });
+      await api('/api/auth/login', { body: { email: 'nobody-quiet@example.test', password: 'password-123' } });
+      await api('/api/auth/me', { token: me.token });
+      const adminMail = adminEmail();
+      await api('/api/auth/admin-login', { headers: { 'CF-Connecting-IP': freshIp() }, body: { email: adminMail, password: env.ADMIN_PASSWORD, class: '10.1' } });
+      await api('/api/auth/admin-login', { headers: { 'CF-Connecting-IP': freshIp() }, body: { email: adminMail, password: env.ADMIN_PASSWORD, class: '10.1' } });
+
+      expect(spies.some((s) => s.mock.calls.length > 0)).toBe(true); // the spy really sees the Worker's logs
+      const joined = lines.join('\n');
+      for (const secret of [me.user.email, 'nobody-quiet@example.test', adminMail, me.token, me.token.slice(0, 20), 'Bearer ', 'password_hash', '$2']) {
+        expect(joined, `log lines must not contain ${JSON.stringify(secret.slice(0, 30))}`).not.toContain(secret);
+      }
+      // the user id is still there for correlation
+      expect(joined).toContain(String(me.user.id));
+    });
   });
 });
