@@ -161,6 +161,16 @@ describe('S4 — chat session messages require the owning bearer user (F3)', () 
     expect((await json(get)).messages.map((m: { content: string }) => m.content)).toEqual(['hello']);
   });
 
+  it('POST /api/chat/sessions/:id/ai-response is gated the same way (F3 names all three handlers)', async () => {
+    const a = await signup(uniqueEmail('a'));
+    const b = await signup(uniqueEmail('b'));
+    const session = await createChatSession(a.token);
+    expect((await api(`/api/chat/sessions/${session.id}/ai-response`, { body: { message: 'm' } })).status).toBe(401);
+    expect((await api(`/api/chat/sessions/${session.id}/ai-response`, { token: b.token, body: { message: 'm' } })).status).toBe(403);
+    const rows = await env.DB.prepare('SELECT COUNT(*) AS c FROM chat_messages WHERE session_id = ?').bind(session.id).first<{ c: number }>();
+    expect(rows?.c ?? 0).toBe(0);
+  });
+
   it('unknown session id → 404 for the owner', async () => {
     const a = await signup(uniqueEmail('a'));
     expect((await api('/api/chat/sessions/999999/messages', { token: a.token })).status).toBe(404);

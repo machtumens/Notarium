@@ -197,8 +197,10 @@ const noteSchema = z.object({
   description: z.string().max(500).optional(),
 });
 
+// Body of POST /api/chat/sessions/:id/messages (what both frontends send)
 const chatMessageSchema = z.object({
-  message: z.string().min(1).max(10000),
+  role: z.enum(['user', 'assistant']),
+  content: z.string().min(1).max(10000),
 });
 
 const profileUpdateSchema = z.object({
@@ -2378,8 +2380,32 @@ async function getChatSessions(request: Request, env: Env) {
   return jsonResponse({ sessions: results });
 }
 
+// Ownership gate shared by the chat session routes (F3):
+// 401 no/invalid token, 404 unknown session, 403 not the session owner.
+async function requireOwnedChatSession(
+  sessionId: string,
+  request: Request,
+  env: Env
+): Promise<{ user: { id: number; email: string; role: string } } | Response> {
+  const user = await getUserFromToken(request, env);
+  if (!user) {
+    return jsonResponse({ error: 'Unauthorized - Invalid or missing token' }, 401, env);
+  }
+  const session = await env.DB.prepare('SELECT user_id FROM chat_sessions WHERE id = ?').bind(sessionId).first() as any;
+  if (!session) {
+    return jsonResponse({ error: 'Chat session not found' }, 404, env);
+  }
+  if (session.user_id !== user.id) {
+    return jsonResponse({ error: 'Unauthorized - Not your chat session' }, 403, env);
+  }
+  return { user };
+}
+
 // Get chat messages
-async function getChatMessages(sessionId: string, env: Env) {
+async function getChatMessages(sessionId: string, request: Request, env: Env) {
+  const gate = await requireOwnedChatSession(sessionId, request, env);
+  if (gate instanceof Response) return gate;
+
   const { results } = await env.DB.prepare(`
     SELECT * FROM chat_messages
     WHERE session_id = ?
@@ -2391,13 +2417,20 @@ async function getChatMessages(sessionId: string, env: Env) {
 
 // Add chat message
 async function addChatMessage(sessionId: string, request: Request, env: Env) {
-  const body = await request.json() as any;
+  const gate = await requireOwnedChatSession(sessionId, request, env);
+  if (gate instanceof Response) return gate;
+
+  const validation = chatMessageSchema.safeParse(await request.json());
+  if (!validation.success) {
+    return jsonResponse({ error: 'Invalid input', details: validation.error.errors }, 400, env);
+  }
+  const { role, content } = validation.data;
 
   const message = await env.DB.prepare(`
     INSERT INTO chat_messages (session_id, role, content)
     VALUES (?, ?, ?)
     RETURNING *
-  `).bind(sessionId, body.role, body.content).first();
+  `).bind(sessionId, role, content).first();
 
   // Update session timestamp
   await env.DB.prepare(
@@ -2410,7 +2443,9 @@ async function addChatMessage(sessionId: string, request: Request, env: Env) {
 // Get AI response using Gemini
 async function getAIResponse(sessionId: string, request: Request, env: Env) {
   try {
-    const user = await getOrCreateUser(request, env);
+    const gate = await requireOwnedChatSession(sessionId, request, env);
+    if (gate instanceof Response) return gate;
+    const { user } = gate;
     const body = await request.json() as any;
     const { message, subject } = body;
 
@@ -3393,7 +3428,7 @@ export default {
 
       if (path.match(/^\/api\/chat\/sessions\/\d+\/messages$/) && request.method === 'GET') {
         const sessionId = path.split('/')[4];
-        return await getChatMessages(sessionId, env);
+        return await getChatMessages(sessionId, request, env);
       }
 
       if (path.match(/^\/api\/chat\/sessions\/\d+\/messages$/) && request.method === 'POST') {
