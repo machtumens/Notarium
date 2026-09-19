@@ -16,6 +16,7 @@ interface Env {
   DEEPSEEK_API_KEY?: string;
   GOOGLE_CLOUD_VISION_API_KEY?: string;
   FRONTEND_URL?: string;
+  ENVIRONMENT?: string;
 }
 
 interface User {
@@ -3165,38 +3166,10 @@ export default {
         }
       }
 
-      // Super simple debug endpoint
-      if (path === '/api/debug/ping' && request.method === 'POST') {
+      // Debug ping — never served in production
+      if (path === '/api/debug/ping' && request.method === 'POST' && env.ENVIRONMENT !== 'production') {
         console.log('[DEBUG] PING endpoint called!');
         return jsonResponse({ ok: true, message: 'Pong!' });
-      }
-
-      // Debug endpoint to verify database write
-      if (path === '/api/debug/verify-update' && request.method === 'POST') {
-        try {
-          const body = await request.json() as any;
-          const { userId, name } = body;
-
-          console.log('[DEBUG] Testing direct database write...');
-
-          // First check current value
-          const before = await env.DB.prepare(`SELECT display_name FROM users WHERE id = ?`).bind(userId).first() as any;
-          console.log('[DEBUG] Before update:', before);
-
-          // Do a simple update
-          await env.DB.prepare(
-            `UPDATE users SET display_name = ? WHERE id = ?`
-          ).bind(name, userId).run();
-
-          // Check after value
-          const after = await env.DB.prepare(`SELECT display_name FROM users WHERE id = ?`).bind(userId).first() as any;
-          console.log('[DEBUG] After update:', after);
-
-          return jsonResponse({ before, after });
-        } catch (error: any) {
-          console.error('[DEBUG] Error:', error);
-          return jsonResponse({ error: error.message }, 500);
-        }
       }
 
       if (path === '/api/auth/profile' && request.method === 'PUT') {
@@ -3327,102 +3300,6 @@ export default {
         }
       }
 
-      // Batched password migration endpoint (processes 5 users per request to avoid timeout)
-      if (path === '/api/admin/migrate-passwords' && request.method === 'POST') {
-        try {
-          const body = await request.json() as any;
-          const { adminPassword, batchSize = 5, offset = 0 } = body;
-
-          if (adminPassword !== env.ADMIN_PASSWORD) {
-            return jsonResponse({ error: 'Unauthorized' }, 401, env);
-          }
-
-          // Get unmigrated users (those without bcrypt hashes)
-          const users = await env.DB.prepare(`
-            SELECT id, password_hash FROM users
-            WHERE password_hash NOT LIKE '$2%' AND password_hash IS NOT NULL
-            LIMIT ? OFFSET ?
-          `).bind(batchSize, offset).all();
-
-          let migrated = 0;
-          let errors = 0;
-
-          for (const user of users.results) {
-            const userId = (user as any).id;
-            const plainPassword = (user as any).password_hash;
-
-            try {
-              // Hash the plain text password
-              const hashed = await hashPassword(plainPassword);
-              await env.DB.prepare(
-                'UPDATE users SET password_hash = ? WHERE id = ?'
-              ).bind(hashed, userId).run();
-              migrated++;
-              console.log(`[MIGRATION] Migrated user ${userId}`);
-            } catch (error) {
-              console.error(`[MIGRATION] Failed to migrate user ${userId}:`, error);
-              errors++;
-            }
-          }
-
-          // Check how many users are left
-          const remaining = await env.DB.prepare(`
-            SELECT COUNT(*) as count FROM users
-            WHERE password_hash NOT LIKE '$2%' AND password_hash IS NOT NULL
-          `).first();
-
-          return jsonResponse({
-            success: true,
-            migrated,
-            errors,
-            remaining: (remaining as any)?.count || 0,
-            nextOffset: offset + batchSize,
-            done: (remaining as any)?.count === 0
-          }, 200, env);
-        } catch (error: any) {
-          console.error('[MIGRATION] Error:', error);
-          return jsonResponse({ error: error.message || 'Migration failed' }, 500, env);
-        }
-      }
-
-      // Admin password reset (no auth required, uses secret code on frontend)
-      if (path === '/api/auth/admin-reset-password' && request.method === 'POST') {
-        if (!env.DB) {
-          return jsonResponse({ error: 'Database not available' }, 503);
-        }
-        try {
-          const body = await request.json() as any;
-          const { email, newPassword } = body;
-
-          if (!email || !newPassword) {
-            return jsonResponse({ error: 'Email and new password are required' }, 400);
-          }
-
-          // Find user by email
-          const user = await env.DB.prepare(`
-            SELECT id, email FROM users WHERE email = ?
-          `).bind(email).first() as any;
-
-          if (!user) {
-            return jsonResponse({ error: 'User not found' }, 404);
-          }
-
-          // Hash the new password with bcrypt
-          const hashedPassword = await hashPassword(newPassword);
-
-          // Update password in database
-          await env.DB.prepare(`
-            UPDATE users SET password_hash = ?, updated_at = datetime('now') WHERE id = ?
-          `).bind(hashedPassword, user.id).run();
-
-          console.log('[PASSWORD_RESET] Password reset successfully for user:', email);
-          return jsonResponse({ success: true, message: 'Password reset successfully' }, 200, env);
-        } catch (error: any) {
-          console.error('[PASSWORD_RESET] Error:', error);
-          return jsonResponse({ error: error.message || 'Failed to reset password' }, 500);
-        }
-      }
-
       // Change password (for logged-in users)
       if (path === '/api/auth/change-password' && request.method === 'POST') {
         if (!env.DB) {
@@ -3493,72 +3370,6 @@ export default {
 
       if (env.DB && path === '/api/user/class' && request.method === 'PUT') {
         return await updateUserClass(request, env);
-      }
-
-      // Emergency admin password fix endpoint
-      if (path === '/api/admin/emergency-password-fix' && request.method === 'POST') {
-        if (!env.DB) {
-          return jsonResponse({ error: 'Database not available' }, 503);
-        }
-        try {
-          // Check admin authentication
-          const auth = request.headers.get('Authorization');
-          const token = auth?.startsWith('Bearer ') ? auth.slice(7) : null;
-
-          if (!token) {
-            return jsonResponse({ error: 'Unauthorized - Admin access required' }, 401);
-          }
-
-          // Decode token and verify admin role
-          let decoded;
-          try {
-            const decodedStr = Buffer.from(token, 'base64').toString();
-            decoded = JSON.parse(decodedStr);
-          } catch (tokenError) {
-            return jsonResponse({ error: 'Invalid token format' }, 401);
-          }
-
-          // Verify admin role
-          if (decoded.role !== 'admin') {
-            return jsonResponse({ error: 'Unauthorized - Admin access required' }, 403);
-          }
-
-          const body = await request.json() as any;
-          const { email, newPassword } = body;
-
-          if (!email || !newPassword) {
-            return jsonResponse({ error: 'Email and new password are required' }, 400);
-          }
-
-          // Find user by email
-          const user = await env.DB.prepare(`
-            SELECT id, email, display_name FROM users WHERE email = ?
-          `).bind(email).first() as any;
-
-          if (!user) {
-            return jsonResponse({ error: 'User not found' }, 404);
-          }
-
-          // Update password directly (plain text to match login system)
-          await env.DB.prepare(`
-            UPDATE users SET password_hash = ?, updated_at = datetime('now') WHERE id = ?
-          `).bind(newPassword, user.id).run();
-
-          console.log('[EMERGENCY_PASSWORD_FIX] Admin', decoded.email, 'reset password for user:', email);
-
-          return jsonResponse({
-            success: true,
-            message: 'Password reset successfully',
-            user: {
-              id: user.id,
-              email: user.email,
-              display_name: user.display_name
-            }
-          });
-        } catch (error: any) {
-          console.error('[EMERGENCY_PASSWORD_FIX] Error:', error);
-          return jsonResponse({ error: error.message || 'Failed to reset password' }, 500);
-        }
       }
 
       // Subject routes - use mock data as fallback
