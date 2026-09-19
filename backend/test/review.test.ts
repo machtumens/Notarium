@@ -210,3 +210,130 @@ describe('W1.13 — no password_hash, encrypted_yw_id or author email in respons
     expect(notes[0].author_name).toBe('Search Author');
   });
 });
+
+// ---------------------------------------------------------------------------
+describe('W1.14 — non-destructive user update; profile photo parity; description cap; chat + suspend/warn validation', () => {
+  const dataUrl = (chars: number, mime = 'png') => `data:image/${mime};base64,${'A'.repeat(chars)}`;
+
+  it('POST /api/user/update with {display_name} leaves email (and the other fields) intact; email is not writable', async () => {
+    const me = await signup(uniqueEmail('keep'), 'Before');
+    await env.DB.prepare("UPDATE users SET photo_url = 'https://cdn.example.test/a.png', description = 'bio' WHERE id = ?").bind(me.user.id).run();
+
+    const res = await api('/api/user/update', { token: me.token, body: { display_name: 'After' } });
+    expect(res.status).toBe(200);
+    const row = await env.DB.prepare('SELECT display_name, email, photo_url, description FROM users WHERE id = ?').bind(me.user.id).first<any>();
+    expect(row).toMatchObject({ display_name: 'After', email: me.user.email, photo_url: 'https://cdn.example.test/a.png', description: 'bio' });
+
+    const hijack = await api('/api/user/update', { token: me.token, body: { email: 'other@example.test', display_name: 'X' } });
+    expect(hijack.status).toBe(200);
+    const after = await env.DB.prepare('SELECT email FROM users WHERE id = ?').bind(me.user.id).first<{ email: string }>();
+    expect(after?.email).toBe(me.user.email);
+  });
+
+  it('PUT /api/auth/profile accepts the old frontend\'s base64 avatar (1.9 MB data URL, the D1 row limit) and stores it', async () => {
+    const me = await signup(uniqueEmail('avatar'));
+    // D1 caps any string/row at 2,000,000 bytes — 1.9 MB is the largest avatar that can be stored at all.
+    const photo = dataUrl(1_900_000 - 'data:image/png;base64,'.length);
+    const res = await api('/api/auth/profile', { method: 'PUT', token: me.token, body: { photo_url: photo } });
+    expect(res.status).toBe(200);
+    const stored = await env.DB.prepare('SELECT photo_url FROM users WHERE id = ?').bind(me.user.id).first<{ photo_url: string }>();
+    expect(stored?.photo_url).toBe(photo);
+    expect((await json(await api('/api/auth/me', { token: me.token }))).user.photo_url).toBe(photo);
+  });
+
+  it('PUT /api/auth/profile photo_url: https URL ≤500 → 200; http, gif, oversized data URL, bare junk → 400', async () => {
+    const me = await signup(uniqueEmail('avatar'));
+    const ok = await api('/api/auth/profile', { method: 'PUT', token: me.token, body: { photo_url: 'https://cdn.example.test/me.webp' } });
+    expect(ok.status).toBe(200);
+    for (const [label, photo_url] of [
+      ['http url', 'http://cdn.example.test/me.png'],
+      ['https over 500 chars', `https://cdn.example.test/${'a'.repeat(500)}`],
+      ['gif data url', dataUrl(64, 'gif')],
+      ['data url over the 1.9 MB cap (would hit SQLITE_TOOBIG)', dataUrl(1_900_001)],
+      ['not a url', 'not a url'],
+    ] as const) {
+      const res = await api('/api/auth/profile', { method: 'PUT', token: me.token, body: { photo_url } });
+      expect(res.status, label).toBe(400);
+    }
+    const stored = await env.DB.prepare('SELECT photo_url FROM users WHERE id = ?').bind(me.user.id).first<{ photo_url: string }>();
+    expect(stored?.photo_url).toBe('https://cdn.example.test/me.webp');
+  });
+
+  it('POST /api/notes with a 1200-char description succeeds and stores the first 1000 chars', async () => {
+    const me = await signup(uniqueEmail('long'));
+    const description = 'd'.repeat(1200);
+    const res = await api('/api/notes', { token: me.token, body: { title: 'Long description', content: 'c', subject_id: 1, description } });
+    expect(res.ok).toBe(true);
+    const body = await json(res);
+    expect(body.success).toBe(true);
+    const stored = await env.DB.prepare('SELECT description FROM notes WHERE id = ?').bind(body.note.id).first<{ description: string }>();
+    expect(stored?.description.length).toBe(1000);
+    expect(stored?.description).toBe('d'.repeat(1000));
+  });
+
+  it('PUT /api/notes/:id keeps rejecting a description over 1000 (no silent truncation on edits)', async () => {
+    const me = await signup(uniqueEmail('edit'));
+    const created = await json(await api('/api/notes', { token: me.token, body: { title: 't', content: 'c', subject_id: 1 } }));
+    expect((await api(`/api/notes/${created.note.id}`, { method: 'PUT', token: me.token, body: { description: 'd'.repeat(1000) } })).status).toBe(200);
+    expect((await api(`/api/notes/${created.note.id}`, { method: 'PUT', token: me.token, body: { description: 'd'.repeat(1001) } })).status).toBe(400);
+  });
+
+  it('POST /api/chat/sessions validates subject and topic (1–200 chars) → 400 otherwise', async () => {
+    const me = await signup(uniqueEmail('chat'));
+    for (const body of [{}, { subject: 'Fisika' }, { subject: '', topic: 'Gaya' }, { subject: 'Fisika', topic: 'x'.repeat(201) }, { subject: 1, topic: 'Gaya' }, { subject: 'Fisika', topic: null }]) {
+      const res = await api('/api/chat/sessions', { token: me.token, body });
+      expect(res.status, JSON.stringify(body)).toBe(400);
+      expect((await json(res)).error).toBe('Invalid input');
+    }
+    const ok = await api('/api/chat/sessions', { token: me.token, body: { subject: 'Fisika', topic: 'x'.repeat(200) } });
+    expect(ok.status).toBe(200);
+    const count = await env.DB.prepare('SELECT COUNT(*) AS c FROM chat_sessions WHERE user_id = ?').bind(me.user.id).first<{ c: number }>();
+    expect(count?.c).toBe(1);
+  });
+
+  it('POST /api/chat/sessions/:id/ai-response clamps message to the chatMessageSchema bound → 400 over it, nothing saved', async () => {
+    const me = await signup(uniqueEmail('ai'));
+    const session = (await json(await api('/api/chat/sessions', { token: me.token, body: { subject: 'Fisika', topic: 'Gaya' } }))).session as { id: number };
+    for (const body of [{ message: 'x'.repeat(10001) }, { message: '' }, { message: 123 }, {}]) {
+      const res = await api(`/api/chat/sessions/${session.id}/ai-response`, { token: me.token, body });
+      expect(res.status, JSON.stringify(body).slice(0, 30)).toBe(400);
+    }
+    const rows = await env.DB.prepare('SELECT COUNT(*) AS c FROM chat_messages WHERE session_id = ?').bind(session.id).first<{ c: number }>();
+    expect(rows?.c ?? 0).toBe(0);
+  });
+
+  it('POST /api/admin/suspend/:id: days must be an int 1–365 (default 7), reason ≤ 500 → 400 otherwise, never 500', async () => {
+    const admin = await adminLogin();
+    const target = await signup(uniqueEmail('target'));
+    for (const body of [{ days: 'abc' }, { days: 0 }, { days: 366 }, { days: 7.5 }, { days: 3, reason: 'r'.repeat(501) }, { days: 3, reason: 42 }]) {
+      const res = await api(`/api/admin/suspend/${target.user.id}`, { token: admin.token, body });
+      expect(res.status, JSON.stringify(body).slice(0, 30)).toBe(400);
+    }
+    const untouched = await env.DB.prepare('SELECT suspended FROM users WHERE id = ?').bind(target.user.id).first<{ suspended: number }>();
+    expect(untouched?.suspended ?? 0).toBe(0);
+
+    const ok = await api(`/api/admin/suspend/${target.user.id}`, { token: admin.token, body: { days: 3, reason: 'spam' } });
+    expect(ok.status).toBe(200);
+    const end = new Date((await json(ok)).suspension_end_date).getTime() - Date.now();
+    expect(end).toBeGreaterThan(2.9 * 24 * 60 * 60 * 1000);
+    expect(end).toBeLessThan(3.1 * 24 * 60 * 60 * 1000);
+
+    const defaults = await api(`/api/admin/suspend/${target.user.id}`, { token: admin.token, body: {} });
+    expect(defaults.status).toBe(200);
+    const end7 = new Date((await json(defaults)).suspension_end_date).getTime() - Date.now();
+    expect(end7).toBeGreaterThan(6.9 * 24 * 60 * 60 * 1000);
+  });
+
+  it('POST /api/admin/warn/:id: message must be a string ≤ 500 → 400 otherwise', async () => {
+    const admin = await adminLogin();
+    const target = await signup(uniqueEmail('target'));
+    for (const body of [{ message: 'm'.repeat(501) }, { message: 123 }]) {
+      const res = await api(`/api/admin/warn/${target.user.id}`, { token: admin.token, body });
+      expect(res.status, JSON.stringify(body).slice(0, 30)).toBe(400);
+    }
+    const ok = await api(`/api/admin/warn/${target.user.id}`, { token: admin.token, body: { message: 'be nice' } });
+    expect(ok.status).toBe(200);
+    const row = await env.DB.prepare('SELECT warning, warning_message FROM users WHERE id = ?').bind(target.user.id).first<any>();
+    expect(row).toMatchObject({ warning: 1, warning_message: 'be nice' });
+  });
+});

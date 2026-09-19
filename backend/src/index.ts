@@ -52,7 +52,8 @@ const JWT_EXPIRATION = '24h';
 const REFRESH_TOKEN_EXPIRATION = '7d';
 
 // Routes whose bodies legitimately carry base64 images keep the larger cap
-const LARGE_BODY_ROUTES = [/^\/api\/notes$/, /^\/api\/notes\/\d+$/, /^\/api\/admin\/notes\/\d+$/, /^\/api\/gemini\/ocr$/];
+// (/api/auth/profile: the old frontend posts the avatar inline — see photoUrlSchema)
+const LARGE_BODY_ROUTES = [/^\/api\/notes$/, /^\/api\/notes\/\d+$/, /^\/api\/admin\/notes\/\d+$/, /^\/api\/gemini\/ocr$/, /^\/api\/auth\/profile$/];
 function bodyLimitFor(path: string): number {
   return LARGE_BODY_ROUTES.some((route) => route.test(path)) ? MAX_REQUEST_SIZE : MAX_JSON_BODY_SIZE;
 }
@@ -242,11 +243,12 @@ const loginSchema = z.object({
   password: z.string().min(1),
 });
 
+const NOTE_DESCRIPTION_MAX = 1000;
 const noteSchema = z.object({
   title: z.string().min(1).max(200),
   content: z.string().max(100000).optional(), // photo uploads (old frontend) carry extracted_text instead
   subject_id: z.number().int().positive(),
-  description: z.string().max(500).optional(),
+  description: z.string().max(NOTE_DESCRIPTION_MAX).optional(),
 });
 const noteUpdateSchema = noteSchema.partial();
 
@@ -256,13 +258,72 @@ const chatMessageSchema = z.object({
   content: z.string().min(1).max(10000),
 });
 
+// Body of POST /api/chat/sessions
+const chatSessionSchema = z.object({
+  subject: z.string().min(1).max(200),
+  topic: z.string().min(1).max(200),
+});
+
+// Body of POST /api/chat/sessions/:id/ai-response — `message` has the same bound as a stored chat message
+const aiMessageSchema = z.object({
+  message: chatMessageSchema.shape.content,
+  subject: z.string().max(200).nullish(),
+});
+
+// Admin moderation bodies
+const suspendSchema = z.object({
+  days: z.number().int().min(1).max(365).default(7),
+  reason: z.string().max(500).optional(),
+});
+const warnSchema = z.object({
+  message: z.string().max(500).optional(),
+});
+
+// Profile photo: an https URL, or — ponytail: parity with the live old frontend, whose
+// ProfileEditor still posts the avatar as a base64 data URL until W4 moves photos to
+// URLs — a png/jpeg/webp data URL. The inline cap is 1.9 MB, not the 2.8 MB a 2 MB file
+// would need: D1 rejects any string or row over 2,000,000 bytes (SQLITE_TOOBIG), so a
+// bigger avatar never stored anyway; now it is a clear 400 instead of a 500.
+const MAX_INLINE_PHOTO_CHARS = 1_900_000;
+const photoUrlSchema = z.union([
+  z.string().max(500).url().refine((url) => url.startsWith('https://'), { message: 'photo_url must be an https URL' }),
+  z.string()
+    .max(MAX_INLINE_PHOTO_CHARS, `photo_url data URL must be at most ${MAX_INLINE_PHOTO_CHARS} characters (about a 1.4 MB image)`)
+    .regex(/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+=*$/, 'photo_url must be a png, jpeg or webp data URL'),
+]);
+
 const profileUpdateSchema = z.object({
   name: z.string().min(1).max(100).optional(), // old-frontend alias for display_name
   display_name: z.string().min(1).max(100).optional(),
   class: z.string().max(50).optional(),
   description: z.string().max(500).optional(),
-  photo_url: z.string().url().max(500).optional(),
+  photo_url: photoUrlSchema.optional(),
 });
+
+// Dynamic SET list for the fields a user may change about themselves (email is not one of them).
+function profileUpdateFields(fields: z.infer<typeof profileUpdateSchema>): { updates: string[]; values: unknown[] } {
+  const updates: string[] = [];
+  const values: unknown[] = [];
+  // `name` is the old frontend's alias for display_name
+  const displayName = fields.display_name ?? fields.name;
+  if (displayName !== undefined) {
+    updates.push('display_name = ?');
+    values.push(displayName);
+  }
+  if (fields.photo_url !== undefined) {
+    updates.push('photo_url = ?');
+    values.push(fields.photo_url);
+  }
+  if (fields.class !== undefined) {
+    updates.push('class = ?');
+    values.push(fields.class);
+  }
+  if (fields.description !== undefined) {
+    updates.push('description = ?');
+    values.push(fields.description || null);
+  }
+  return { updates, values };
+}
 
 // Initialize database tables
 async function initializeDatabase(env: Env) {
@@ -1122,16 +1183,27 @@ async function getOrCreateUser(request: Request, env: Env): Promise<User> {
   return user;
 }
 
-// Update user info
+// Update user info — only the provided fields change (was: every column overwritten,
+// email included, with NULL for anything omitted). Email is not writable here.
 async function updateUserInfo(request: Request, env: Env) {
   const user = await getOrCreateUser(request, env);
-  const body = await request.json() as any;
+  const body = await request.json().catch(() => null);
+
+  const validation = profileUpdateSchema.safeParse(body);
+  if (!validation.success) {
+    return jsonResponse({ error: 'Invalid input', details: validation.error.errors }, 400, env);
+  }
+
+  const { updates, values } = profileUpdateFields(validation.data);
+  if (updates.length === 0) {
+    return jsonResponse({ success: true, updated: false });
+  }
 
   await env.DB.prepare(
-    'UPDATE users SET display_name = ?, photo_url = ?, email = ?, updated_at = datetime("now") WHERE id = ?'
-  ).bind(body.display_name ?? null, body.photo_url ?? null, body.email ?? null, user.id).run();
+    `UPDATE users SET ${updates.join(', ')}, updated_at = datetime('now') WHERE id = ?`
+  ).bind(...values, user.id).run();
 
-  return jsonResponse({ success: true });
+  return jsonResponse({ success: true, updated: true });
 }
 
 // Get current user info
@@ -1305,9 +1377,14 @@ async function searchNotes(query: string, request: Request, env: Env) {
 async function createNote(request: Request, env: Env) {
   try {
     const user = await getOrCreateUser(request, env);
-    const body = await request.json() as any;
+    const raw = await request.json() as any;
+    // The old frontend fills `description` with the AI quick summary, which the user cannot
+    // shorten — cap it instead of rejecting the upload. Edits (PUT) still reject > max.
+    const body = (raw && typeof raw.description === 'string' && raw.description.length > NOTE_DESCRIPTION_MAX)
+      ? { ...raw, description: raw.description.slice(0, NOTE_DESCRIPTION_MAX) }
+      : raw;
 
-    console.log('[CREATE NOTE] User:', user.id, 'Subject:', body.subject_id);
+    console.log('[CREATE NOTE] User:', user.id, 'Subject:', body?.subject_id);
 
     const validation = noteSchema.safeParse(body);
     if (!validation.success) {
@@ -2248,12 +2325,15 @@ async function suspendUser(userId: string, request: Request, env: Env) {
     return jsonResponse({ error: 'Unauthorized - Admin access required' }, 403);
   }
 
-  const body = await request.json() as any;
-  const { days, reason } = body;
+  const validation = suspendSchema.safeParse(await request.json().catch(() => null));
+  if (!validation.success) {
+    return jsonResponse({ error: 'Invalid input', details: validation.error.errors }, 400, env);
+  }
+  const { days, reason } = validation.data;
 
-  // Calculate suspension end date
+  // Calculate suspension end date (days: int 1–365, default 7)
   const endDate = new Date();
-  endDate.setDate(endDate.getDate() + (days || 7)); // Default 7 days
+  endDate.setDate(endDate.getDate() + days);
   const endDateISO = endDate.toISOString();
 
   await env.DB.prepare(
@@ -2272,8 +2352,11 @@ async function warnUser(userId: string, request: Request, env: Env) {
     return jsonResponse({ error: 'Unauthorized - Admin access required' }, 403);
   }
 
-  const body = await request.json() as any;
-  const { message } = body;
+  const validation = warnSchema.safeParse(await request.json().catch(() => null));
+  if (!validation.success) {
+    return jsonResponse({ error: 'Invalid input', details: validation.error.errors }, 400, env);
+  }
+  const { message } = validation.data;
 
   await env.DB.prepare(
     'UPDATE users SET warning = 1, warning_message = ?, warning_first_viewed = NULL, warning_view_count = 0, updated_at = datetime("now") WHERE id = ?'
@@ -2446,13 +2529,18 @@ async function getAllNotes(request: Request, env: Env) {
 // Create chat session
 async function createChatSession(request: Request, env: Env) {
   const user = await getOrCreateUser(request, env);
-  const body = await request.json() as any;
+
+  const validation = chatSessionSchema.safeParse(await request.json().catch(() => null));
+  if (!validation.success) {
+    return jsonResponse({ error: 'Invalid input', details: validation.error.errors }, 400, env);
+  }
+  const { subject, topic } = validation.data;
 
   const session = await env.DB.prepare(`
     INSERT INTO chat_sessions (user_id, subject, topic)
     VALUES (?, ?, ?)
     RETURNING *
-  `).bind(user.id, body.subject, body.topic).first();
+  `).bind(user.id, subject, topic).first();
 
   return jsonResponse({ session });
 }
@@ -2537,12 +2625,11 @@ async function getAIResponse(sessionId: string, request: Request, env: Env) {
     const gate = await requireOwnedChatSession(sessionId, request, env);
     if (gate instanceof Response) return gate;
     const { user } = gate;
-    const body = await request.json() as any;
-    const { message, subject } = body;
-
-    if (!message) {
-      return jsonResponse({ error: 'Message is required' }, 400);
+    const validation = aiMessageSchema.safeParse(await request.json().catch(() => null));
+    if (!validation.success) {
+      return jsonResponse({ error: 'Invalid input', details: validation.error.errors }, 400, env);
     }
+    const { message, subject } = validation.data;
 
     // Save user message
     await env.DB.prepare(`
@@ -3343,29 +3430,7 @@ const handler = {
           if (!validation.success) {
             return jsonResponse({ error: 'Invalid input', details: validation.error.errors }, 400, env);
           }
-          const fields = validation.data;
-
-          const updates: string[] = [];
-          const values: any[] = [];
-
-          // `name` is the old frontend's alias for display_name
-          const displayName = fields.display_name ?? fields.name;
-          if (displayName !== undefined) {
-            updates.push('display_name = ?');
-            values.push(displayName);
-          }
-          if (fields.photo_url !== undefined) {
-            updates.push('photo_url = ?');
-            values.push(fields.photo_url);
-          }
-          if (fields.class !== undefined) {
-            updates.push('class = ?');
-            values.push(fields.class);
-          }
-          if (fields.description !== undefined) {
-            updates.push('description = ?');
-            values.push(fields.description || null);
-          }
+          const { updates, values } = profileUpdateFields(validation.data);
 
           // Always update the timestamp
           updates.push('updated_at = ?');
