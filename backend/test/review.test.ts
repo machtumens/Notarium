@@ -90,3 +90,75 @@ describe('W1.11 — rate limit + constant-time compare on admin-login and admin 
     expect(session.token.split('.')).toHaveLength(3);
   });
 });
+
+// ---------------------------------------------------------------------------
+describe('W1.12 — role, suspension and existence are re-verified from the DB on every bearer route', () => {
+  const inDays = (days: number) => new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
+
+  /** Re-encode the payload with `patch` applied but keep the original header + signature. */
+  function tamper(token: string, patch: Record<string, unknown>): string {
+    const [header, payload, signature] = token.split('.');
+    const claims = JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/')));
+    const forged = btoa(JSON.stringify({ ...claims, ...patch })).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    return `${header}.${forged}.${signature}`;
+  }
+
+  it('admin JWT whose users row was demoted to role=student → 403 on GET /api/admin/users', async () => {
+    const admin = await adminLogin();
+    expect((await api('/api/admin/users', { token: admin.token })).status).toBe(200);
+    await env.DB.prepare("UPDATE users SET role = 'student' WHERE id = ?").bind(admin.user.id).run();
+    const res = await api('/api/admin/users', { token: admin.token });
+    expect(res.status).toBe(403);
+  });
+
+  it("a deleted user's still-valid JWT → 401 on user routes", async () => {
+    const ghost = await signup(uniqueEmail('ghost'));
+    await env.DB.prepare('DELETE FROM users WHERE id = ?').bind(ghost.user.id).run();
+    expect((await api('/api/notes/my-notes', { token: ghost.token })).status).toBe(401);
+    expect((await api('/api/auth/profile', { method: 'PUT', token: ghost.token, body: { display_name: 'back' } })).status).toBe(401);
+    expect((await api('/api/user/me', { token: ghost.token })).status).toBe(401);
+  });
+
+  it('a suspended user → 403 "Account suspended" on POST /api/notes and POST /api/chat/sessions', async () => {
+    const user = await signup(uniqueEmail('suspended'));
+    await env.DB.prepare("UPDATE users SET suspended = 1, suspension_end_date = ?, suspension_reason = 'test' WHERE id = ?")
+      .bind(inDays(3), user.user.id).run();
+
+    const note = await api('/api/notes', { token: user.token, body: { title: 't', content: 'c', subject_id: 1 } });
+    expect(note.status).toBe(403);
+    expect((await json(note)).error).toBe('Account suspended');
+    const chat = await api('/api/chat/sessions', { token: user.token, body: { subject: 's', topic: 't' } });
+    expect(chat.status).toBe(403);
+    expect((await json(chat)).error).toBe('Account suspended');
+    // the getUserFromToken path (chat ownership gate) is covered by the same check
+    expect((await api('/api/chat/sessions/1/messages', { token: user.token })).status).toBe(403);
+    const rows = await env.DB.prepare('SELECT COUNT(*) AS c FROM notes WHERE author_id = ?').bind(user.user.id).first<{ c: number }>();
+    expect(rows?.c ?? 0).toBe(0);
+  });
+
+  it('a suspension whose end date has passed no longer blocks', async () => {
+    const user = await signup(uniqueEmail('expired'));
+    await env.DB.prepare("UPDATE users SET suspended = 1, suspension_end_date = ? WHERE id = ?").bind(inDays(-1), user.user.id).run();
+    expect((await api('/api/chat/sessions', { token: user.token, body: { subject: 's', topic: 't' } })).status).toBe(200);
+  });
+
+  it('tampered JWT (payload re-encoded, original signature) → 401 on PUT /api/auth/profile', async () => {
+    const victim = await signup(uniqueEmail('victim'), 'Victim');
+    const attacker = await signup(uniqueEmail('attacker'));
+    const forged = tamper(attacker.token, { id: victim.user.id, role: 'admin' });
+    expect(forged.split('.')).toHaveLength(3);
+    const res = await api('/api/auth/profile', { method: 'PUT', token: forged, body: { display_name: 'pwned' } });
+    expect(res.status).toBe(401);
+    expect((await json(await api('/api/auth/me', { token: victim.token }))).user.name).toBe('Victim');
+    expect((await api('/api/admin/users', { token: forged })).status).toBe(403);
+  });
+
+  it("an admin JWT for user A cannot read user B's chat session → 403 (no admin bypass, intentional)", async () => {
+    const admin = await adminLogin();
+    const b = await signup(uniqueEmail('b'));
+    const created = await api('/api/chat/sessions', { token: b.token, body: { subject: 'Fisika', topic: 'Gaya' } });
+    const session = (await json(created)).session as { id: number };
+    expect((await api(`/api/chat/sessions/${session.id}/messages`, { token: admin.token })).status).toBe(403);
+    expect((await api(`/api/chat/sessions/${session.id}/messages`, { token: admin.token, body: { role: 'user', content: 'x' } })).status).toBe(403);
+  });
+});

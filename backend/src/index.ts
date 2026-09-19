@@ -31,6 +31,14 @@ interface User {
   notes_uploaded?: number;
   total_likes?: number;
   total_admin_upvotes?: number;
+  diamonds?: number;
+  points?: number;
+  description?: string | null;
+  suspended?: number | null;
+  suspension_end_date?: string | null;
+  suspension_reason?: string | null;
+  warning?: number | null;
+  warning_message?: string | null;
   created_at?: string;
   updated_at?: string;
 }
@@ -1034,31 +1042,6 @@ Make it engaging and suitable for high school students. Write the entire explana
   }
 }
 
-// Extract user ID from Bearer token using JWT
-async function getUserIdFromToken(request: Request, env: Env): Promise<number | null> {
-  const auth = request.headers.get('Authorization');
-  const token = auth?.startsWith('Bearer ') ? auth.slice(7) : null;
-
-  if (!token) {
-    return null;
-  }
-
-  const decoded = await verifyToken(token, env);
-  return decoded?.id || null;
-}
-
-// Extract full user info from Bearer token using JWT
-async function getUserFromToken(request: Request, env: Env): Promise<{ id: number; email: string; role: string } | null> {
-  const auth = request.headers.get('Authorization');
-  const token = auth?.startsWith('Bearer ') ? auth.slice(7) : null;
-
-  if (!token) {
-    return null;
-  }
-
-  return await verifyToken(token, env);
-}
-
 // Thrown by identity helpers; mapped to its status by the catch blocks below.
 class HttpError extends Error {
   constructor(public status: number, message: string) {
@@ -1067,16 +1050,54 @@ class HttpError extends Error {
   }
 }
 
-// Caller from a signature-verified bearer JWT, or null. Never creates users.
-async function getOptionalUser(request: Request, env: Env): Promise<User | null> {
-  const userIdFromToken = await getUserIdFromToken(request, env);
-  if (!userIdFromToken) {
+// A suspension is in force while `suspended = 1` and the end date (if any) is
+// still ahead. Read-only: login and /me clear expired suspensions lazily.
+function isSuspended(user: { suspended?: number | null; suspension_end_date?: string | null }): boolean {
+  if (Number(user.suspended ?? 0) !== 1) return false;
+  if (!user.suspension_end_date) return true;
+  const endsAt = new Date(user.suspension_end_date).getTime();
+  return Number.isNaN(endsAt) ? true : endsAt > Date.now();
+}
+
+// The one identity resolver every bearer route goes through (W1.12). The JWT only
+// proves who signed in; existence, role and suspension are re-read from `users`
+// on every request, so a deleted user's token stops working immediately, a
+// demoted admin loses admin routes, and a suspended account gets 403 everywhere.
+// Returns null (→ 401 at the call site) for no/invalid token or a missing row.
+async function resolveBearerUser(request: Request, env: Env): Promise<User | null> {
+  const auth = request.headers.get('Authorization');
+  const token = auth?.startsWith('Bearer ') ? auth.slice(7) : null;
+  if (!token) {
+    return null;
+  }
+  const decoded = await verifyToken(token, env);
+  if (!decoded?.id) {
     return null;
   }
   const user = await env.DB.prepare('SELECT * FROM users WHERE id = ?')
-    .bind(userIdFromToken)
-    .first();
-  return (user as unknown as User) || null;
+    .bind(decoded.id)
+    .first<User>();
+  if (!user) {
+    return null;
+  }
+  if (isSuspended(user)) {
+    throw new HttpError(403, 'Account suspended');
+  }
+  return user;
+}
+
+// Caller identity for admin/ownership decisions — role comes from the DB row, never the claim.
+async function getUserFromToken(request: Request, env: Env): Promise<{ id: number; email: string; role: string } | null> {
+  const user = await resolveBearerUser(request, env);
+  if (!user) {
+    return null;
+  }
+  return { id: user.id, email: user.email ?? '', role: user.role };
+}
+
+// Caller row from a signature-verified bearer JWT, or null. Never creates users.
+async function getOptionalUser(request: Request, env: Env): Promise<User | null> {
+  return resolveBearerUser(request, env);
 }
 
 // Bearer JWT or 401. The X-Encrypted-Yw-ID header fallback is gone (F4/F10): it was a
@@ -2531,6 +2552,7 @@ async function getAIResponse(sessionId: string, request: Request, env: Env) {
 
     return jsonResponse({ response: aiResponse });
   } catch (error: any) {
+    if (error instanceof HttpError) return jsonResponse({ error: error.message }, error.status, env);
     console.error('AI Response error:', error);
     return jsonResponse({ error: error.message }, 500);
   }
@@ -2577,6 +2599,7 @@ async function generateNoteSummaryEndpoint(noteId: string, request: Request, env
 
     return jsonResponse({ summary });
   } catch (error: any) {
+    if (error instanceof HttpError) return jsonResponse({ error: error.message }, error.status, env);
     console.error('Summary generation endpoint error:', error);
     return jsonResponse({ error: error.message }, 500);
   }
@@ -3359,6 +3382,7 @@ const handler = {
             return jsonResponse({ error: 'Failed to update profile' }, 500, env);
           }
         } catch (error: any) {
+          if (error instanceof HttpError) return jsonResponse({ error: error.message }, error.status, env);
           console.error('Profile update error:', error);
           return jsonResponse({ error: error.message || 'Internal server error' }, 500, env);
         }
@@ -3370,20 +3394,12 @@ const handler = {
           return jsonResponse({ error: 'Database not available' }, 503);
         }
         try {
-          const auth = request.headers.get('Authorization');
-          const token = auth?.startsWith('Bearer ') ? auth.slice(7) : null;
-
-          if (!token) {
-            return jsonResponse({ error: 'Unauthorized - No token provided' }, 401, env);
+          // Same DB-backed identity as every other bearer route (W1.12)
+          const caller = await getUserFromToken(request, env);
+          if (!caller) {
+            return jsonResponse({ error: 'Unauthorized - Invalid or missing token' }, 401, env);
           }
-
-          // Verify JWT token
-          const decoded = await verifyToken(token, env);
-          if (!decoded || !decoded.id) {
-            return jsonResponse({ error: 'Invalid or expired token' }, 401, env);
-          }
-
-          const userId = decoded.id;
+          const userId = caller.id;
 
           const body = await request.json() as any;
           const { currentPassword, newPassword } = body;
@@ -3418,6 +3434,7 @@ const handler = {
           console.log('[PASSWORD_CHANGE] Password changed successfully for user ID:', userId);
           return jsonResponse({ success: true, message: 'Password changed successfully' }, 200, env);
         } catch (error: any) {
+          if (error instanceof HttpError) return jsonResponse({ error: error.message }, error.status, env);
           console.error('[PASSWORD_CHANGE] Error:', error);
           return jsonResponse({ error: error.message || 'Failed to change password' }, 500);
         }
