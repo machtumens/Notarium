@@ -1014,71 +1014,45 @@ async function getUserFromToken(request: Request, env: Env): Promise<{ id: numbe
   return await verifyToken(token, env);
 }
 
-// Get or create user from headers - never returns null
-async function getOrCreateUser(request: Request, env: Env): Promise<User> {
-  // Try to get user ID from Bearer token first
+// Thrown by identity helpers; mapped to its status by the catch blocks below.
+class HttpError extends Error {
+  constructor(public status: number, message: string) {
+    super(message);
+    this.name = 'HttpError';
+  }
+}
+
+// Caller from a signature-verified bearer JWT, or null. Never creates users.
+async function getOptionalUser(request: Request, env: Env): Promise<User | null> {
   const userIdFromToken = await getUserIdFromToken(request, env);
-
-  if (userIdFromToken) {
-    // Get user from database using ID
-    const user = await env.DB.prepare('SELECT * FROM users WHERE id = ?')
-      .bind(userIdFromToken)
-      .first();
-
-    if (user) {
-      return user as unknown as User;
-    }
+  if (!userIdFromToken) {
+    return null;
   }
+  const user = await env.DB.prepare('SELECT * FROM users WHERE id = ?')
+    .bind(userIdFromToken)
+    .first();
+  return (user as unknown as User) || null;
+}
 
-  // Fallback to old header-based method
-  const userId = request.headers.get('X-Encrypted-Yw-ID');
-
-  if (!userId) {
-    throw new Error('User ID not found');
+// Bearer JWT or 401. The X-Encrypted-Yw-ID header fallback is gone (F4/F10): it was a
+// client-asserted id with no proof of possession and it auto-created accounts.
+// (Name kept so the ~12 call sites stay untouched; it no longer creates anything.)
+async function getOrCreateUser(request: Request, env: Env): Promise<User> {
+  const user = await getOptionalUser(request, env);
+  if (!user) {
+    throw new HttpError(401, 'Unauthorized - Invalid or missing token');
   }
-
-  // Check if user exists
-  const { results } = await env.DB.prepare('SELECT * FROM users WHERE encrypted_yw_id = ?')
-    .bind(userId)
-    .all();
-
-  if (results.length > 0) {
-    return results[0] as unknown as User;
-  }
-
-  // Create new user (with default class for students who upload notes)
-  const insertResult = await env.DB.prepare(
-    'INSERT INTO users (encrypted_yw_id, role, class) VALUES (?, ?, ?) RETURNING *'
-  ).bind(userId, 'student', '10.1').first();
-
-  if (!insertResult) {
-    throw new Error('Failed to create user');
-  }
-
-  return insertResult as unknown as User;
+  return user;
 }
 
 // Update user info
 async function updateUserInfo(request: Request, env: Env) {
-  const userId = request.headers.get('X-Encrypted-Yw-ID');
+  const user = await getOrCreateUser(request, env);
   const body = await request.json() as any;
 
-  // First check if user exists
-  const { results } = await env.DB.prepare('SELECT * FROM users WHERE encrypted_yw_id = ?')
-    .bind(userId)
-    .all();
-
-  if (results.length === 0) {
-    // Create new user (with default class)
-    await env.DB.prepare(
-      'INSERT INTO users (encrypted_yw_id, display_name, photo_url, email, class) VALUES (?, ?, ?, ?, ?)'
-    ).bind(userId, body.display_name, body.photo_url, body.email, '10.1').run();
-  } else {
-    // Update existing user
-    await env.DB.prepare(
-      'UPDATE users SET display_name = ?, photo_url = ?, email = ?, updated_at = datetime("now") WHERE encrypted_yw_id = ?'
-    ).bind(body.display_name, body.photo_url, body.email, userId).run();
-  }
+  await env.DB.prepare(
+    'UPDATE users SET display_name = ?, photo_url = ?, email = ?, updated_at = datetime("now") WHERE id = ?'
+  ).bind(body.display_name ?? null, body.photo_url ?? null, body.email ?? null, user.id).run();
 
   return jsonResponse({ success: true });
 }
@@ -1091,19 +1065,20 @@ async function getCurrentUser(request: Request, env: Env) {
 
 // Update user class
 async function updateUserClass(request: Request, env: Env) {
-  const userId = request.headers.get('X-Encrypted-Yw-ID');
+  const user = await getOrCreateUser(request, env);
   const body = await request.json() as any;
 
   await env.DB.prepare(
-    'UPDATE users SET class = ?, updated_at = datetime("now") WHERE encrypted_yw_id = ?'
-  ).bind(body.class, userId).run();
+    'UPDATE users SET class = ?, updated_at = datetime("now") WHERE id = ?'
+  ).bind(body.class ?? null, user.id).run();
 
   return jsonResponse({ success: true });
 }
 
 // Get all subjects
 async function getSubjects(request: Request, env: Env) {
-  const user = await getOrCreateUser(request, env);
+  // Public catalogue: anonymous callers only see 'everyone' counts
+  const user = await getOptionalUser(request, env);
 
   // Get subjects with accurate note counts (respecting visibility settings)
   const { results } = await env.DB.prepare(`
@@ -1122,7 +1097,7 @@ async function getSubjects(request: Request, env: Env) {
       ) as note_count
     FROM subjects s
     ORDER BY s.name
-  `).bind(user.class).all();
+  `).bind(user?.class ?? null).all();
 
   return jsonResponse({ subjects: results });
 }
@@ -1420,6 +1395,7 @@ async function createNote(request: Request, env: Env) {
       totalParts: createdNotes.length
     });
   } catch (error: any) {
+    if (error instanceof HttpError) return jsonResponse({ error: error.message }, error.status, env);
     console.error('[CREATE NOTE] Error:', error);
     return jsonResponse({ error: error.message || 'Failed to create note' }, 500);
   }
@@ -1916,6 +1892,7 @@ async function userUpdateNote(noteId: string, request: Request, env: Env) {
 
     return jsonResponse({ success: true, note: updatedNote });
   } catch (error: any) {
+    if (error instanceof HttpError) return jsonResponse({ error: error.message }, error.status, env);
     console.error('Error updating note:', error);
     return jsonResponse({ error: 'Failed to update note' }, 500);
   }
@@ -1966,6 +1943,7 @@ async function getMyNotes(request: Request, env: Env) {
 
     return jsonResponse({ notes });
   } catch (error: any) {
+    if (error instanceof HttpError) return jsonResponse({ error: error.message }, error.status, env);
     console.error('Error getting user notes:', error);
     return jsonResponse({ error: 'Failed to get notes' }, 500);
   }
@@ -2009,6 +1987,7 @@ async function publishDraftNote(noteId: string, request: Request, env: Env) {
 
     return jsonResponse({ success: true, note: updatedNote });
   } catch (error: any) {
+    if (error instanceof HttpError) return jsonResponse({ error: error.message }, error.status, env);
     console.error('Error publishing note:', error);
     return jsonResponse({ error: 'Failed to publish note' }, 500);
   }
@@ -2056,6 +2035,7 @@ async function userDeleteNote(noteId: string, request: Request, env: Env) {
 
     return jsonResponse({ success: true, points_deducted: pointsToDeduct });
   } catch (error: any) {
+    if (error instanceof HttpError) return jsonResponse({ error: error.message }, error.status, env);
     console.error('Error deleting note:', error);
     return jsonResponse({ error: 'Failed to delete note' }, 500);
   }
@@ -3619,6 +3599,7 @@ Tags:`
 
       return jsonResponse({ error: 'Not found' }, 404);
     } catch (error: any) {
+      if (error instanceof HttpError) return jsonResponse({ error: error.message }, error.status, env);
       console.error('API Error:', error);
       return jsonResponse({ error: error.message || 'Internal server error' }, 500);
     }
