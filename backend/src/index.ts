@@ -1059,6 +1059,17 @@ function isSuspended(user: { suspended?: number | null; suspension_end_date?: st
   return Number.isNaN(endsAt) ? true : endsAt > Date.now();
 }
 
+// Columns a caller may see about itself. Explicit on purpose (W1.13): never
+// password_hash, never encrypted_yw_id (no route needs it since the header
+// fallback was removed) — /api/user/me returns this row as-is.
+const USER_COLUMNS = [
+  'id', 'display_name', 'email', 'photo_url', 'class', 'role',
+  'notes_uploaded', 'total_likes', 'total_admin_upvotes', 'COALESCE(diamonds, 0) AS diamonds',
+  '(notes_uploaded + total_likes + total_admin_upvotes) AS points', 'description',
+  'suspended', 'suspension_end_date', 'suspension_reason', 'warning', 'warning_message',
+  'created_at', 'updated_at',
+].join(', ');
+
 // The one identity resolver every bearer route goes through (W1.12). The JWT only
 // proves who signed in; existence, role and suspension are re-read from `users`
 // on every request, so a deleted user's token stops working immediately, a
@@ -1074,7 +1085,7 @@ async function resolveBearerUser(request: Request, env: Env): Promise<User | nul
   if (!decoded?.id) {
     return null;
   }
-  const user = await env.DB.prepare('SELECT * FROM users WHERE id = ?')
+  const user = await env.DB.prepare(`SELECT ${USER_COLUMNS} FROM users WHERE id = ?`)
     .bind(decoded.id)
     .first<User>();
   if (!user) {
@@ -1236,7 +1247,6 @@ async function searchNotes(query: string, request: Request, env: Env) {
       u.photo_url as author_photo,
       u.class as author_class,
       s.name as subject_name,
-      u.email as author_email,
       (
         /* Title match - highest priority (10 points per word) */
         CASE WHEN ${buildLikeConditions('n.title')} THEN ${searchWords.length * 10} ELSE 0 END +

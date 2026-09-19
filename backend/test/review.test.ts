@@ -162,3 +162,51 @@ describe('W1.12 — role, suspension and existence are re-verified from the DB o
     expect((await api(`/api/chat/sessions/${session.id}/messages`, { token: admin.token, body: { role: 'user', content: 'x' } })).status).toBe(403);
   });
 });
+
+// ---------------------------------------------------------------------------
+describe('W1.13 — no password_hash, encrypted_yw_id or author email in responses', () => {
+  it('GET /api/user/me carries neither password_hash nor encrypted_yw_id', async () => {
+    const me = await signup(uniqueEmail('me'));
+    await env.DB.prepare('UPDATE users SET encrypted_yw_id = ? WHERE id = ?').bind('yw-secret-me-1', me.user.id).run();
+    const res = await api('/api/user/me', { token: me.token });
+    expect(res.status).toBe(200);
+    const text = await res.text();
+    expect(text).not.toContain('password_hash');
+    expect(text).not.toContain('$2'); // bcrypt marker
+    expect(text).not.toContain('encrypted_yw_id');
+    expect(text).not.toContain('yw-secret-me-1');
+    const { user } = JSON.parse(text);
+    expect(user.id).toBe(me.user.id);
+    expect(user.email).toBe(me.user.email);
+    expect(user.role).toBe('student');
+  });
+
+  it('GET /api/auth/me carries neither password_hash nor encrypted_yw_id', async () => {
+    const me = await signup(uniqueEmail('me'));
+    await env.DB.prepare('UPDATE users SET encrypted_yw_id = ? WHERE id = ?').bind('yw-secret-me-2', me.user.id).run();
+    const res = await api('/api/auth/me', { token: me.token });
+    expect(res.status).toBe(200);
+    const text = await res.text();
+    expect(text).not.toContain('password_hash');
+    expect(text).not.toContain('$2');
+    expect(text).not.toContain('encrypted_yw_id');
+    expect(text).not.toContain('yw-secret-me-2');
+  });
+
+  it('GET /api/notes/search drops author_email (F11)', async () => {
+    const author = await signup(uniqueEmail('author'), 'Search Author');
+    const marker = `zq${Date.now().toString(36)}`;
+    const created = await api('/api/notes', { token: author.token, body: { title: `Note ${marker}`, content: 'body', subject_id: 1 } });
+    expect(created.status).toBe(200);
+
+    const reader = await signup(uniqueEmail('reader'));
+    const res = await api(`/api/notes/search?q=${marker}`, { token: reader.token });
+    expect(res.status).toBe(200);
+    const text = await res.text();
+    const { notes } = JSON.parse(text) as { notes: Record<string, unknown>[] };
+    expect(notes.length).toBeGreaterThan(0);
+    expect(text).not.toContain('author_email');
+    expect(text).not.toContain(author.user.email);
+    expect(notes[0].author_name).toBe('Search Author');
+  });
+});
