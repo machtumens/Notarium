@@ -1280,6 +1280,10 @@ async function createNote(request: Request, env: Env) {
     for (let i = 0; i < images.length; i += MAX_IMAGES_PER_NOTE) {
       imageChunks.push(images.slice(i, i + MAX_IMAGES_PER_NOTE));
     }
+    // A text-only note (no images — what V2.0 sends) is still one note
+    if (imageChunks.length === 0) {
+      imageChunks.push([]);
+    }
 
     console.log('[CREATE NOTE] Image chunks:', imageChunks.length);
 
@@ -1932,6 +1936,9 @@ async function getMyNotes(request: Request, env: Env) {
         n.title,
         n.subject_id as subject,
         s.name as subject_name,
+        n.content,
+        n.description,
+        u.display_name as author_name,
         n.extracted_text,
         n.summary,
         n.tags,
@@ -1945,6 +1952,7 @@ async function getMyNotes(request: Request, env: Env) {
         n.visibility
       FROM notes n
       LEFT JOIN subjects s ON n.subject_id = s.id
+      LEFT JOIN users u ON n.author_id = u.id
       WHERE n.author_id = ?
     `;
 
