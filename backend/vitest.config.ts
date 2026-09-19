@@ -12,7 +12,6 @@ export default defineWorkersConfig({
     silent: 'passed-only',
     poolOptions: {
       workers: {
-        singleWorker: true,
         wrangler: { configPath: './wrangler.toml', environment: 'development' },
         miniflare: {
           bindings: {
