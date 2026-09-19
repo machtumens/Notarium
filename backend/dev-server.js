@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import { randomBytes } from 'node:crypto';
 
 // Load environment variables from .env.local
 dotenv.config({ path: '.env.local' });
@@ -35,17 +36,55 @@ let nextUserId = 1000; // accounts from signup/login get unique ids so ownership
 const mockNotes = []; // notes created through POST /api/notes (served by /api/notes/my-notes)
 let noteCounter = 1;
 
+// Access tokens expire after 15 minutes like the Worker's JWTs (W2.1); the refresh token mints the next one.
+const ACCESS_TOKEN_TTL_MS = 15 * 60 * 1000;
+const REFRESH_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const mockTokenExpiry = new Map(); // token -> epoch ms
+
 function issueToken(user) {
   const token = 'mock-token-' + Date.now() + '-' + Math.random().toString(36).slice(2);
   mockTokens.set(token, user);
+  mockTokenExpiry.set(token, Date.now() + ACCESS_TOKEN_TTL_MS);
   return token;
 }
 
-// 401 unless the request carries a token issued by this mock's signup/login
+// Refresh tokens (W2.1 parity): one family per sign-in, rotated on every use; a replayed
+// (already rotated) token retires its whole family; logout revokes. In-memory only.
+const mockRefreshTokens = new Map(); // refreshToken -> { user, family, expiresAt, revoked }
+let familyCounter = 1;
+
+function issueRefreshToken(user, family = 'family-' + familyCounter++) {
+  const refreshToken = randomBytes(32).toString('base64url');
+  mockRefreshTokens.set(refreshToken, { user, family, expiresAt: Date.now() + REFRESH_TOKEN_TTL_MS, revoked: false });
+  return refreshToken;
+}
+
+function issueSession(user) {
+  return { token: issueToken(user), refreshToken: issueRefreshToken(user) };
+}
+
+function revokeRefreshFamily(family) {
+  for (const row of mockRefreshTokens.values()) {
+    if (row.family === family) row.revoked = true;
+  }
+}
+
+// Same per-IP bucket as the Worker's /api/auth/refresh: 5 attempts per 15 minutes → 429
+const REFRESH_RATE_LIMIT = { windowMs: 15 * 60 * 1000, max: 5 };
+const refreshAttempts = new Map(); // ip -> [epoch ms]
+function refreshAllowed(ip) {
+  const now = Date.now();
+  const recent = (refreshAttempts.get(ip) || []).filter((t) => t > now - REFRESH_RATE_LIMIT.windowMs);
+  if (recent.length >= REFRESH_RATE_LIMIT.max) return false;
+  refreshAttempts.set(ip, [...recent, now]);
+  return true;
+}
+
+// 401 unless the request carries a live token issued by this mock's signup/login
 function requireUser(req, res) {
   const token = req.headers.authorization?.split(' ')[1];
   const user = token ? mockTokens.get(token) : null;
-  if (!user) {
+  if (!user || (mockTokenExpiry.get(token) ?? 0) <= Date.now()) {
     res.status(401).json({ error: 'Unauthorized - Invalid or missing token' });
     return null;
   }
@@ -113,13 +152,14 @@ app.post('/api/auth/signup', (req, res) => {
     notes_count: 0,
   };
 
-  // Mock JWT token
-  const token = issueToken(user);
+  // Mock JWT + refresh token
+  const { token, refreshToken } = issueSession(user);
 
   res.json({
     success: true,
     user,
-    token
+    token,
+    refreshToken
   });
 });
 
@@ -146,14 +186,52 @@ app.post('/api/auth/login', (req, res) => {
     notes_count: 0,
   };
 
-  // Mock JWT token
-  const token = issueToken(user);
+  // Mock JWT + refresh token
+  const { token, refreshToken } = issueSession(user);
 
   res.json({
     success: true,
     user,
-    token
+    token,
+    refreshToken
   });
+});
+
+// Rotate a refresh token → {token, refreshToken}; every failure is 401 with one message (Worker parity)
+app.post('/api/auth/refresh', (req, res) => {
+  if (!refreshAllowed(req.ip || 'unknown')) {
+    return res.status(429).json({ error: 'Too many refresh attempts. Please try again in 15 minutes.' });
+  }
+  const presented = req.body?.refreshToken;
+  if (typeof presented !== 'string' || presented.length === 0 || presented.length > 512) {
+    return res.status(400).json({ error: 'Invalid input' });
+  }
+  const denied = () => res.status(401).json({ error: 'Invalid or expired refresh token' });
+  const row = mockRefreshTokens.get(presented);
+  if (!row) return denied();
+  if (row.revoked) {
+    revokeRefreshFamily(row.family); // replay → the whole family is gone
+    return denied();
+  }
+  if (row.expiresAt <= Date.now()) return denied();
+  row.revoked = true;
+  res.json({ token: issueToken(row.user), refreshToken: issueRefreshToken(row.user, row.family) });
+});
+
+// Revoke the presented token's family (when it is the caller's), or every refresh token of the caller
+app.post('/api/auth/logout', (req, res) => {
+  const user = requireUser(req, res);
+  if (!user) return;
+  const presented = req.body?.refreshToken;
+  if (typeof presented === 'string' && presented.length > 0) {
+    const row = mockRefreshTokens.get(presented);
+    if (row && row.user.id === user.id) revokeRefreshFamily(row.family);
+  } else {
+    for (const row of mockRefreshTokens.values()) {
+      if (row.user.id === user.id) row.revoked = true;
+    }
+  }
+  res.json({ success: true });
 });
 
 app.post('/api/auth/verify', (req, res) => {
