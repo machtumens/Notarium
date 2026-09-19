@@ -1452,14 +1452,12 @@ async function toggleNoteLike(noteId: string, request: Request, env: Env) {
 
 
 
-// Get leaderboard
+// Get leaderboard (public: scoreboard fields only — no email, no encrypted_yw_id,
+// no inline photo_url; photos come later via URL, see PRODUCTION_PLAN D4) (F4)
 async function getLeaderboard(env: Env) {
   const { results } = await env.DB.prepare(`
     SELECT
-      encrypted_yw_id,
       display_name,
-      email,
-      photo_url,
       class,
       notes_uploaded,
       total_likes,
