@@ -20,10 +20,13 @@ async function userCount(): Promise<number> {
   return row?.c ?? 0;
 }
 
+// A 1x1 PNG so the note carries an image chunk; pass `images: undefined` for a text-only note.
+const TINY_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+
 async function createNote(token: string, overrides: Record<string, unknown> = {}) {
   const res = await api('/api/notes', {
     token,
-    body: { title: 'Owned note', content: 'Body text', description: 'Desc', subject_id: 1, status: 'published', visibility: 'everyone', ...overrides },
+    body: { title: 'Owned note', content: 'Body text', description: 'Desc', subject_id: 1, status: 'published', visibility: 'everyone', images: [TINY_PNG], ...overrides },
   });
   expect(res.status).toBe(200);
   const body = await json(res);
@@ -335,7 +338,8 @@ describe('S9 — zod on note mutations (gap 11)', () => {
 describe('C1 — my-notes returns content, description, author_name', () => {
   it('a text-only note comes back with its body', async () => {
     const me = await signup(uniqueEmail('writer'), 'Writer');
-    await createNote(me.token, { title: 'Text only', content: 'Only text, no OCR', description: 'A short description' });
+    // Text-only, no images — exactly what V2.0's Create screen sends.
+    await createNote(me.token, { title: 'Text only', content: 'Only text, no OCR', description: 'A short description', images: undefined });
     const res = await api('/api/notes/my-notes', { token: me.token });
     expect(res.status).toBe(200);
     const note = (await json(res)).notes.find((n: { title: string }) => n.title === 'Text only');

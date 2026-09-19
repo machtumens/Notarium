@@ -192,10 +192,11 @@ const loginSchema = z.object({
 
 const noteSchema = z.object({
   title: z.string().min(1).max(200),
-  content: z.string().max(100000),
+  content: z.string().max(100000).optional(), // photo uploads (old frontend) carry extracted_text instead
   subject_id: z.number().int().positive(),
   description: z.string().max(500).optional(),
 });
+const noteUpdateSchema = noteSchema.partial();
 
 // Body of POST /api/chat/sessions/:id/messages (what both frontends send)
 const chatMessageSchema = z.object({
@@ -1233,15 +1234,9 @@ async function createNote(request: Request, env: Env) {
 
     console.log('[CREATE NOTE] User:', user.id, 'Subject:', body.subject_id);
 
-    // Validate required fields
-    if (!body.subject_id) {
-      console.error('[CREATE NOTE] Missing subject_id');
-      return jsonResponse({ error: 'Subject ID is required' }, 400);
-    }
-
-    if (!body.title) {
-      console.error('[CREATE NOTE] Missing title');
-      return jsonResponse({ error: 'Title is required' }, 400);
+    const validation = noteSchema.safeParse(body);
+    if (!validation.success) {
+      return jsonResponse({ error: 'Invalid input', details: validation.error.errors }, 400, env);
     }
 
     // Verify subject exists
@@ -1401,8 +1396,28 @@ async function createNote(request: Request, env: Env) {
   }
 }
 
+// Ownership gate for note summary routes (gaps 1, 2): 401 no/invalid token,
+// 404 unknown note, 403 unless the caller is the author or an admin.
+async function requireNoteOwnerOrAdmin(noteId: string, request: Request, env: Env): Promise<{ user: User } | Response> {
+  const user = await getOptionalUser(request, env);
+  if (!user) {
+    return jsonResponse({ error: 'Unauthorized - Invalid or missing token' }, 401, env);
+  }
+  const note = await env.DB.prepare('SELECT author_id FROM notes WHERE id = ?').bind(noteId).first() as any;
+  if (!note) {
+    return jsonResponse({ error: 'Note not found' }, 404, env);
+  }
+  if (note.author_id !== user.id && user.role !== 'admin') {
+    return jsonResponse({ error: 'Unauthorized - You can only edit your own notes' }, 403, env);
+  }
+  return { user };
+}
+
 // Update note summary
 async function updateNoteSummary(noteId: string, request: Request, env: Env) {
+  const gate = await requireNoteOwnerOrAdmin(noteId, request, env);
+  if (gate instanceof Response) return gate;
+
   const body = await request.json() as any;
 
   await env.DB.prepare(
@@ -1708,12 +1723,13 @@ async function verifyAdmin(request: Request, env: Env) {
 
 // Admin upvote note (gives higher weight)
 async function adminUpvoteNote(noteId: string, request: Request, env: Env) {
-  const userId = request.headers.get('X-Encrypted-Yw-ID');
-
-  // Verify admin (simplified - in production should verify from database)
-  const body = await request.json() as any;
-  if (!body.isAdmin) {
-    return jsonResponse({ error: 'Unauthorized' }, 403);
+  // Real admin check from the JWT (was: a client-supplied body.isAdmin flag, gap 9)
+  const adminUser = await getUserFromToken(request, env);
+  if (!adminUser) {
+    return jsonResponse({ error: 'Unauthorized - Invalid or missing token' }, 401, env);
+  }
+  if (adminUser.role !== 'admin') {
+    return jsonResponse({ error: 'Unauthorized - Admin access required' }, 403, env);
   }
 
   // Update note admin upvotes
@@ -1839,6 +1855,11 @@ async function userUpdateNote(noteId: string, request: Request, env: Env) {
 
     if (note.author_id !== user.id) {
       return jsonResponse({ error: 'Unauthorized - You can only edit your own notes' }, 403);
+    }
+
+    const validation = noteUpdateSchema.safeParse(body);
+    if (!validation.success) {
+      return jsonResponse({ error: 'Invalid input', details: validation.error.errors }, 400, env);
     }
 
     // Build update query dynamically based on provided fields
@@ -2050,6 +2071,11 @@ async function updateNote(noteId: string, request: Request, env: Env) {
 
   try {
     const body = await request.json() as any;
+
+    const validation = noteUpdateSchema.safeParse(body);
+    if (!validation.success) {
+      return jsonResponse({ error: 'Invalid input', details: validation.error.errors }, 400, env);
+    }
 
     // Get note title before update for logging
     const originalNote = await env.DB.prepare('SELECT title FROM notes WHERE id = ?').bind(noteId).first() as any;
@@ -2476,6 +2502,9 @@ async function performOCREndpoint(request: Request, env: Env) {
 // Generate note summary endpoint
 async function generateNoteSummaryEndpoint(noteId: string, request: Request, env: Env) {
   try {
+    const gate = await requireNoteOwnerOrAdmin(noteId, request, env);
+    if (gate instanceof Response) return gate;
+
     const body = await request.json() as any;
     const { content, title } = body;
 
