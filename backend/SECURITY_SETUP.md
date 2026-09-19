@@ -26,7 +26,8 @@ This guide covers the implementation of 10 critical security features for Notari
 ### 3. **Environment-Based Secrets** ✓
 - **Status:** Code implemented, requires configuration
 - **Changes:**
-  - Removed hardcoded passwords ('51234', 'notariumanagers')
+  - Removed hardcoded admin passwords from source (values intentionally not reproduced here)
+  - Set the production value with `npx wrangler secret put ADMIN_PASSWORD` (see Step 3 below); for local mock use, set `ADMIN_PASSWORD` in the untracked `backend/.env` (gitignored, never committed)
   - Admin password now uses `env.ADMIN_PASSWORD`
   - JWT secret uses `env.JWT_SECRET`
 
