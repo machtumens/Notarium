@@ -1,3 +1,12 @@
+# Notarium Worker. Three real targets (W4.1):
+#   wrangler dev --env development                 local D1 + KV preview id, nothing deployed
+#   wrangler deploy --env staging                  notarium-backend-staging, own D1 + KV, staging secrets
+#   wrangler deploy --env production               the live worker `notarium-backend` (name pinned below)
+# A bare `wrangler deploy` (no --env) is the same live worker as --env production (top-level =
+# production, as it always was); CI only ever passes an explicit --env.
+# Named environments inherit nothing that matters here: vars, D1 and KV are repeated per env on
+# purpose. Secrets are per worker (`wrangler secret put NAME --env <env>`), names in SECRETS.md.
+# Schema: migrations/ via `wrangler d1 migrations apply <db> --env <env> --remote` before a deploy.
 name = "notarium-backend"
 main = "src/index.ts"
 compatibility_date = "2025-01-01"
@@ -7,6 +16,7 @@ compatibility_flags = ["nodejs_compat"]
 [vars]
 ENVIRONMENT = "production"
 FRONTEND_URL = "https://notarium-site.vercel.app"
+EXTRA_ORIGINS = "https://notarium-app.pages.dev"
 
 [[d1_databases]]
 binding = "DB"
@@ -17,8 +27,9 @@ database_id = "17779d22-7479-479c-8de7-dfe102916ba3"
 binding = "RATE_LIMIT"
 id = "5d033dba4be2443e98c4782d44e0b777"
 
+# ---------------------------------------------------------------------------------------------
 [env.development]
-vars = { ENVIRONMENT = "development", FRONTEND_URL = "http://localhost:5173" }
+vars = { ENVIRONMENT = "development", FRONTEND_URL = "http://localhost:5173", EXTRA_ORIGINS = "http://localhost:5174" }
 
 [[env.development.d1_databases]]
 binding = "DB"
@@ -30,8 +41,32 @@ binding = "RATE_LIMIT"
 id = "5d033dba4be2443e98c4782d44e0b777"
 preview_id = "ad6509290e94483f9467a11eb2fff1b8"
 
+# ---------------------------------------------------------------------------------------------
+# Staging: its own D1 and KV, its own secrets (JWT_SECRET, ADMIN_PASSWORD; no AI provider keys, so
+# AI routes fail there by design). Deployed by deploy.yml on every push to master.
+# FRONTEND_URL is the V2.0 staging Pages alias (branch `staging` of project notarium-app);
+# EXTRA_ORIGINS keeps the two local Vite ports so a dev build can talk to staging.
+[env.staging]
+name = "notarium-backend-staging"
+vars = { ENVIRONMENT = "staging", FRONTEND_URL = "https://staging.notarium-app.pages.dev", EXTRA_ORIGINS = "http://localhost:5173,http://localhost:5174" }
+
+[[env.staging.d1_databases]]
+binding = "DB"
+database_name = "notarium-db-staging"
+database_id = "d649a936-570d-460a-9b61-11ef5a24d0cf"
+
+[[env.staging.kv_namespaces]]
+binding = "RATE_LIMIT"
+id = "18e7c93c87384bfb84711d96a5762672"
+
+# ---------------------------------------------------------------------------------------------
+# Production: `name` is pinned to the live worker so `--env production` updates `notarium-backend`
+# itself (without it wrangler would create a second worker, notarium-backend-production).
+# Same D1/KV ids as the top level. EXTRA_ORIGINS = the V2.0 production Pages origin.
+# Only deploy.yml's manual `production` job (GitHub environment approval) runs this.
 [env.production]
-vars = { ENVIRONMENT = "production", FRONTEND_URL = "https://notarium-site.vercel.app" }
+name = "notarium-backend"
+vars = { ENVIRONMENT = "production", FRONTEND_URL = "https://notarium-site.vercel.app", EXTRA_ORIGINS = "https://notarium-app.pages.dev" }
 
 [[env.production.d1_databases]]
 binding = "DB"

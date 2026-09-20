@@ -2,11 +2,7 @@
  * Shared helpers for Worker contract tests (runs inside workerd via
  * @cloudflare/vitest-pool-workers; `SELF` is the Worker under test).
  */
-import { env, SELF } from 'cloudflare:test';
-import migration0002 from '../migrations/0002_add_suspension_fields.sql?raw';
-import migration0003 from '../migrations/0003_add_warning_system.sql?raw';
-import migration0004 from '../migrations/0004_add_warning_tracking.sql?raw';
-import migration0008 from '../migrations/0008_add_refresh_tokens.sql?raw';
+import { applyD1Migrations, env, SELF } from 'cloudflare:test';
 
 export const BASE = 'http://notarium.test';
 export const JSON_HEADERS = { 'Content-Type': 'application/json' };
@@ -18,37 +14,15 @@ export const JSON_HEADERS = { 'Content-Type': 'application/json' };
 export const REFRESH_SESSION_HEADERS = { 'X-Notarium-Session': 'refresh' };
 
 /**
- * Schema for the test D1.
- * 1. The Worker's own `initializeDatabase()` runs on its first request (it is not
- *    exported, but `SELF.fetch` triggers it) — that is the real runtime schema.
- * 2. Only the additive migrations the runtime does NOT create are applied on top
- *    (login/me SELECT their columns). 0001 is skipped on purpose: it rebuilds
- *    `users` without `password_hash`; 0005/0006/0007/add_multi_photo_support are
- *    already covered by the runtime `CREATE`/`ALTER` statements.
- * Statements run one at a time and "duplicate column" errors are ignored,
- * mirroring how the runtime applies its own ALTERs.
+ * Schema for the test D1: the real migrations directory, applied the way `wrangler d1
+ * migrations apply` does it (each file once, tracked in `d1_migrations`), then one request so
+ * the Worker seeds the default subjects. Must run before the Worker's first request — since
+ * W4.1 the runtime creates no tables itself.
  */
 export async function initTestDatabase(): Promise<void> {
+  await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
   const boot = await SELF.fetch(`${BASE}/test`);
   if (boot.status !== 200) throw new Error(`Worker boot failed: ${boot.status}`);
-
-  const sql = [migration0002, migration0003, migration0004, migration0008].join('\n');
-  const statements = sql
-    .split('\n')
-    .filter((line) => !line.trim().startsWith('--'))
-    .join('\n')
-    .split(';')
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0 && !/^SELECT\s+'/i.test(s));
-
-  for (const statement of statements) {
-    try {
-      await env.DB.prepare(statement).run();
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (!/duplicate column name/i.test(message)) throw error;
-    }
-  }
 }
 
 let counter = 0;

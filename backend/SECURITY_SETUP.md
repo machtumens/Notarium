@@ -138,11 +138,10 @@ npx wrangler secret put GEMINI_API_KEY
 
 ### Step 4: Run Database Migrations
 ```bash
-# Run the refresh tokens migration
-npx wrangler d1 execute notarium-db --file=migrations/0008_add_refresh_tokens.sql
-
-# For local development
-npx wrangler d1 execute notarium-db-local --local --file=migrations/0008_add_refresh_tokens.sql
+# Tracked by `wrangler d1 migrations` since W4.1 — see MIGRATION_GUIDE.md
+npm run migrate:local        # local development
+npm run migrate:staging      # staging (deploy.yml does this on every push to master)
+npm run migrate:production   # production — owner only, before the production deploy
 ```
 
 ### Step 5: Migrate Existing Passwords

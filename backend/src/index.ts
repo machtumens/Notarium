@@ -429,301 +429,13 @@ function profileUpdateFields(fields: z.infer<typeof profileUpdateSchema>): { upd
   return { updates, values };
 }
 
-// Initialize database tables
-async function initializeDatabase(env: Env) {
+// Seed the data the Worker assumes is always there. The schema itself lives in migrations/
+// (`wrangler d1 migrations apply` runs before every deploy — see migrations/README.md); until
+// Wave 4 this function also created every table and re-tried ~30 ALTER TABLEs on each cold
+// start. Returns false when the schema is not there yet (a fresh local D1 before
+// `npm run migrate:local`), so the next request tries again instead of never seeding.
+async function initializeDatabase(env: Env): Promise<boolean> {
   try {
-    // Create users table with proper constraints
-    await env.DB.prepare(`
-      CREATE TABLE IF NOT EXISTS users (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        encrypted_yw_id TEXT UNIQUE,
-        display_name TEXT,
-        email TEXT UNIQUE,
-        password_hash TEXT,
-        photo_url TEXT,
-        class TEXT,
-        role TEXT DEFAULT 'student',
-        notes_uploaded INTEGER DEFAULT 0,
-        total_likes INTEGER DEFAULT 0,
-        total_admin_upvotes INTEGER DEFAULT 0,
-        suspended INTEGER DEFAULT 0,
-        diamonds INTEGER DEFAULT 0,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-      )
-    `).run();
-
-    // Add missing columns if they don't exist (migration)
-    try {
-      await env.DB.prepare(`ALTER TABLE users ADD COLUMN notes_uploaded INTEGER DEFAULT 0`).run();
-    } catch (e) {
-      // Column already exists
-    }
-    try {
-      await env.DB.prepare(`ALTER TABLE users ADD COLUMN total_likes INTEGER DEFAULT 0`).run();
-    } catch (e) {
-      // Column already exists
-    }
-    try {
-      await env.DB.prepare(`ALTER TABLE users ADD COLUMN total_admin_upvotes INTEGER DEFAULT 0`).run();
-    } catch (e) {
-      // Column already exists
-    }
-    try {
-      await env.DB.prepare(`ALTER TABLE users ADD COLUMN suspended INTEGER DEFAULT 0`).run();
-    } catch (e) {
-      // Column already exists
-    }
-    try {
-      await env.DB.prepare(`ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'student'`).run();
-    } catch (e) {
-      // Column already exists
-    }
-    try {
-      await env.DB.prepare(`ALTER TABLE users ADD COLUMN description TEXT`).run();
-    } catch (e) {
-      // Column already exists
-    }
-    try {
-      await env.DB.prepare(`ALTER TABLE users ADD COLUMN diamonds INTEGER DEFAULT 0`).run();
-    } catch (e) {
-      // Column already exists
-    }
-    try {
-      await env.DB.prepare(`ALTER TABLE users ADD COLUMN points INTEGER DEFAULT 0`).run();
-    } catch (e) {
-      // Column already exists
-    }
-
-    // Create subjects table
-    await env.DB.prepare(`
-      CREATE TABLE IF NOT EXISTS subjects (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT UNIQUE,
-        icon TEXT,
-        note_count INTEGER DEFAULT 0,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-      )
-    `).run();
-
-    // Create notes table
-    await env.DB.prepare(`
-      CREATE TABLE IF NOT EXISTS notes (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        author_id INTEGER,
-        title TEXT,
-        description TEXT,
-        subject_id INTEGER,
-        extracted_text TEXT,
-        image_path TEXT,
-        summary TEXT,
-        content TEXT,
-        tags TEXT,
-        author_class TEXT,
-        status TEXT DEFAULT 'published',
-        visibility TEXT DEFAULT 'everyone',
-        scheduled_publish_at TEXT,
-        likes INTEGER DEFAULT 0,
-        admin_upvotes INTEGER DEFAULT 0,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (author_id) REFERENCES users(id),
-        FOREIGN KEY (subject_id) REFERENCES subjects(id)
-      )
-    `).run();
-
-    // Add missing columns to notes table if they don't exist (migration)
-    try {
-      await env.DB.prepare(`ALTER TABLE notes ADD COLUMN subject_id INTEGER`).run();
-    } catch (e) {
-      // Column already exists
-    }
-    try {
-      await env.DB.prepare(`ALTER TABLE notes ADD COLUMN description TEXT`).run();
-    } catch (e) {
-      // Column already exists
-    }
-    try {
-      await env.DB.prepare(`ALTER TABLE notes ADD COLUMN extracted_text TEXT`).run();
-    } catch (e) {
-      // Column already exists
-    }
-    try {
-      await env.DB.prepare(`ALTER TABLE notes ADD COLUMN image_path TEXT`).run();
-    } catch (e) {
-      // Column already exists
-    }
-    try {
-      await env.DB.prepare(`ALTER TABLE notes ADD COLUMN summary TEXT`).run();
-    } catch (e) {
-      // Column already exists
-    }
-    try {
-      await env.DB.prepare(`ALTER TABLE notes ADD COLUMN likes INTEGER DEFAULT 0`).run();
-    } catch (e) {
-      // Column already exists
-    }
-    try {
-      await env.DB.prepare(`ALTER TABLE notes ADD COLUMN admin_upvotes INTEGER DEFAULT 0`).run();
-    } catch (e) {
-      // Column already exists
-    }
-    try {
-      await env.DB.prepare(`ALTER TABLE notes ADD COLUMN content TEXT`).run();
-    } catch (e) {
-      // Column already exists
-    }
-    try {
-      await env.DB.prepare(`ALTER TABLE notes ADD COLUMN tags TEXT`).run();
-    } catch (e) {
-      // Column already exists
-    }
-    try {
-      await env.DB.prepare(`ALTER TABLE notes ADD COLUMN author_class TEXT`).run();
-    } catch (e) {
-      // Column already exists
-    }
-    try {
-      await env.DB.prepare(`ALTER TABLE notes ADD COLUMN status TEXT DEFAULT 'published'`).run();
-    } catch (e) {
-      // Column already exists
-    }
-    try {
-      await env.DB.prepare(`ALTER TABLE notes ADD COLUMN scheduled_publish_at TEXT`).run();
-      console.log('[DB_MIGRATION] Added scheduled_publish_at column');
-    } catch (e) {
-      console.log('[DB_MIGRATION] scheduled_publish_at column exists or failed to add:', e);
-    }
-    try {
-      await env.DB.prepare(`ALTER TABLE notes ADD COLUMN visibility TEXT DEFAULT 'everyone'`).run();
-    } catch (e) {
-      // Column already exists
-    }
-    try {
-      await env.DB.prepare(`ALTER TABLE notes ADD COLUMN parent_note_id INTEGER`).run();
-      console.log('[DB_MIGRATION] Added parent_note_id column for continuation notes');
-    } catch (e) {
-      console.log('[DB_MIGRATION] parent_note_id column exists or failed to add:', e);
-    }
-    try {
-      await env.DB.prepare(`ALTER TABLE notes ADD COLUMN part_number INTEGER`).run();
-      console.log('[DB_MIGRATION] Added part_number column for continuation notes');
-    } catch (e) {
-      console.log('[DB_MIGRATION] part_number column exists or failed to add:', e);
-    }
-
-    // Data migration: Fix any notes with NULL or empty status/visibility
-    try {
-      await env.DB.prepare(`
-        UPDATE notes
-        SET status = 'published'
-        WHERE status IS NULL OR status = '' OR status = 'undefined'
-      `).run();
-
-      await env.DB.prepare(`
-        UPDATE notes
-        SET visibility = 'everyone'
-        WHERE visibility IS NULL OR visibility = '' OR visibility = 'undefined'
-      `).run();
-
-      console.log('[DB_MIGRATION] Fixed status and visibility for existing notes');
-    } catch (e) {
-      console.error('[DB_MIGRATION] Failed to fix notes:', e);
-    }
-
-    // Create activity log table for admin actions
-    await env.DB.prepare(`
-      CREATE TABLE IF NOT EXISTS admin_activity_log (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        admin_id INTEGER,
-        admin_email TEXT,
-        action_type TEXT,
-        target_type TEXT,
-        target_id INTEGER,
-        details TEXT,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (admin_id) REFERENCES users(id)
-      )
-    `).run();
-
-    // Create chat_sessions table
-    await env.DB.prepare(`
-      CREATE TABLE IF NOT EXISTS chat_sessions (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER,
-        subject TEXT,
-        topic TEXT,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (user_id) REFERENCES users(id)
-      )
-    `).run();
-
-    // Create chat_messages table
-    await env.DB.prepare(`
-      CREATE TABLE IF NOT EXISTS chat_messages (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        session_id INTEGER,
-        role TEXT,
-        content TEXT,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (session_id) REFERENCES chat_sessions(id)
-      )
-    `).run();
-
-    // Create note_likes table
-    await env.DB.prepare(`
-      CREATE TABLE IF NOT EXISTS note_likes (
-        note_id INTEGER,
-        user_id INTEGER,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        PRIMARY KEY (note_id, user_id),
-        FOREIGN KEY (note_id) REFERENCES notes(id),
-        FOREIGN KEY (user_id) REFERENCES users(id)
-      )
-    `).run();
-
-    // Create admin_note_likes table for tracking admin appreciation
-    await env.DB.prepare(`
-      CREATE TABLE IF NOT EXISTS admin_note_likes (
-        note_id INTEGER,
-        admin_id INTEGER,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        PRIMARY KEY (note_id, admin_id),
-        FOREIGN KEY (note_id) REFERENCES notes(id),
-        FOREIGN KEY (admin_id) REFERENCES users(id)
-      )
-    `).run();
-
-    // Refresh tokens (migration 0008 + W2.1): `token` holds sha256(token), `family` groups the
-    // rotation chain of one login, `revoked_at` retires a row (rotation, logout, reuse detection).
-    await env.DB.prepare(`
-      CREATE TABLE IF NOT EXISTS refresh_tokens (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER NOT NULL,
-        token TEXT NOT NULL UNIQUE,
-        expires_at DATETIME NOT NULL,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        family TEXT,
-        revoked_at DATETIME,
-        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-      )
-    `).run();
-    // A database that already ran 0008 has the table without the two W2.1 columns. Only
-    // "duplicate column name" is expected here; anything else is a real failure and surfaces
-    // (the outer catch logs it) instead of leaving the table silently half-migrated (W2.3c).
-    for (const column of ['family TEXT', 'revoked_at DATETIME']) {
-      try {
-        await env.DB.prepare(`ALTER TABLE refresh_tokens ADD COLUMN ${column}`).run();
-      } catch (e) {
-        if (!/duplicate column name/i.test(e instanceof Error ? e.message : String(e))) throw e;
-      }
-    }
-    await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_refresh_tokens_user_id ON refresh_tokens(user_id)`).run();
-    await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_refresh_tokens_token ON refresh_tokens(token)`).run();
-    await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_refresh_tokens_expires_at ON refresh_tokens(expires_at)`).run();
-    await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_refresh_tokens_family ON refresh_tokens(family)`).run();
-
     // Ensure all default subjects exist (add missing ones if deleted)
     const defaultSubjects = [
       { name: 'Filsafat', icon: '🧠' },
@@ -742,13 +454,10 @@ async function initializeDatabase(env: Env) {
       { name: 'Kimia', icon: '🧪' }
     ];
 
+    // OR IGNORE: a subject that already exists keeps its row (and its icon); a missing
+    // `subjects` table surfaces as an error instead of being swallowed per row.
     for (const subject of defaultSubjects) {
-      try {
-        // Try to insert if it doesn't exist
-        await env.DB.prepare('INSERT INTO subjects (name, icon) VALUES (?, ?)').bind(subject.name, subject.icon).run();
-      } catch (e) {
-        // Subject already exists, skip
-      }
+      await env.DB.prepare('INSERT OR IGNORE INTO subjects (name, icon) VALUES (?, ?)').bind(subject.name, subject.icon).run();
     }
 
     // Remove any subjects that are not in the default list (cleanup old subjects)
@@ -770,9 +479,10 @@ async function initializeDatabase(env: Env) {
     }
 
     console.log('Database initialized successfully');
+    return true;
   } catch (error: any) {
     console.error('Database initialization error:', error.message);
-    // Don't throw - table might already exist
+    return false;
   }
 }
 
@@ -3557,18 +3267,15 @@ const handler = {
       });
     }
 
-    // Initialize database on first request if available
-    if (env.DB && !dbInitialized) {
-      try {
-        await initializeDatabase(env);
-        dbInitialized = true;
-      } catch (error) {
-        console.log('Database initialization skipped, using mock data');
-      }
-    }
-
     const url = new URL(request.url);
     const path = url.pathname;
+
+    // Seed the default subjects on the first request that reaches the database (the schema
+    // itself comes from migrations/). A false return means the schema is not there yet; the
+    // next request tries again.
+    if (env.DB && !dbInitialized) {
+      dbInitialized = await initializeDatabase(env);
+    }
 
     // One body-size gate for every route (the signup limiter, reused). Bodies without a
     // Content-Length (chunked) are stream-counted so the cap cannot be skipped and the
