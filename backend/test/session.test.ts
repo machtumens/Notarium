@@ -6,7 +6,7 @@
 import { env } from 'cloudflare:test';
 import { SignJWT } from 'jose';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { adminLogin, api, initTestDatabase, json, signup, uniqueEmail } from './setup';
+import { adminLogin as adminLoginWith, api, initTestDatabase, json, REFRESH_SESSION_HEADERS, signup as signupWith, uniqueEmail } from './setup';
 
 beforeAll(initTestDatabase);
 
@@ -41,11 +41,15 @@ async function sha256Hex(value: string): Promise<string> {
 const refresh = (refreshToken: unknown, ip = freshIp()) =>
   api('/api/auth/refresh', { headers: { 'CF-Connecting-IP': ip }, body: { refreshToken } });
 
-const login = (email: string) => api('/api/auth/login', { headers: { 'CF-Connecting-IP': freshIp() }, body: { email, password: 'password-123' } });
+/** Every sign-in in this suite opts in to the short-session contract (W2.3a): 15-minute JWT + refresh token. */
+const signup = (email?: string) => signupWith(email, 'Test User', { refresh: true });
+const adminLogin = () => adminLoginWith(undefined, { refresh: true });
+const login = (email: string, headers: Record<string, string> = REFRESH_SESSION_HEADERS) =>
+  api('/api/auth/login', { headers: { 'CF-Connecting-IP': freshIp(), ...headers }, body: { email, password: 'password-123' } });
 
 // ---------------------------------------------------------------------------
 describe('W2.1a — access tokens live 15 minutes', () => {
-  it('login, signup and admin-login mint a JWT whose exp − iat is exactly 15 minutes', async () => {
+  it('with the opt-in header, login, signup and admin-login mint a JWT whose exp − iat is exactly 15 minutes', async () => {
     const created = await signup(uniqueEmail('ttl'));
     const loggedIn = await json(await login(created.user.email));
     const admin = await adminLogin();
@@ -67,10 +71,72 @@ describe('W2.1a — access tokens live 15 minutes', () => {
 });
 
 // ---------------------------------------------------------------------------
+describe('W2.3a — short sessions are opt-in', () => {
+  const LEGACY_TTL_SECONDS = 24 * 60 * 60;
+  const ttl = (jwt: string) => { const { iat, exp } = decodeClaims(jwt); return exp - iat; };
+  const liveRows = async (userId: number) =>
+    (await env.DB.prepare('SELECT COUNT(*) AS c FROM refresh_tokens WHERE user_id = ?').bind(userId).first<{ c: number }>())?.c ?? -1;
+
+  it('without the header: login, signup and admin-login mint a 24-hour JWT and no refreshToken (the deployed frontend keeps working)', async () => {
+    const created = await signupWith(uniqueEmail('legacy'));
+    const loggedIn = await json(await login(created.user.email, {}));
+    const admin = await adminLoginWith();
+    for (const jwt of [created.token, loggedIn.token, admin.token]) expect(ttl(jwt)).toBe(LEGACY_TTL_SECONDS);
+    expect(loggedIn).toMatchObject({ success: true, user: { id: created.user.id } });
+    expect(loggedIn).not.toHaveProperty('refreshToken');
+    expect(created.refreshToken).toBe('');
+    expect(admin.refreshToken).toBe('');
+    expect(await liveRows(created.user.id)).toBe(0);
+    expect(await liveRows(admin.user.id)).toBe(0);
+    // the 24-hour token is a working bearer
+    expect((await api('/api/auth/me', { token: loggedIn.token })).status).toBe(200);
+  });
+
+  it('with X-Notarium-Session: refresh → 15-minute JWT + refresh token; body session: "refresh" opts in too', async () => {
+    const created = await signup(uniqueEmail('optin'));
+    expect(ttl(created.token)).toBe(ACCESS_TOKEN_TTL_SECONDS);
+    expect(created.refreshToken).toMatch(BASE64URL);
+    const viaBody = await json(await api('/api/auth/login', {
+      headers: { 'CF-Connecting-IP': freshIp() },
+      body: { email: created.user.email, password: 'password-123', session: 'refresh' },
+    }));
+    expect(ttl(viaBody.token)).toBe(ACCESS_TOKEN_TTL_SECONDS);
+    expect(viaBody.refreshToken).toMatch(BASE64URL);
+    const admin = await adminLogin();
+    expect(ttl(admin.token)).toBe(ACCESS_TOKEN_TTL_SECONDS);
+    expect(admin.refreshToken).toMatch(BASE64URL);
+    expect(await liveRows(created.user.id)).toBe(2);
+  });
+
+  it('anything but an exact opt-in is the legacy contract', async () => {
+    const created = await signupWith(uniqueEmail('almost'));
+    const wrongHeader = await json(await login(created.user.email, { 'X-Notarium-Session': 'yes' }));
+    expect(ttl(wrongHeader.token)).toBe(LEGACY_TTL_SECONDS);
+    expect(wrongHeader).not.toHaveProperty('refreshToken');
+    const wrongBody = await json(await api('/api/auth/login', {
+      headers: { 'CF-Connecting-IP': freshIp() },
+      body: { email: created.user.email, password: 'password-123', session: true },
+    }));
+    expect(ttl(wrongBody.token)).toBe(LEGACY_TTL_SECONDS);
+    expect(wrongBody).not.toHaveProperty('refreshToken');
+    expect(await liveRows(created.user.id)).toBe(0);
+  });
+
+  it('the CORS preflight allows the opt-in header (the V2.0 app sends it cross-origin)', async () => {
+    const res = await api('/api/auth/login', {
+      method: 'OPTIONS',
+      headers: { Origin: 'http://localhost:5173', 'Access-Control-Request-Method': 'POST', 'Access-Control-Request-Headers': 'content-type,x-notarium-session' },
+    });
+    expect(res.status).toBe(204);
+    expect(res.headers.get('Access-Control-Allow-Headers')).toMatch(/\bX-Notarium-Session\b/i);
+  });
+});
+
+// ---------------------------------------------------------------------------
 describe('W2.1a — login, signup and admin-login issue a refresh token', () => {
   it('signup → 201 with {token, refreshToken, user}; the refresh token is 32 random bytes base64url', async () => {
     const res = await api('/api/auth/signup', {
-      headers: { 'CF-Connecting-IP': freshIp() },
+      headers: { 'CF-Connecting-IP': freshIp(), ...REFRESH_SESSION_HEADERS },
       body: { name: 'Refresh User', email: uniqueEmail('rt'), password: 'password-123', class: '10.1' },
     });
     expect(res.status).toBe(201);

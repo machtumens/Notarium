@@ -18,6 +18,7 @@ interface Env {
   FRONTEND_URL?: string;
   EXTRA_ORIGINS?: string; // optional comma-separated extra CORS origins
   ENVIRONMENT?: string;
+  ACCESS_TTL_LEGACY?: string; // optional override of the 24h JWT for clients that do not opt in to refresh sessions (jose duration, e.g. '12h')
 }
 
 interface User {
@@ -48,9 +49,15 @@ const MAX_REQUEST_SIZE = 10 * 1024 * 1024; // 10MB — routes that carry base64 
 const MAX_JSON_BODY_SIZE = 1 * 1024 * 1024; // 1MB — every other JSON route
 const RATE_LIMIT_WINDOW = 900; // 15 minutes in seconds
 const RATE_LIMIT_MAX_ATTEMPTS = 5;
-// Access JWTs are short-lived (W2.1); a rotating refresh token (7 days, stored hashed
-// in `refresh_tokens`) mints the next one via POST /api/auth/refresh.
-const JWT_EXPIRATION = '15m';
+// Access-token lifetime depends on the client (W2.3a). A sign-in that opts in with
+// `X-Notarium-Session: refresh` (or body `session: 'refresh'`) gets a 15-minute JWT plus a
+// rotating refresh token (7 days, stored hashed in `refresh_tokens`) that mints the next one
+// via POST /api/auth/refresh. Every other client — the deployed Vercel frontend has no refresh
+// logic — keeps the previous 24-hour JWT and gets no refresh token.
+const ACCESS_TTL_REFRESH = '15m';
+const ACCESS_TTL_LEGACY = '24h'; // env.ACCESS_TTL_LEGACY overrides it (same duration format)
+const REFRESH_SESSION_HEADER = 'X-Notarium-Session';
+const REFRESH_SESSION_VALUE = 'refresh';
 const REFRESH_TOKEN_TTL_SECONDS = 7 * 24 * 60 * 60;
 const REFRESH_TOKEN_BYTES = 32;
 
@@ -73,7 +80,7 @@ function allowedOrigins(env: Env): string[] {
 function corsHeaders(request: Request, env: Env): Record<string, string> {
   const headers: Record<string, string> = {
     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    'Access-Control-Allow-Headers': `Content-Type, Authorization, ${REFRESH_SESSION_HEADER}`,
     'Vary': 'Origin',
   };
   // Bearer-only API: no Access-Control-Allow-Credentials, so an allow-listed
@@ -129,13 +136,35 @@ async function verifyPassword(password: string, hash: string): Promise<boolean> 
 }
 
 // JWT functions
-async function createToken(payload: { id: number; email: string; role: string }, env: Env, expiresIn: string = JWT_EXPIRATION): Promise<string> {
+async function createToken(payload: { id: number; email: string; role: string }, env: Env, expiresIn: string): Promise<string> {
   const secret = new TextEncoder().encode(env.JWT_SECRET);
   return await new SignJWT(payload)
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
     .setExpirationTime(expiresIn)
     .sign(secret);
+}
+
+type SessionMode = 'refresh' | 'legacy';
+
+// Which sign-in contract the client asked for (W2.3a): the header wins, then the body flag.
+// Both are exact matches — any other value is the legacy 24-hour contract.
+function sessionModeFor(request: Request, body: unknown): SessionMode {
+  const header = request.headers.get(REFRESH_SESSION_HEADER);
+  if (header !== null && header.trim().toLowerCase() === REFRESH_SESSION_VALUE) return 'refresh';
+  const flag = body !== null && typeof body === 'object' ? (body as { session?: unknown }).session : undefined;
+  return flag === REFRESH_SESSION_VALUE ? 'refresh' : 'legacy';
+}
+
+// jose duration strings the override may use ('12h', '90m', '2 days'); anything else is ignored
+// with a warning so a typo in the var can never break sign-in.
+const ACCESS_TTL_FORMAT = /^\d+\s?(s|sec|secs|second|seconds|m|min|mins|minute|minutes|h|hr|hrs|hour|hours|d|day|days)$/i;
+function legacyAccessTtl(env: Env): string {
+  const override = env.ACCESS_TTL_LEGACY?.trim();
+  if (!override) return ACCESS_TTL_LEGACY;
+  if (ACCESS_TTL_FORMAT.test(override)) return override;
+  console.warn('[AUTH] Ignoring ACCESS_TTL_LEGACY: not a duration like 24h');
+  return ACCESS_TTL_LEGACY;
 }
 
 async function verifyToken(token: string, env: Env): Promise<{ id: number; email: string; role: string } | null> {
@@ -2892,19 +2921,19 @@ async function signupEndpoint(request: Request, env: Env) {
       return jsonResponse({ error: 'Failed to create user' }, 500, env);
     }
 
-    // Access JWT + refresh token (W2.1)
+    // Access JWT, plus a refresh token when the client opted in (W2.1 / W2.3a)
     const { token, refreshToken } = await issueSession({
       id: (user as any).id,
       email: (user as any).email,
       role: (user as any).role
-    }, env);
+    }, env, sessionModeFor(request, body));
 
     // Calculate points (1 point per note upload, 1 point per like, 1 point per admin like)
     const points = ((user as any).notes_uploaded || 0) + ((user as any).total_likes || 0) + ((user as any).total_admin_upvotes || 0);
 
     return jsonResponse({
       token,
-      refreshToken,
+      ...(refreshToken ? { refreshToken } : {}),
       user: {
         id: (user as any).id,
         email: (user as any).email,
@@ -3071,12 +3100,12 @@ async function loginEndpoint(request: Request, env: Env) {
 
     console.log('[LOGIN] Creating token for user:', (user as any).id);
 
-    // Access JWT + refresh token (W2.1)
+    // Access JWT, plus a refresh token when the client opted in (W2.1 / W2.3a)
     const { token, refreshToken } = await issueSession({
       id: (user as any).id,
       email: (user as any).email,
       role: (user as any).role || 'student'
-    }, env);
+    }, env, sessionModeFor(request, body));
 
     // Calculate points (1 point per note upload, 1 point per like, 1 point per admin like)
     const points = ((user as any).notes_uploaded || 0) + ((user as any).total_likes || 0) + ((user as any).total_admin_upvotes || 0);
@@ -3086,7 +3115,7 @@ async function loginEndpoint(request: Request, env: Env) {
     return jsonResponse({
       success: true,
       token,
-      refreshToken,
+      ...(refreshToken ? { refreshToken } : {}),
       user: {
         id: (user as any).id,
         email: (user as any).email,
@@ -3311,9 +3340,13 @@ async function issueRefreshToken(userId: number, env: Env, family: string = cryp
   return token;
 }
 
-// The pair every sign-in hands out: a 15-minute access JWT plus a fresh refresh family.
-async function issueSession(user: { id: number; email: string; role: string }, env: Env): Promise<{ token: string; refreshToken: string }> {
-  const [token, refreshToken] = await Promise.all([createToken(user, env), issueRefreshToken(user.id, env)]);
+// What a sign-in hands out. 'refresh' (the client opted in): a 15-minute access JWT plus a
+// fresh refresh family. 'legacy': the 24-hour JWT alone — no refresh row, no refreshToken.
+async function issueSession(user: { id: number; email: string; role: string }, env: Env, mode: SessionMode): Promise<{ token: string; refreshToken?: string }> {
+  if (mode === 'legacy') {
+    return { token: await createToken(user, env, legacyAccessTtl(env)) };
+  }
+  const [token, refreshToken] = await Promise.all([createToken(user, env, ACCESS_TTL_REFRESH), issueRefreshToken(user.id, env)]);
   return { token, refreshToken };
 }
 
@@ -3376,7 +3409,7 @@ async function refreshEndpoint(request: Request, env: Env) {
   }
 
   const [token, refreshToken] = await Promise.all([
-    createToken({ id: user.id, email: user.email ?? '', role: user.role || 'student' }, env),
+    createToken({ id: user.id, email: user.email ?? '', role: user.role || 'student' }, env, ACCESS_TTL_REFRESH),
     issueRefreshToken(user.id, env, row.family ?? crypto.randomUUID()),
   ]);
   console.log('[REFRESH] Rotated session for user:', user.id);
@@ -3585,16 +3618,16 @@ const handler = {
             }
           }
 
-          // Access JWT + refresh token (W2.1)
+          // Access JWT, plus a refresh token when the client opted in (W2.1 / W2.3a)
           const { token, refreshToken } = await issueSession({
             id: (admin as any).id,
             email: (admin as any).email,
             role: 'admin'
-          }, env);
+          }, env, sessionModeFor(request, body));
 
           return jsonResponse({
             token,
-            refreshToken,
+            ...(refreshToken ? { refreshToken } : {}),
             user: {
               id: (admin as any).id,
               email: (admin as any).email,

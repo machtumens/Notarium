@@ -36,15 +36,23 @@ let nextUserId = 1000; // accounts from signup/login get unique ids so ownership
 const mockNotes = []; // notes created through POST /api/notes (served by /api/notes/my-notes)
 let noteCounter = 1;
 
-// Access tokens expire after 15 minutes like the Worker's JWTs (W2.1); the refresh token mints the next one.
-const ACCESS_TOKEN_TTL_MS = 15 * 60 * 1000;
+// Access tokens (Worker parity, W2.1 + W2.3a): a sign-in that opts in with `X-Notarium-Session: refresh`
+// (or body `session: 'refresh'`) gets a 15-minute token plus a refresh token that mints the next one;
+// every other client keeps the 24-hour token and gets no refresh token.
+const ACCESS_TTL_REFRESH_MS = 15 * 60 * 1000;
+const ACCESS_TTL_LEGACY_MS = 24 * 60 * 60 * 1000;
 const REFRESH_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const mockTokenExpiry = new Map(); // token -> epoch ms
 
-function issueToken(user) {
+function wantsRefreshSession(req) {
+  const header = req.get('X-Notarium-Session');
+  return (typeof header === 'string' && header.trim().toLowerCase() === 'refresh') || req.body?.session === 'refresh';
+}
+
+function issueToken(user, ttlMs = ACCESS_TTL_REFRESH_MS) {
   const token = 'mock-token-' + Date.now() + '-' + Math.random().toString(36).slice(2);
   mockTokens.set(token, user);
-  mockTokenExpiry.set(token, Date.now() + ACCESS_TOKEN_TTL_MS);
+  mockTokenExpiry.set(token, Date.now() + ttlMs);
   return token;
 }
 
@@ -59,7 +67,9 @@ function issueRefreshToken(user, family = 'family-' + familyCounter++) {
   return refreshToken;
 }
 
-function issueSession(user) {
+// `{token}` for the legacy contract, `{token, refreshToken}` when the request opted in
+function issueSession(user, req) {
+  if (!wantsRefreshSession(req)) return { token: issueToken(user, ACCESS_TTL_LEGACY_MS) };
   return { token: issueToken(user), refreshToken: issueRefreshToken(user) };
 }
 
@@ -152,15 +162,8 @@ app.post('/api/auth/signup', (req, res) => {
     notes_count: 0,
   };
 
-  // Mock JWT + refresh token
-  const { token, refreshToken } = issueSession(user);
-
-  res.json({
-    success: true,
-    user,
-    token,
-    refreshToken
-  });
+  // Mock JWT (+ refresh token when the client opted in)
+  res.json({ success: true, user, ...issueSession(user, req) });
 });
 
 app.post('/api/auth/login', (req, res) => {
@@ -186,15 +189,8 @@ app.post('/api/auth/login', (req, res) => {
     notes_count: 0,
   };
 
-  // Mock JWT + refresh token
-  const { token, refreshToken } = issueSession(user);
-
-  res.json({
-    success: true,
-    user,
-    token,
-    refreshToken
-  });
+  // Mock JWT (+ refresh token when the client opted in)
+  res.json({ success: true, user, ...issueSession(user, req) });
 });
 
 // Rotate a refresh token → {token, refreshToken}; every failure is 401 with one message (Worker parity)
