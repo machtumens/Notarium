@@ -1,5 +1,10 @@
 import type { Env } from './lib/env';
-import { CORS_ALLOWED_HEADERS, getAllowedOrigin, jsonResponse } from './lib/response';
+import {
+  CORS_ALLOWED_HEADERS,
+  SECURITY_HEADERS,
+  getAllowedOrigin,
+  jsonResponse,
+} from './lib/response';
 import {
   hashPassword,
   verifyPassword,
@@ -8,7 +13,7 @@ import {
   requireAdmin,
   timingSafeEqualStr,
 } from './lib/auth';
-import { checkRateLimit } from './lib/ratelimit';
+import { checkRateLimit, capRequestBody, validateRequestSize } from './lib/ratelimit';
 import { initializeDatabase, MOCK_SUBJECTS, SCHEMA_VERSION } from './lib/db';
 import { isValidZone, isoUtc, SQL_NOW_ISO } from './lib/time';
 import { handleOAuthRoutes } from './routes/oauth';
@@ -237,15 +242,34 @@ export default {
       }
     }
 
-    const response = await this._handle(request, env, ctx);
+    let response: Response;
+    try {
+      // Cap every /api/ body at MAX_REQUEST_SIZE: by header first (cheap), then
+      // on the bytes actually streamed (Content-Length can be absent or forged).
+      let capped: Request | null = request;
+      if (path.startsWith('/api/') && request.body) {
+        capped = validateRequestSize(request) ? await capRequestBody(request) : null;
+      }
+      response = capped
+        ? await this._handle(capped, env, ctx)
+        : jsonResponse({ error: 'Request too large' }, 413, env, requestOrigin);
+    } catch (error) {
+      // _handle has its own catch; this is the last line of defence so a bug can
+      // never surface as a bare runtime error without CORS/security headers.
+      console.error('Unhandled error:', error);
+      response = jsonResponse({ error: 'Internal server error' }, 500, env, requestOrigin);
+    }
 
     if (path.startsWith('/api/')) {
       recordMetric(env, ctx, path, request.method, response.status, Date.now() - started);
     }
 
+    // Every response leaves with the CORS origin and the security headers, even
+    // those built without `env` (most error paths and the 404 fallback).
     const newHeaders = new Headers(response.headers);
     newHeaders.set('Access-Control-Allow-Origin', corsOrigin);
     newHeaders.set('Access-Control-Allow-Credentials', 'true');
+    for (const [name, value] of Object.entries(SECURITY_HEADERS)) newHeaders.set(name, value);
     return new Response(response.body, {
       status: response.status,
       statusText: response.statusText,
