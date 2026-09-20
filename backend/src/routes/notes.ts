@@ -262,6 +262,9 @@ export async function createNote(request: Request, env: Env) {
     for (let i = 0; i < images.length; i += MAX_IMAGES_PER_NOTE) {
       imageChunks.push(images.slice(i, i + MAX_IMAGES_PER_NOTE));
     }
+    // One row per image chunk — so a text-only note (no images) produced zero
+    // rows while still answering success. It must create exactly one part.
+    if (imageChunks.length === 0) imageChunks.push([]);
 
     const createdNotes: any[] = [];
     let parentNoteId: number | null = null;
@@ -280,7 +283,9 @@ export async function createNote(request: Request, env: Env) {
         extractedText = `Continued from previous note...\n\n${body.extracted_text || ''}`;
       }
 
-      const imagePathJson = JSON.stringify(chunk);
+      // No images: NULL (the column default), not '[]' — clients render
+      // `image_path || placeholder`, and '[]' is truthy.
+      const imagePathJson = chunk.length > 0 ? JSON.stringify(chunk) : null;
 
       const chunkData = {
         title: noteTitle,
