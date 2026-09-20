@@ -11,6 +11,7 @@ import { adminLogin as adminLoginWith, api, initTestDatabase, json, REFRESH_SESS
 beforeAll(initTestDatabase);
 
 const ACCESS_TOKEN_TTL_SECONDS = 15 * 60;
+const REFRESH_FAILURES_PER_WINDOW = 60;
 const BASE64URL = /^[A-Za-z0-9_-]{43}$/; // 32 random bytes, unpadded
 
 let ipCounter = 0;
@@ -36,6 +37,17 @@ async function expiredAccessToken(user: { id: number; email: string; role: strin
 async function sha256Hex(value: string): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
   return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * Push every retired row of the user `seconds` into the past. Since W2.3b a replay inside 30 s of
+ * a rotation (while the successor is live) is a concurrent-rotation race, not theft — the
+ * "reuse revokes the family" tests age the rotation past that window first.
+ */
+const ROTATION_GRACE_SECONDS = 30;
+async function ageRevocations(userId: number, seconds = ROTATION_GRACE_SECONDS + 1): Promise<void> {
+  await env.DB.prepare("UPDATE refresh_tokens SET revoked_at = datetime(revoked_at, ?) WHERE user_id = ? AND revoked_at IS NOT NULL")
+    .bind(`-${seconds} seconds`, userId).run();
 }
 
 const refresh = (refreshToken: unknown, ip = freshIp()) =>
@@ -203,8 +215,10 @@ describe('W2.1a — POST /api/auth/refresh rotates', () => {
     expect(rows.results[1].revoked_at).toBeNull();
     expect(rows.results[1].family).toBe(rows.results[0].family);
 
-    // presenting the old token again is a replay → 401 (and, by design, it retires the family)
+    // presenting the old token again is a replay → 401; inside the 30 s grace it is treated as a
+    // concurrent rotation (W2.3b), so the successor keeps working
     expect((await refresh(user.refreshToken)).status).toBe(401);
+    expect((await refresh(next.refreshToken)).status).toBe(200);
   });
 
   function exp(jwt: string): number {
@@ -229,7 +243,8 @@ describe('W2.1a — POST /api/auth/refresh rotates', () => {
     expect(rows.results.filter((r) => r.revoked_at === null)).toHaveLength(1);
     expect(rows.results[3].revoked_at).toBeNull();
 
-    // replaying the very first token now retires the whole chain, the live one included
+    // replaying the very first token (once the rotation is older than the race window) retires the whole chain, the live one included
+    await ageRevocations(user.user.id);
     expect((await refresh(user.refreshToken)).status).toBe(401);
     expect((await refresh(current)).status).toBe(401);
   });
@@ -239,7 +254,8 @@ describe('W2.1a — POST /api/auth/refresh rotates', () => {
     const rotated = await json(await refresh(user.refreshToken));
     expect(rotated.refreshToken).toMatch(BASE64URL);
 
-    // an attacker (or a stale tab) replays the old token
+    // an attacker replays the old token well after the rotation
+    await ageRevocations(user.user.id);
     expect((await refresh(user.refreshToken)).status).toBe(401);
     // ...so the legitimate successor is dead as well
     expect((await refresh(rotated.refreshToken)).status).toBe(401);
@@ -252,15 +268,21 @@ describe('W2.1a — POST /api/auth/refresh rotates', () => {
     const user = await signup(uniqueEmail('families'));
     const phone = await json(await login(user.user.email));
     const laptopNext = await json(await refresh(user.refreshToken));
+    await ageRevocations(user.user.id);
     expect((await refresh(user.refreshToken)).status).toBe(401); // reuse on the laptop family
     expect((await refresh(laptopNext.refreshToken)).status).toBe(401);
     expect((await refresh(phone.refreshToken)).status).toBe(200);
   });
 
-  it('two concurrent refreshes with the same token: exactly one wins, the other is 401', async () => {
+  it("two concurrent refreshes with the same token: exactly one wins, the other is 401, and the winner's successor still works (W2.3b)", async () => {
     const user = await signup(uniqueEmail('race'));
     const [a, b] = await Promise.all([refresh(user.refreshToken), refresh(user.refreshToken)]);
     expect([a.status, b.status].sort()).toEqual([200, 401]);
+    const winner = await json(a.status === 200 ? a : b);
+    expect(winner.refreshToken).toMatch(BASE64URL);
+    const next = await refresh(winner.refreshToken);
+    expect(next.status).toBe(200);
+    expect((await api('/api/auth/me', { token: (await json(next)).token })).status).toBe(200);
   });
 
   it('an expired refresh token → 401 and does not rotate', async () => {
@@ -298,18 +320,107 @@ describe('W2.1a — POST /api/auth/refresh rotates', () => {
     expect((await refresh(user.refreshToken)).status).toBe(200);
   });
 
-  it('6th attempt from one IP inside the window → 429, even with a valid token', async () => {
+  it('61st failed attempt from one IP inside the window → 429, even with a valid token (W2.3b)', async () => {
     const user = await signup(uniqueEmail('limited'));
     const ip = freshIp();
-    for (let attempt = 1; attempt <= 5; attempt += 1) {
+    for (let attempt = 1; attempt <= REFRESH_FAILURES_PER_WINDOW; attempt += 1) {
       const res = await refresh('b'.repeat(43), ip);
       expect(res.status, `attempt ${attempt}`).toBe(401);
     }
-    const sixth = await refresh(user.refreshToken, ip);
-    expect(sixth.status).toBe(429);
-    expect((await json(sixth)).error).toBeDefined();
+    const overBudget = await refresh(user.refreshToken, ip);
+    expect(overBudget.status).toBe(429);
+    expect((await json(overBudget)).error).toBeDefined();
     // the throttle is per IP, and the valid token was not consumed
     expect((await refresh(user.refreshToken)).status).toBe(200);
+  });
+
+  it('100 successful rotations in a row from one IP never 429: a rotation does not spend the failure budget (W2.3b)', async () => {
+    const user = await signup(uniqueEmail('rotator'));
+    const ip = freshIp();
+    let current = user.refreshToken;
+    for (let hop = 1; hop <= 100; hop += 1) {
+      const res = await refresh(current, ip);
+      expect(res.status, `hop ${hop}`).toBe(200);
+      current = (await json(res)).refreshToken as string;
+    }
+    // and the budget is still there for a failure afterwards
+    expect((await refresh('d'.repeat(43), ip)).status).toBe(401);
+  });
+
+  it('a 400 (malformed body) spends the budget like a 401', async () => {
+    const ip = freshIp();
+    for (let attempt = 1; attempt <= REFRESH_FAILURES_PER_WINDOW; attempt += 1) {
+      expect((await refresh(42, ip)).status, `attempt ${attempt}`).toBe(400);
+    }
+    expect((await refresh(42, ip)).status).toBe(429);
+  });
+});
+
+// ---------------------------------------------------------------------------
+describe('W2.3b — a replay right after a rotation is a race, not theft', () => {
+  it('a replay inside 30 s while the successor is live → 401 and the family is untouched (a stale tab)', async () => {
+    const user = await signup(uniqueEmail('stale-tab'));
+    const rotated = await json(await refresh(user.refreshToken));
+    expect((await refresh(user.refreshToken)).status).toBe(401);
+    expect((await refresh(user.refreshToken)).status).toBe(401); // and again
+    const live = await env.DB.prepare('SELECT COUNT(*) AS c FROM refresh_tokens WHERE user_id = ? AND revoked_at IS NULL')
+      .bind(user.user.id).first<{ c: number }>();
+    expect(live?.c).toBe(1);
+    expect((await refresh(rotated.refreshToken)).status).toBe(200);
+  });
+
+  it('a replay 31 s or more after the rotation still revokes the whole family', async () => {
+    const user = await signup(uniqueEmail('late-replay'));
+    const rotated = await json(await refresh(user.refreshToken));
+    await ageRevocations(user.user.id, ROTATION_GRACE_SECONDS + 1);
+    expect((await refresh(user.refreshToken)).status).toBe(401);
+    expect((await refresh(rotated.refreshToken)).status).toBe(401);
+    const live = await env.DB.prepare('SELECT COUNT(*) AS c FROM refresh_tokens WHERE user_id = ? AND revoked_at IS NULL')
+      .bind(user.user.id).first<{ c: number }>();
+    expect(live?.c).toBe(0);
+  });
+
+  it('a replay just inside the window (29 s) is still tolerated', async () => {
+    const user = await signup(uniqueEmail('edge-replay'));
+    const rotated = await json(await refresh(user.refreshToken));
+    await ageRevocations(user.user.id, ROTATION_GRACE_SECONDS - 1);
+    expect((await refresh(user.refreshToken)).status).toBe(401);
+    expect((await refresh(rotated.refreshToken)).status).toBe(200);
+  });
+
+  it('a replay soon after a logout (no live successor) is reuse: 401, the family stays dead', async () => {
+    const user = await signup(uniqueEmail('after-logout'));
+    const rotated = await json(await refresh(user.refreshToken));
+    expect((await api('/api/auth/logout', { token: rotated.token, body: { refreshToken: rotated.refreshToken } })).status).toBe(200);
+    expect((await refresh(user.refreshToken)).status).toBe(401);
+    expect((await refresh(rotated.refreshToken)).status).toBe(401);
+  });
+});
+
+// ---------------------------------------------------------------------------
+describe('W2.3b — POST /api/auth/logout validates its body', () => {
+  it('{refreshToken: 42} → 400 and nothing is revoked', async () => {
+    const user = await signup(uniqueEmail('bad-logout'));
+    const res = await api('/api/auth/logout', { token: user.token, body: { refreshToken: 42 } });
+    expect(res.status).toBe(400);
+    expect((await json(res)).error).toBeDefined();
+    expect((await refresh(user.refreshToken)).status).toBe(200);
+  });
+
+  it('a body that is not JSON → 400 and nothing is revoked', async () => {
+    const user = await signup(uniqueEmail('raw-logout'));
+    expect((await api('/api/auth/logout', { token: user.token, rawBody: 'not json' })).status).toBe(400);
+    expect((await api('/api/auth/logout', { token: user.token, body: null })).status).toBe(400);
+    expect((await api('/api/auth/logout', { token: user.token, body: ['refreshToken'] })).status).toBe(400);
+    expect((await refresh(user.refreshToken)).status).toBe(200);
+  });
+
+  it('an empty object body still revokes every family (what the V2.0 client sends without a stored refresh token)', async () => {
+    const user = await signup(uniqueEmail('empty-logout'));
+    const phone = await json(await login(user.user.email));
+    expect((await api('/api/auth/logout', { token: user.token, body: {} })).status).toBe(200);
+    expect((await refresh(user.refreshToken)).status).toBe(401);
+    expect((await refresh(phone.refreshToken)).status).toBe(401);
   });
 });
 
@@ -368,6 +479,8 @@ describe('W2.1a — refresh tokens never reach the logs', () => {
     const user = await signup(uniqueEmail('quiet'));
     const loggedIn = await json(await login(user.user.email));
     const rotated = await json(await refresh(user.refreshToken));
+    await refresh(user.refreshToken); // replay inside the race window → info log, family kept
+    await ageRevocations(user.user.id);
     await refresh(user.refreshToken); // reuse → family revoked
     await refresh('c'.repeat(43)); // unknown
     await api('/api/auth/logout', { token: loggedIn.token, body: { refreshToken: loggedIn.refreshToken } });

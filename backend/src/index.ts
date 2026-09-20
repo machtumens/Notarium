@@ -49,6 +49,12 @@ const MAX_REQUEST_SIZE = 10 * 1024 * 1024; // 10MB — routes that carry base64 
 const MAX_JSON_BODY_SIZE = 1 * 1024 * 1024; // 1MB — every other JSON route
 const RATE_LIMIT_WINDOW = 900; // 15 minutes in seconds
 const RATE_LIMIT_MAX_ATTEMPTS = 5;
+// /api/auth/refresh rotates every 15 minutes per open tab, so its bucket is sized for that
+// and only failed attempts spend it — a valid rotation is free (W2.3b).
+const REFRESH_RATE_LIMIT_MAX_FAILURES = 60;
+// A replay of a just-rotated token whose successor is live is two tabs racing, not theft:
+// inside this window it is refused without retiring the family (W2.3b).
+const REFRESH_ROTATION_GRACE_SECONDS = 30;
 // Access-token lifetime depends on the client (W2.3a). A sign-in that opts in with
 // `X-Notarium-Session: refresh` (or body `session: 'refresh'`) gets a 15-minute JWT plus a
 // rotating refresh token (7 days, stored hashed in `refresh_tokens`) that mints the next one
@@ -195,31 +201,54 @@ async function hashRefreshToken(token: string): Promise<string> {
   return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-// Rate limiting
-async function checkRateLimit(ip: string, endpoint: string, env: Env): Promise<boolean> {
-  const key = `ratelimit:${endpoint}:${ip}`;
-  const now = Math.floor(Date.now() / 1000);
+// Rate limiting: one KV list of attempt timestamps per endpoint bucket and client IP,
+// trimmed to the sliding 15-minute window on every read.
+const rateLimitKey = (endpoint: string, ip: string) => `ratelimit:${endpoint}:${ip}`;
+
+async function recentAttempts(key: string, env: Env, now: number): Promise<number[]> {
+  const attemptsData = await env.RATE_LIMIT.get(key);
+  const attempts: number[] = attemptsData ? JSON.parse(attemptsData) : [];
   const windowStart = now - RATE_LIMIT_WINDOW;
+  return attempts.filter((timestamp) => timestamp > windowStart);
+}
 
+// Count this attempt and allow it unless the bucket already holds `maxAttempts` in the window.
+async function checkRateLimit(ip: string, endpoint: string, env: Env, maxAttempts: number = RATE_LIMIT_MAX_ATTEMPTS): Promise<boolean> {
+  const key = rateLimitKey(endpoint, ip);
+  const now = Math.floor(Date.now() / 1000);
   try {
-    // Get attempts from KV
-    const attemptsData = await env.RATE_LIMIT.get(key);
-    const attempts: number[] = attemptsData ? JSON.parse(attemptsData) : [];
-
-    // Filter attempts within the window
-    const recentAttempts = attempts.filter(timestamp => timestamp > windowStart);
-
-    if (recentAttempts.length >= RATE_LIMIT_MAX_ATTEMPTS) {
+    const attempts = await recentAttempts(key, env, now);
+    if (attempts.length >= maxAttempts) {
       return false; // Rate limit exceeded
     }
-
-    // Add current attempt
-    recentAttempts.push(now);
-    await env.RATE_LIMIT.put(key, JSON.stringify(recentAttempts), { expirationTtl: RATE_LIMIT_WINDOW });
+    await env.RATE_LIMIT.put(key, JSON.stringify([...attempts, now]), { expirationTtl: RATE_LIMIT_WINDOW });
     return true; // Allow request
   } catch (error) {
     console.error('[RATE_LIMIT] Error:', error);
     return true; // Allow request if rate limiting fails
+  }
+}
+
+// Read-only half of checkRateLimit: is the bucket already full? Pair with recordFailedAttempt
+// for endpoints where only failures should spend the budget.
+async function rateLimitReached(ip: string, endpoint: string, env: Env, maxAttempts: number): Promise<boolean> {
+  try {
+    const attempts = await recentAttempts(rateLimitKey(endpoint, ip), env, Math.floor(Date.now() / 1000));
+    return attempts.length >= maxAttempts;
+  } catch (error) {
+    console.error('[RATE_LIMIT] Error:', error);
+    return false; // Allow request if rate limiting fails
+  }
+}
+
+async function recordFailedAttempt(ip: string, endpoint: string, env: Env): Promise<void> {
+  const key = rateLimitKey(endpoint, ip);
+  const now = Math.floor(Date.now() / 1000);
+  try {
+    const attempts = await recentAttempts(key, env, now);
+    await env.RATE_LIMIT.put(key, JSON.stringify([...attempts, now]), { expirationTtl: RATE_LIMIT_WINDOW });
+  } catch (error) {
+    console.error('[RATE_LIMIT] Error:', error);
   }
 }
 
@@ -3329,6 +3358,19 @@ interface RefreshTokenRow {
   revoked_at: string | null;
 }
 
+// Computed in SQL (`revoked_at` is written with datetime('now'), so compare it there too).
+interface PresentedRefreshTokenRow extends RefreshTokenRow {
+  recently_revoked: number;
+}
+
+// A row of the family that can still rotate right now.
+async function liveSuccessorExists(family: string, env: Env): Promise<boolean> {
+  const row = await env.DB.prepare('SELECT id FROM refresh_tokens WHERE family = ? AND revoked_at IS NULL AND expires_at > ? LIMIT 1')
+    .bind(family, new Date().toISOString())
+    .first<{ id: number }>();
+  return row !== null;
+}
+
 // One login = one family. Rotation inserts the successor into the same family so a
 // replayed (already rotated) token can retire every descendant at once.
 async function issueRefreshToken(userId: number, env: Env, family: string = crypto.randomUUID()): Promise<string> {
@@ -3361,28 +3403,42 @@ async function revokeRefreshFamily(family: string | null, rowId: number, env: En
 const refreshSchema = z.object({ refreshToken: z.string().min(1).max(512) });
 
 // POST /api/auth/refresh {refreshToken} → {token, refreshToken}. Every failure is 401 with
-// the same message so nothing about the token's state leaks; a replayed token is treated
-// as theft and kills its whole family (reuse detection).
+// the same message so nothing about the token's state leaks. A replayed token is treated as
+// theft and kills its whole family (reuse detection) — unless it was rotated within the last
+// REFRESH_ROTATION_GRACE_SECONDS and its successor is live, which is two clients racing.
+// Only failures spend the per-IP budget (REFRESH_RATE_LIMIT_MAX_FAILURES per window).
 async function refreshEndpoint(request: Request, env: Env) {
   const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
-  if (!(await checkRateLimit(ip, 'refresh', env))) {
+  if (await rateLimitReached(ip, 'refresh', env, REFRESH_RATE_LIMIT_MAX_FAILURES)) {
     return jsonResponse({ error: 'Too many refresh attempts. Please try again in 15 minutes.' }, 429, env);
   }
+  const failed = async (response: Response) => {
+    await recordFailedAttempt(ip, 'refresh', env);
+    return response;
+  };
 
   const body = await request.json().catch(() => null);
   const validation = refreshSchema.safeParse(body);
   if (!validation.success) {
-    return jsonResponse({ error: 'Invalid input', details: validation.error.errors }, 400, env);
+    return failed(jsonResponse({ error: 'Invalid input', details: validation.error.errors }, 400, env));
   }
 
-  const denied = () => jsonResponse({ error: 'Invalid or expired refresh token' }, 401, env);
-  const row = await env.DB.prepare('SELECT id, user_id, family, expires_at, revoked_at FROM refresh_tokens WHERE token = ?')
-    .bind(await hashRefreshToken(validation.data.refreshToken))
-    .first<RefreshTokenRow>();
+  const denied = () => failed(jsonResponse({ error: 'Invalid or expired refresh token' }, 401, env));
+  const row = await env.DB.prepare(`
+    SELECT id, user_id, family, expires_at, revoked_at,
+      (revoked_at IS NOT NULL AND revoked_at >= datetime('now', ?)) AS recently_revoked
+    FROM refresh_tokens WHERE token = ?
+  `)
+    .bind(`-${REFRESH_ROTATION_GRACE_SECONDS} seconds`, await hashRefreshToken(validation.data.refreshToken))
+    .first<PresentedRefreshTokenRow>();
   if (!row) {
     return denied();
   }
   if (row.revoked_at) {
+    if (row.recently_revoked === 1 && row.family && (await liveSuccessorExists(row.family, env))) {
+      console.info('[REFRESH] Replay of a just-rotated refresh token for user:', row.user_id, '(concurrent rotation, family kept)');
+      return denied();
+    }
     console.warn('[REFRESH] Reuse of a retired refresh token for user:', row.user_id);
     await revokeRefreshFamily(row.family, row.id, env);
     return denied();
@@ -3398,13 +3454,13 @@ async function refreshEndpoint(request: Request, env: Env) {
     return denied();
   }
 
-  // Retire this row atomically; if a concurrent request already did, this is a replay.
+  // Retire this row atomically. Losing this update means another request rotated the same
+  // token a moment ago (it was live when we read it): a race, so the winner's family stays.
   const retired = await env.DB.prepare("UPDATE refresh_tokens SET revoked_at = datetime('now') WHERE id = ? AND revoked_at IS NULL")
     .bind(row.id)
     .run();
   if ((retired.meta?.changes ?? 0) !== 1) {
-    console.warn('[REFRESH] Concurrent reuse of a refresh token for user:', row.user_id);
-    await revokeRefreshFamily(row.family, row.id, env);
+    console.info('[REFRESH] Lost a concurrent rotation of a refresh token for user:', row.user_id, '(family kept)');
     return denied();
   }
 
@@ -3416,19 +3472,31 @@ async function refreshEndpoint(request: Request, env: Env) {
   return jsonResponse({ token, refreshToken }, 200, env);
 }
 
-const logoutSchema = z.object({ refreshToken: z.string().min(1).max(512).optional() }).partial();
+const logoutSchema = z.object({ refreshToken: z.string().min(1).max(512).optional() });
 
 // POST /api/auth/logout (bearer) {refreshToken?} → {success}. Revokes the presented token's
 // family when it belongs to the caller, or every refresh token of the caller when the body
-// names none. The access JWT stays valid until it expires (15 minutes, stateless).
+// is empty or `{}`. A body that is present but malformed is 400 — it must never fall through
+// to "revoke everything" (W2.3b). The access JWT stays valid until it expires (stateless).
 async function logoutEndpoint(request: Request, env: Env) {
   const caller = await resolveBearerUser(request, env);
   if (!caller) {
     return jsonResponse({ error: 'Unauthorized - Invalid or missing token' }, 401, env);
   }
-  const body = await request.json().catch(() => null);
-  const validation = logoutSchema.safeParse(body ?? {});
-  const presented = validation.success ? validation.data.refreshToken : undefined;
+  const raw = await request.text().catch(() => '');
+  let body: unknown = {};
+  if (raw.trim().length > 0) {
+    try {
+      body = JSON.parse(raw);
+    } catch {
+      return jsonResponse({ error: 'Invalid input', details: 'Body is not JSON' }, 400, env);
+    }
+  }
+  const validation = logoutSchema.safeParse(body);
+  if (!validation.success) {
+    return jsonResponse({ error: 'Invalid input', details: validation.error.errors }, 400, env);
+  }
+  const presented = validation.data.refreshToken;
 
   if (presented) {
     const row = await env.DB.prepare('SELECT id, user_id, family, expires_at, revoked_at FROM refresh_tokens WHERE token = ? AND user_id = ?')

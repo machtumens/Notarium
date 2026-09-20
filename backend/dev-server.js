@@ -73,21 +73,32 @@ function issueSession(user, req) {
   return { token: issueToken(user), refreshToken: issueRefreshToken(user) };
 }
 
+function retireRefreshRow(row) {
+  row.revoked = true;
+  row.revokedAt = Date.now();
+}
+
 function revokeRefreshFamily(family) {
   for (const row of mockRefreshTokens.values()) {
-    if (row.family === family) row.revoked = true;
+    if (row.family === family && !row.revoked) retireRefreshRow(row);
   }
 }
 
-// Same per-IP bucket as the Worker's /api/auth/refresh: 5 attempts per 15 minutes → 429
-const REFRESH_RATE_LIMIT = { windowMs: 15 * 60 * 1000, max: 5 };
-const refreshAttempts = new Map(); // ip -> [epoch ms]
-function refreshAllowed(ip) {
+// Same per-IP bucket as the Worker's /api/auth/refresh (W2.3b): 60 FAILED attempts per 15 minutes → 429;
+// a successful rotation never spends it.
+const REFRESH_RATE_LIMIT = { windowMs: 15 * 60 * 1000, maxFailures: 60 };
+// A replay inside this window while the successor is live is two tabs racing, not theft (Worker parity)
+const REFRESH_ROTATION_GRACE_MS = 30 * 1000;
+const refreshFailures = new Map(); // ip -> [epoch ms]
+function recentRefreshFailures(ip) {
   const now = Date.now();
-  const recent = (refreshAttempts.get(ip) || []).filter((t) => t > now - REFRESH_RATE_LIMIT.windowMs);
-  if (recent.length >= REFRESH_RATE_LIMIT.max) return false;
-  refreshAttempts.set(ip, [...recent, now]);
-  return true;
+  return (refreshFailures.get(ip) || []).filter((t) => t > now - REFRESH_RATE_LIMIT.windowMs);
+}
+function refreshBudgetLeft(ip) {
+  return recentRefreshFailures(ip).length < REFRESH_RATE_LIMIT.maxFailures;
+}
+function recordRefreshFailure(ip) {
+  refreshFailures.set(ip, [...recentRefreshFailures(ip), Date.now()]);
 }
 
 // 401 unless the request carries a live token issued by this mock's signup/login
@@ -195,22 +206,26 @@ app.post('/api/auth/login', (req, res) => {
 
 // Rotate a refresh token → {token, refreshToken}; every failure is 401 with one message (Worker parity)
 app.post('/api/auth/refresh', (req, res) => {
-  if (!refreshAllowed(req.ip || 'unknown')) {
+  const ip = req.ip || 'unknown';
+  if (!refreshBudgetLeft(ip)) {
     return res.status(429).json({ error: 'Too many refresh attempts. Please try again in 15 minutes.' });
   }
+  const failed = (status, body) => { recordRefreshFailure(ip); return res.status(status).json(body); };
   const presented = req.body?.refreshToken;
   if (typeof presented !== 'string' || presented.length === 0 || presented.length > 512) {
-    return res.status(400).json({ error: 'Invalid input' });
+    return failed(400, { error: 'Invalid input' });
   }
-  const denied = () => res.status(401).json({ error: 'Invalid or expired refresh token' });
+  const denied = () => failed(401, { error: 'Invalid or expired refresh token' });
   const row = mockRefreshTokens.get(presented);
   if (!row) return denied();
   if (row.revoked) {
-    revokeRefreshFamily(row.family); // replay → the whole family is gone
+    const successorLive = [...mockRefreshTokens.values()].some((r) => r.family === row.family && !r.revoked && r.expiresAt > Date.now());
+    const justRotated = Date.now() - (row.revokedAt ?? 0) <= REFRESH_ROTATION_GRACE_MS;
+    if (!(justRotated && successorLive)) revokeRefreshFamily(row.family); // replay → the whole family is gone
     return denied();
   }
   if (row.expiresAt <= Date.now()) return denied();
-  row.revoked = true;
+  retireRefreshRow(row);
   res.json({ token: issueToken(row.user), refreshToken: issueRefreshToken(row.user, row.family) });
 });
 
@@ -219,12 +234,15 @@ app.post('/api/auth/logout', (req, res) => {
   const user = requireUser(req, res);
   if (!user) return;
   const presented = req.body?.refreshToken;
-  if (typeof presented === 'string' && presented.length > 0) {
+  if (presented !== undefined && (typeof presented !== 'string' || presented.length === 0 || presented.length > 512)) {
+    return res.status(400).json({ error: 'Invalid input' }); // a malformed body never means "revoke everything" (W2.3b)
+  }
+  if (presented !== undefined) {
     const row = mockRefreshTokens.get(presented);
     if (row && row.user.id === user.id) revokeRefreshFamily(row.family);
   } else {
     for (const row of mockRefreshTokens.values()) {
-      if (row.user.id === user.id) row.revoked = true;
+      if (row.user.id === user.id && !row.revoked) retireRefreshRow(row);
     }
   }
   res.json({ success: true });
