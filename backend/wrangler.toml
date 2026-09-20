@@ -7,6 +7,7 @@ compatibility_flags = ["nodejs_compat"]
 [vars]
 ENVIRONMENT = "production"
 FRONTEND_URL = "https://notarium-site.vercel.app"
+EXTRA_ALLOWED_ORIGINS = "https://notarium-app.pages.dev"
 # GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET are provided via `wrangler secret put`
 # (not declared here — declaring an empty var would clobber the secret on deploy).
 
@@ -43,7 +44,7 @@ id = "5d033dba4be2443e98c4782d44e0b777"
 preview_id = "ad6509290e94483f9467a11eb2fff1b8"
 
 [env.production]
-vars = { ENVIRONMENT = "production", FRONTEND_URL = "https://notarium-site.vercel.app" }
+vars = { ENVIRONMENT = "production", FRONTEND_URL = "https://notarium-site.vercel.app", EXTRA_ALLOWED_ORIGINS = "https://notarium-app.pages.dev" }
 
 [[env.production.d1_databases]]
 binding = "DB"
@@ -53,3 +54,18 @@ database_id = "17779d22-7479-479c-8de7-dfe102916ba3"
 [[env.production.kv_namespaces]]
 binding = "RATE_LIMIT"
 id = "5d033dba4be2443e98c4782d44e0b777"
+
+# Staging: own D1 + KV (created 20 Sep 2026), V2.0 staging Pages origin. Deploy: `wrangler deploy --env staging`.
+[env.staging]
+name = "notarium-backend-staging"
+vars = { ENVIRONMENT = "staging", FRONTEND_URL = "https://staging.notarium-app.pages.dev", EXTRA_ALLOWED_ORIGINS = "http://localhost:5173,http://localhost:5174" }
+[[env.staging.d1_databases]]
+binding = "DB"
+database_name = "notarium-db-staging"
+database_id = "abc21ee5-43c4-424a-bc81-7ca7b0efc557"
+[[env.staging.kv_namespaces]]
+binding = "RATE_LIMIT"
+id = "18e7c93c87384bfb84711d96a5762672"
+[[env.staging.durable_objects.bindings]]
+name = "RATE_LIMITER"
+class_name = "RateLimiter"
