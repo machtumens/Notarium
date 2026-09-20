@@ -530,6 +530,8 @@ export async function getMyNotes(request: Request, env: Env) {
       SELECT
         n.id,
         n.title,
+        n.description,
+        n.content,
         n.subject_id as subject,
         s.name as subject_name,
         n.extracted_text,
@@ -542,9 +544,11 @@ export async function getMyNotes(request: Request, env: Env) {
         n.status,
         n.scheduled_publish_at,
         n.subject_id,
-        n.visibility
+        n.visibility,
+        u.display_name as author_name
       FROM notes n
       LEFT JOIN subjects s ON n.subject_id = s.id
+      LEFT JOIN users u ON n.author_id = u.id
       WHERE n.author_id = ?
     `;
 
