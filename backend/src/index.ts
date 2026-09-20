@@ -1,5 +1,5 @@
 import type { Env } from './lib/env';
-import { getAllowedOrigin, jsonResponse } from './lib/response';
+import { CORS_ALLOWED_HEADERS, getAllowedOrigin, jsonResponse } from './lib/response';
 import {
   hashPassword,
   verifyPassword,
@@ -180,8 +180,7 @@ export default {
         headers: {
           'Access-Control-Allow-Origin': corsOrigin,
           'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS, PATCH',
-          'Access-Control-Allow-Headers':
-            'Content-Type, Authorization, X-Encrypted-Yw-ID, X-Is-Login',
+          'Access-Control-Allow-Headers': CORS_ALLOWED_HEADERS,
           'Access-Control-Allow-Credentials': 'true',
           'Access-Control-Max-Age': '86400',
         },

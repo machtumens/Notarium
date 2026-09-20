@@ -12,11 +12,16 @@ export function getAllowedOrigin(env: Env, requestOrigin?: string | null): strin
   return primary;
 }
 
+// Single source of truth for the preflight allow-list (also used by the OPTIONS
+// handler in index.ts). `X-Encrypted-Yw-ID` was dropped: no client sends it and
+// the worker no longer reads it as identity.
+export const CORS_ALLOWED_HEADERS = 'Content-Type, Authorization, X-Is-Login';
+
 export function getCorsHeaders(env: Env, requestOrigin?: string | null) {
   return {
     'Access-Control-Allow-Origin': getAllowedOrigin(env, requestOrigin),
     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Encrypted-Yw-ID, X-Is-Login',
+    'Access-Control-Allow-Headers': CORS_ALLOWED_HEADERS,
     'Access-Control-Allow-Credentials': 'true',
   };
 }
@@ -50,7 +55,7 @@ export function jsonResponse(
     Object.assign(headers, {
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Encrypted-Yw-ID, X-Is-Login',
+      'Access-Control-Allow-Headers': CORS_ALLOWED_HEADERS,
     });
   }
 

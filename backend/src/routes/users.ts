@@ -1,31 +1,32 @@
 import type { Env } from '../lib/env';
 import { jsonResponse } from '../lib/response';
-import { getOrCreateUser } from '../lib/auth';
+import { getOrCreateUser, getUserIdFromToken } from '../lib/auth';
 import { SQL_NOW_ISO } from '../lib/time';
 
+// Identity on these routes comes from the Bearer token only. They used to trust
+// a client-asserted `X-Encrypted-Yw-ID` header (no token check at all) and even
+// auto-created a user from it — a full authentication bypass. Rows are now
+// addressed by the token's user id; nothing is ever created here. Fields the
+// body omits keep their stored value (COALESCE) instead of being nulled.
+
 export async function updateUserInfo(request: Request, env: Env) {
-  const userId = request.headers.get('X-Encrypted-Yw-ID');
+  const userId = await getUserIdFromToken(request, env);
+  if (!userId) return jsonResponse({ error: 'Unauthorized' }, 401, env);
+
   const body = (await request.json()) as any;
 
-  const { results } = await env.DB.prepare('SELECT * FROM users WHERE encrypted_yw_id = ?')
-    .bind(userId)
-    .all();
+  await env.DB.prepare(
+    `UPDATE users
+        SET display_name = COALESCE(?, display_name),
+            photo_url = COALESCE(?, photo_url),
+            email = COALESCE(?, email),
+            updated_at = ${SQL_NOW_ISO}
+      WHERE id = ?`,
+  )
+    .bind(body.display_name ?? null, body.photo_url ?? null, body.email ?? null, userId)
+    .run();
 
-  if (results.length === 0) {
-    await env.DB.prepare(
-      'INSERT INTO users (encrypted_yw_id, display_name, photo_url, email, class) VALUES (?, ?, ?, ?, ?)',
-    )
-      .bind(userId, body.display_name, body.photo_url, body.email, '10.1')
-      .run();
-  } else {
-    await env.DB.prepare(
-      `UPDATE users SET display_name = ?, photo_url = ?, email = ?, updated_at = ${SQL_NOW_ISO} WHERE encrypted_yw_id = ?`,
-    )
-      .bind(body.display_name, body.photo_url, body.email, userId)
-      .run();
-  }
-
-  return jsonResponse({ success: true });
+  return jsonResponse({ success: true }, 200, env);
 }
 
 export async function getCurrentUser(request: Request, env: Env) {
@@ -34,14 +35,16 @@ export async function getCurrentUser(request: Request, env: Env) {
 }
 
 export async function updateUserClass(request: Request, env: Env) {
-  const userId = request.headers.get('X-Encrypted-Yw-ID');
+  const userId = await getUserIdFromToken(request, env);
+  if (!userId) return jsonResponse({ error: 'Unauthorized' }, 401, env);
+
   const body = (await request.json()) as any;
 
   await env.DB.prepare(
-    `UPDATE users SET class = ?, updated_at = ${SQL_NOW_ISO} WHERE encrypted_yw_id = ?`,
+    `UPDATE users SET class = COALESCE(?, class), updated_at = ${SQL_NOW_ISO} WHERE id = ?`,
   )
-    .bind(body.class, userId)
+    .bind(body.class ?? null, userId)
     .run();
 
-  return jsonResponse({ success: true });
+  return jsonResponse({ success: true }, 200, env);
 }
