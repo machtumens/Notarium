@@ -5,7 +5,7 @@
  */
 import { env } from 'cloudflare:test';
 import { SignJWT } from 'jose';
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { adminLogin as adminLoginWith, api, initTestDatabase, json, REFRESH_SESSION_HEADERS, signup as signupWith, uniqueEmail } from './setup';
 
 beforeAll(initTestDatabase);
@@ -15,7 +15,11 @@ const REFRESH_FAILURES_PER_WINDOW = 60;
 const BASE64URL = /^[A-Za-z0-9_-]{43}$/; // 32 random bytes, unpadded
 
 let ipCounter = 0;
-/** Fresh client IP per call: /api/auth/refresh shares login's 5-per-15-min bucket per IP. */
+/**
+ * Fresh client IP per call. /api/auth/refresh has its own bucket (`ratelimit:refresh:<ip>`, W2.3b):
+ * 60 FAILED attempts per 15 minutes per IP, a successful rotation spends nothing. Deliberate
+ * failures still take a fresh IP so no test eats into another's budget.
+ */
 function freshIp(): string {
   ipCounter += 1;
   return `192.168.${(ipCounter >> 8) & 255}.${ipCounter & 255}`;
@@ -508,11 +512,17 @@ describe('W2.1a — POST /api/auth/logout revokes', () => {
 // ---------------------------------------------------------------------------
 describe('W2.1a — refresh tokens never reach the logs', () => {
   const lines: string[] = [];
-  const spies = (['log', 'info', 'warn', 'error', 'debug'] as const).map((level) =>
-    vi.spyOn(console, level).mockImplementation((...args: unknown[]) => {
-      lines.push(args.map((a) => (typeof a === 'string' ? a : JSON.stringify(a))).join(' '));
-    }));
+  // Installed for this block only and restored afterwards, so the other blocks keep the real console
+  // (and vitest's failed-test output stays readable).
+  let spies: ReturnType<typeof vi.spyOn>[] = [];
+  beforeAll(() => {
+    spies = (['log', 'info', 'warn', 'error', 'debug'] as const).map((level) =>
+      vi.spyOn(console, level).mockImplementation((...args: unknown[]) => {
+        lines.push(args.map((a) => (typeof a === 'string' ? a : JSON.stringify(a))).join(' '));
+      }));
+  });
   afterEach(() => { lines.length = 0; });
+  afterAll(() => { spies.forEach((spy) => spy.mockRestore()); spies = []; });
 
   it('signup, login, refresh (ok, reused, unknown) and logout log neither a refresh token nor its hash', async () => {
     lines.length = 0;
