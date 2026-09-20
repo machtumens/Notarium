@@ -324,7 +324,8 @@ describe('W2.1a — POST /api/auth/refresh rotates', () => {
     expect((await refresh(user.refreshToken)).status).toBe(200);
   });
 
-  it('61st failed attempt from one IP inside the window → 429, even with a valid token (W2.3b)', async () => {
+  // Sequential D1/KV round-trips: 1.8–4 s on a GitHub runner (vitest default budget is 5 s).
+  it('61st failed attempt from one IP inside the window → 429, even with a valid token (W2.3b)', { timeout: 30_000 }, async () => {
     const user = await signup(uniqueEmail('limited'));
     const ip = freshIp();
     for (let attempt = 1; attempt <= REFRESH_FAILURES_PER_WINDOW; attempt += 1) {
@@ -338,7 +339,9 @@ describe('W2.1a — POST /api/auth/refresh rotates', () => {
     expect((await refresh(user.refreshToken)).status).toBe(200);
   });
 
-  it('100 successful rotations in a row from one IP never 429: a rotation does not spend the failure budget (W2.3b)', async () => {
+  // 100 sequential rotations: 1.2 s locally, 4.1 s on a GitHub runner in the last green run and a
+  // timeout in the next — the default 5 s budget is the wrong size for this loop, not the code.
+  it('100 successful rotations in a row from one IP never 429: a rotation does not spend the failure budget (W2.3b)', { timeout: 30_000 }, async () => {
     const user = await signup(uniqueEmail('rotator'));
     const ip = freshIp();
     let current = user.refreshToken;
