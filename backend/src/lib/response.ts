@@ -14,8 +14,10 @@ export function getAllowedOrigin(env: Env, requestOrigin?: string | null): strin
 
 // Single source of truth for the preflight allow-list (also used by the OPTIONS
 // handler in index.ts). `X-Encrypted-Yw-ID` was dropped: no client sends it and
-// the worker no longer reads it as identity.
-export const CORS_ALLOWED_HEADERS = 'Content-Type, Authorization, X-Is-Login';
+// the worker no longer reads it as identity. `X-Notarium-Session` is sent by the
+// V2.0 client on login/signup (short-session opt-in); the worker ignores it for
+// now, but a browser blocks the whole request at preflight if it is not listed.
+export const CORS_ALLOWED_HEADERS = 'Content-Type, Authorization, X-Is-Login, X-Notarium-Session';
 
 export function getCorsHeaders(env: Env, requestOrigin?: string | null) {
   return {

@@ -112,6 +112,7 @@ import {
 } from './routes/tutors';
 import {
   healthCheck,
+  readyCheck,
   getOpsMetrics,
   getOpsTimeseries,
   getFlags,
@@ -204,6 +205,7 @@ export default {
       if (maintenanceOn) {
         const allowlisted =
           path === '/api/health' ||
+          path === '/api/ready' ||
           path === '/api/auth/admin-login' ||
           path === '/api/auth/login' ||
           path === '/api/auth/me' ||
@@ -1221,6 +1223,9 @@ Tags:`,
       // ---- Ops / technical dashboard (Phase 3) ----
       if (path === '/api/health' && request.method === 'GET') {
         return await healthCheck(request, env);
+      }
+      if (path === '/api/ready' && request.method === 'GET') {
+        return await readyCheck(request, env);
       }
       if (path === '/api/ops/metrics' && request.method === 'GET') {
         return await getOpsMetrics(request, env);

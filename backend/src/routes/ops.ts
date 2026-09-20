@@ -89,6 +89,40 @@ export async function healthCheck(request: Request, env: Env): Promise<Response>
 }
 
 // ---------------------------------------------------------------------------
+// 1b. Readiness — dependency probe for deploy checks and monitors
+// ---------------------------------------------------------------------------
+
+/**
+ * GET /api/ready — 200 {ok:true, checks} when every dependency answers,
+ * otherwise 503 {ok:false, checks} naming the one that did not. D1 and KV are
+ * probed; the RateLimiter DO is not (it has a KV fallback and no side-effect-
+ * free ping — every DO call consumes a rate-limit slot). Never cached.
+ */
+export async function readyCheck(request: Request, env: Env): Promise<Response> {
+  const checks = { db: false, kv: false };
+  try {
+    await env.DB.prepare('SELECT 1 AS v').first();
+    checks.db = true;
+  } catch {
+    checks.db = false;
+  }
+  try {
+    await env.RATE_LIMIT.get('__ready');
+    checks.kv = true;
+  } catch {
+    checks.kv = false;
+  }
+  const ok = checks.db && checks.kv;
+  return jsonResponse(
+    { ok, checks },
+    ok ? 200 : 503,
+    env,
+    request.headers.get('Origin'),
+    'no-store',
+  );
+}
+
+// ---------------------------------------------------------------------------
 // 2. Tier-A aggregate metrics
 // ---------------------------------------------------------------------------
 export async function getOpsMetrics(request: Request, env: Env): Promise<Response> {
