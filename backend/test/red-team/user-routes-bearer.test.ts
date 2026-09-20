@@ -17,8 +17,15 @@ const ROUTES = [
     method: 'POST',
     body: { display_name: 'Renamed By Attacker' },
     column: 'display_name',
+    expected: 'Renamed By Attacker',
   },
-  { path: '/api/user/class', method: 'PUT', body: { class: '12.9' }, column: 'class' },
+  {
+    path: '/api/user/class',
+    method: 'PUT',
+    body: { class: '12.9' },
+    column: 'class',
+    expected: '12.9',
+  },
 ] as const;
 
 async function column(userId: number, col: string): Promise<unknown> {
@@ -72,7 +79,7 @@ for (const r of ROUTES) {
         headers: { 'X-Encrypted-Yw-ID': `yw_${victim.email}` },
       });
       expect(res.status).toBe(401);
-      expect(await column(victim.id, r.column)).not.toBe(r.body[r.column]);
+      expect(await column(victim.id, r.column)).not.toBe(r.expected);
     });
 
     it('a valid bearer token updates the caller’s own row', async () => {
@@ -81,7 +88,7 @@ for (const r of ROUTES) {
 
       expect(res.status).toBe(200);
       expect(((await res.json()) as any).success).toBe(true);
-      expect(await column(me.id, r.column)).toBe(r.body[r.column]);
+      expect(await column(me.id, r.column)).toBe(r.expected);
     });
 
     it('user A cannot change user B by naming B in the header', async () => {
@@ -98,7 +105,7 @@ for (const r of ROUTES) {
 
       expect(res.status).toBe(200);
       expect(await column(b.id, r.column)).toBe(bBefore); // B untouched
-      expect(await column(a.id, r.column)).toBe(r.body[r.column]); // A changed A
+      expect(await column(a.id, r.column)).toBe(r.expected); // A changed A
     });
   });
 }
