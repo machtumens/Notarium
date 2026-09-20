@@ -425,6 +425,46 @@ describe('W2.3b — POST /api/auth/logout validates its body', () => {
 });
 
 // ---------------------------------------------------------------------------
+describe('W2.3c — expired refresh rows are swept at sign-in', () => {
+  const hashesFor = async (userId: number) =>
+    (await env.DB.prepare('SELECT token FROM refresh_tokens WHERE user_id = ? ORDER BY id').bind(userId).all<{ token: string }>()).results.map((r) => r.token);
+  const expire = (hash: string) =>
+    env.DB.prepare('UPDATE refresh_tokens SET expires_at = ? WHERE token = ?').bind(new Date(Date.now() - 60_000).toISOString(), hash).run();
+
+  it("an expired row of the user is deleted on the next login; live rows (the user's other family, other users) stay", async () => {
+    const user = await signup(uniqueEmail('sweep'));
+    const other = await signup(uniqueEmail('sweep-other'));
+    const phone = await json(await login(user.user.email));
+    const [laptopHash, phoneHash, otherHash] = await Promise.all([sha256Hex(user.refreshToken), sha256Hex(phone.refreshToken), sha256Hex(other.refreshToken)]);
+    await expire(laptopHash);
+    expect(await hashesFor(user.user.id)).toEqual([laptopHash, phoneHash]);
+
+    const desk = await json(await login(user.user.email));
+    const afterLogin = await hashesFor(user.user.id);
+    expect(afterLogin).not.toContain(laptopHash);
+    expect(afterLogin).toEqual([phoneHash, await sha256Hex(desk.refreshToken)]);
+    expect(await hashesFor(other.user.id)).toEqual([otherHash]);
+    // the expired token was never going to rotate anyway; the live ones still do
+    expect((await refresh(user.refreshToken)).status).toBe(401);
+    expect((await refresh(phone.refreshToken)).status).toBe(200);
+  });
+
+  it('a legacy sign-in (no refresh token issued) sweeps too', async () => {
+    const user = await signup(uniqueEmail('sweep-legacy'));
+    await expire(await sha256Hex(user.refreshToken));
+    const legacy = await json(await login(user.user.email, {}));
+    expect(legacy).not.toHaveProperty('refreshToken');
+    expect(await hashesFor(user.user.id)).toEqual([]);
+  });
+
+  it('rows that expire in the future are untouched even when the sweep runs many times', async () => {
+    const user = await signup(uniqueEmail('sweep-keep'));
+    for (let i = 0; i < 3; i += 1) await login(user.user.email);
+    expect(await hashesFor(user.user.id)).toHaveLength(4);
+  });
+});
+
+// ---------------------------------------------------------------------------
 describe('W2.1a — POST /api/auth/logout revokes', () => {
   it('no bearer → 401; nothing is revoked', async () => {
     const user = await signup(uniqueEmail('anon'));

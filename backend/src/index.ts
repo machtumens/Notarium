@@ -709,16 +709,15 @@ async function initializeDatabase(env: Env) {
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
       )
     `).run();
-    // A database that already ran 0008 has the table without the two W2.1 columns
-    try {
-      await env.DB.prepare(`ALTER TABLE refresh_tokens ADD COLUMN family TEXT`).run();
-    } catch (e) {
-      // Column already exists
-    }
-    try {
-      await env.DB.prepare(`ALTER TABLE refresh_tokens ADD COLUMN revoked_at DATETIME`).run();
-    } catch (e) {
-      // Column already exists
+    // A database that already ran 0008 has the table without the two W2.1 columns. Only
+    // "duplicate column name" is expected here; anything else is a real failure and surfaces
+    // (the outer catch logs it) instead of leaving the table silently half-migrated (W2.3c).
+    for (const column of ['family TEXT', 'revoked_at DATETIME']) {
+      try {
+        await env.DB.prepare(`ALTER TABLE refresh_tokens ADD COLUMN ${column}`).run();
+      } catch (e) {
+        if (!/duplicate column name/i.test(e instanceof Error ? e.message : String(e))) throw e;
+      }
     }
     await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_refresh_tokens_user_id ON refresh_tokens(user_id)`).run();
     await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_refresh_tokens_token ON refresh_tokens(token)`).run();
@@ -3382,9 +3381,24 @@ async function issueRefreshToken(userId: number, env: Env, family: string = cryp
   return token;
 }
 
+// Sign-in is the moment to drop the user's refresh rows that can never rotate again (W2.3c).
+// `expires_at` is written by issueRefreshToken as an ISO 'T' timestamp, so it is compared in
+// that format. Best-effort: a failed sweep is logged and never blocks the sign-in.
+async function sweepExpiredRefreshTokens(userId: number, env: Env): Promise<void> {
+  try {
+    await env.DB.prepare('DELETE FROM refresh_tokens WHERE user_id = ? AND expires_at < ?')
+      .bind(userId, new Date().toISOString())
+      .run();
+  } catch (error) {
+    console.error('[AUTH] Expired refresh-token sweep failed for user:', userId, error instanceof Error ? error.message : String(error));
+  }
+}
+
 // What a sign-in hands out. 'refresh' (the client opted in): a 15-minute access JWT plus a
 // fresh refresh family. 'legacy': the 24-hour JWT alone — no refresh row, no refreshToken.
+// Either way the user's expired refresh rows are swept first.
 async function issueSession(user: { id: number; email: string; role: string }, env: Env, mode: SessionMode): Promise<{ token: string; refreshToken?: string }> {
+  await sweepExpiredRefreshTokens(user.id, env);
   if (mode === 'legacy') {
     return { token: await createToken(user, env, legacyAccessTtl(env)) };
   }
