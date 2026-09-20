@@ -19,6 +19,7 @@ interface Env {
   EXTRA_ORIGINS?: string; // optional comma-separated extra CORS origins
   ENVIRONMENT?: string;
   ACCESS_TTL_LEGACY?: string; // optional override of the 24h JWT for clients that do not opt in to refresh sessions (jose duration, e.g. '12h')
+  GIT_SHA?: string; // commit the bundle was built from; deploy.yml passes `--var GIT_SHA:$GITHUB_SHA` (absent under `wrangler dev`)
 }
 
 interface User {
@@ -427,6 +428,55 @@ function profileUpdateFields(fields: z.infer<typeof profileUpdateSchema>): { upd
     values.push(fields.description || null);
   }
   return { updates, values };
+}
+
+// ===== OPS ENDPOINTS (W4.2) =====
+// Never cached: a probe must see the current state, not a CDN or browser copy.
+const NO_STORE_HEADERS = { 'Cache-Control': 'no-store' };
+
+function opsResponse(data: unknown, status: number): Response {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { 'Content-Type': 'application/json', ...SECURITY_HEADERS, ...NO_STORE_HEADERS },
+  });
+}
+
+// GET /api/health — liveness. Touches nothing but the bundle's own vars, so it answers even when
+// D1 or KV are down; `version` is the deployed commit (deploy.yml `--var GIT_SHA:`), `env` the
+// wrangler environment name (`ENVIRONMENT` var).
+function healthEndpoint(env: Env): Response {
+  return opsResponse({ ok: true, version: env.GIT_SHA || 'unknown', env: env.ENVIRONMENT || 'unknown' }, 200);
+}
+
+// GET /api/ready — readiness. One round-trip per binding a real request needs: D1 `SELECT 1`
+// and a KV read of a key that need not exist (a miss is a healthy answer; only a thrown error is
+// a failed check). 503 with the per-binding verdicts when any check fails, so a deploy smoke or
+// an uptime monitor sees which dependency is broken; the error text itself only goes to the log.
+async function readyEndpoint(env: Env): Promise<Response> {
+  const checks: Record<string, 'ok' | 'fail'> = { d1: 'fail', kv: 'fail' };
+  const failures: Record<string, string> = {};
+
+  try {
+    if (!env.DB) throw new Error('DB binding missing');
+    const row = await env.DB.prepare('SELECT 1 AS ok').first<{ ok: number }>();
+    if (row?.ok !== 1) throw new Error('SELECT 1 did not return 1');
+    checks.d1 = 'ok';
+  } catch (error) {
+    failures.d1 = error instanceof Error ? error.message : String(error);
+  }
+
+  try {
+    if (!env.RATE_LIMIT) throw new Error('RATE_LIMIT binding missing');
+    await env.RATE_LIMIT.get('ready-probe');
+    checks.kv = 'ok';
+  } catch (error) {
+    failures.kv = error instanceof Error ? error.message : String(error);
+  }
+
+  const ok = Object.values(checks).every((state) => state === 'ok');
+  // The reasons stay in the Worker log; the body names the failing binding, not the error text.
+  if (!ok) console.error('[READY] failing checks:', JSON.stringify(failures));
+  return opsResponse({ ok, checks }, ok ? 200 : 503);
 }
 
 // Seed the data the Worker assumes is always there. The schema itself lives in migrations/
@@ -3270,6 +3320,11 @@ const handler = {
     const url = new URL(request.url);
     const path = url.pathname;
 
+    // Liveness: answers before the database is touched at all (no init, no D1, no KV).
+    if (path === '/api/health' && request.method === 'GET') {
+      return healthEndpoint(env);
+    }
+
     // Seed the default subjects on the first request that reaches the database (the schema
     // itself comes from migrations/). A false return means the schema is not there yet; the
     // next request tries again.
@@ -3302,6 +3357,11 @@ const handler = {
     // Test endpoint to verify worker is responding
     if (path === '/test') {
       return jsonResponse({ message: 'Worker is running', timestamp: new Date().toISOString() });
+    }
+
+    // Readiness: the bindings a request actually needs (D1, KV) answer.
+    if (path === '/api/ready' && request.method === 'GET') {
+      return await readyEndpoint(env);
     }
 
     try {
