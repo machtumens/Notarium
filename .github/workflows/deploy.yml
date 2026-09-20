@@ -1,46 +1,129 @@
-name: Deploy Notarium
+# Notarium Worker deploys (W4.3).
+#   push to master        → job `staging`: tests → D1 migrations on notarium-db-staging → deploy
+#                           notarium-backend-staging → write smoke (throwaway account) on the staging URL
+#   workflow_dispatch     → job `production`: same gates, then migrations on notarium-db and a deploy of
+#                           the LIVE worker notarium-backend (--env production, name pinned in
+#                           wrangler.toml), read-only smoke. Runs only from master and only after the
+#                           `production` GitHub environment's required reviewer approves the run.
+# Secrets (names only, see backend/SECRETS.md): CLOUDFLARE_API_TOKEN (owner creates it — Workers
+# Scripts:Edit, D1:Edit, Workers KV:Edit, Pages:Edit, Account Settings:Read), CLOUDFLARE_ACCOUNT_ID.
+# Without the token both jobs fail at the migrations step, before anything is deployed.
+# The Vercel step is gone: the legacy site deploys by hand (RELEASE/RUNBOOK.md in the V2.0 repo).
+# READ RELEASE/C2-deployed-bundle_19-09-26.md BEFORE THE FIRST PRODUCTION RUN: the live worker runs the
+# `origin/main` lineage, not master — a production deploy replaces it.
+name: deploy
 
 on:
   push:
-    branches: [ master ]
+    branches: [master]
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "deploy production" to deploy the live worker from master'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+# One deploy at a time per target; never cancel a deploy that is already running.
+concurrency:
+  group: deploy-${{ github.event_name == 'push' && 'staging' || 'production' }}
+  cancel-in-progress: false
+
+env:
+  WRANGLER_SEND_METRICS: "false"
 
 jobs:
-  deploy:
-    # Disabled: re-enabled in Wave 4 after staging exists and secrets are set. Every run
-    # since January failed at the missing VERCEL_TOKEN, so a push must not trigger this.
-    if: false
+  # Until the owner adds CLOUDFLARE_API_TOKEN the staging job is skipped with a warning instead of
+  # failing every push (the pre-Wave-4 pipeline was red on 15/15 runs for a missing secret).
+  preflight:
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      deployments: write
+    outputs:
+      cloudflare: ${{ steps.check.outputs.cloudflare }}
+    steps:
+      - id: check
+        env:
+          TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -n "$TOKEN" ] && [ -n "$ACCOUNT" ]; then
+            echo "cloudflare=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "cloudflare=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID not set — staging deploy skipped (backend/SECRETS.md)"
+          fi
 
+  staging:
+    needs: preflight
+    if: github.event_name == 'push' && needs.preflight.outputs.cloudflare == 'true'
+    runs-on: ubuntu-latest
+    environment:
+      name: staging
+      url: https://notarium-backend-staging.notarium-backend.workers.dev
+    defaults:
+      run:
+        working-directory: backend
     steps:
       - uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'npm'
-
-      - name: Install
-        run: npm ci
-
-      - name: Deploy Frontend
-        uses: amondnet/vercel-action@v25
-        with:
-          vercel-token: ${{ secrets.VERCEL_TOKEN }}
-          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
-          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
-          production: true
-
-      # The source-zip-to-R2 backup step that used to follow `wrangler deploy` is gone:
-      # R2 is not enabled on the account (owner decision H4).
-      - name: Deploy Backend
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+      - name: Typecheck
+        run: npx tsc --noEmit && npx tsc --noEmit -p test/tsconfig.json
+      - name: Contract tests (vitest, workerd pool)
+        run: npm test
+      - name: Apply D1 migrations (notarium-db-staging)
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: |
-          cd backend
-          npm install
-          npx wrangler deploy
+        run: npx wrangler d1 migrations apply notarium-db-staging --env staging --remote
+      - name: Deploy notarium-backend-staging
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx wrangler deploy --env staging --var GIT_SHA:${{ github.sha }}
+      - name: Smoke (health, ready, signup → login → refresh → note → logout)
+        run: bash scripts/smoke.sh https://notarium-backend-staging.notarium-backend.workers.dev --write
+
+  production:
+    # Manual only, from master only, and the `production` environment holds the run until its
+    # required reviewer approves it (environment protection rule, see RELEASE/RUNBOOK.md).
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/master' && inputs.confirm == 'deploy production'
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://notarium-backend.notarium-backend.workers.dev
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+      - name: Typecheck
+        run: npx tsc --noEmit && npx tsc --noEmit -p test/tsconfig.json
+      - name: Contract tests (vitest, workerd pool)
+        run: npm test
+      - name: Bundle check (dry run, production bindings)
+        run: npx wrangler deploy --dry-run --env production --outdir /tmp/wr-dry
+      - name: Apply D1 migrations (notarium-db — the live database)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx wrangler d1 migrations apply notarium-db --env production --remote
+      - name: Deploy notarium-backend (live)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx wrangler deploy --env production --var GIT_SHA:${{ github.sha }}
+      - name: Smoke (read-only — no accounts are created on production)
+        run: bash scripts/smoke.sh https://notarium-backend.notarium-backend.workers.dev

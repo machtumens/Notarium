@@ -2,7 +2,7 @@
 # to an echo or carries on after an error. backend: Worker types, workerd contract tests, wrangler
 # dry-run bundle.
 # frontend (legacy Vercel site): install, production build, audit of shipped dependencies.
-# secrets: scan for key-shaped strings. No deploy job — deploy.yml is disabled until Wave 4.
+# secrets: scan for key-shaped strings. Deploys live in deploy.yml (staging on push, production manual).
 name: ci
 
 on:
@@ -44,10 +44,14 @@ jobs:
         # @cloudflare/vitest-pool-workers pulls the Linux workerd binary in through npm; no extra
         # setup or --pool flags are needed on ubuntu-latest.
         run: npm test
-      - name: Bundle check (wrangler deploy --dry-run)
+      - name: Bundle check (wrangler deploy --dry-run, staging + production bindings)
         # --dry-run only bundles and prints bindings; it never contacts Cloudflare and exits 0
         # with no CLOUDFLARE_API_TOKEN and no wrangler login. Nothing is deployed from here.
-        run: npx wrangler deploy --dry-run --outdir /tmp/wr-dry
+        run: |
+          npx wrangler deploy --dry-run --env staging --outdir /tmp/wr-dry-staging
+          npx wrangler deploy --dry-run --env production --outdir /tmp/wr-dry-production
+      - name: Smoke script parses
+        run: bash -n scripts/smoke.sh
 
   frontend:
     runs-on: ubuntu-latest
