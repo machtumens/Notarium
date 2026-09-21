@@ -1,15 +1,26 @@
 name: Deploy Notarium
 
+# Manual only. Production deploys happen from the owner's machine
+# (`npx wrangler deploy` in backend/, `npx vercel --prod` at the root —
+# see STATE.md). This job is for a deliberate, reviewer-approved dispatch:
+# the `production` environment carries the required-reviewer gate, and each
+# deploy step is skipped with a warning (not a red run) when its token is
+# not configured there. The old "zip the source and put it in R2" step is
+# gone — R2 is not enabled, and it failed every run.
 on:
-  push:
-    branches: [ main ]
+  workflow_dispatch:
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    environment: production
     permissions:
       contents: read
       deployments: write
+    env:
+      # `secrets` cannot be read inside `if:`; mirror presence into env once.
+      HAS_VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN != '' }}
+      HAS_CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN != '' }}
 
     steps:
       - uses: actions/checkout@v4
@@ -24,6 +35,7 @@ jobs:
         run: npm ci
 
       - name: Deploy Frontend
+        if: env.HAS_VERCEL_TOKEN == 'true'
         uses: amondnet/vercel-action@v25
         with:
           vercel-token: ${{ secrets.VERCEL_TOKEN }}
@@ -31,7 +43,12 @@ jobs:
           vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
           production: true
 
-      - name: Deploy Backend + R2
+      - name: Skip Frontend (no VERCEL_TOKEN)
+        if: env.HAS_VERCEL_TOKEN != 'true'
+        run: echo "::warning::VERCEL_TOKEN is not set in the production environment; frontend deploy skipped. Deploy from the owner's machine (STATE.md)."
+
+      - name: Deploy Backend
+        if: env.HAS_CLOUDFLARE_API_TOKEN == 'true'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -39,5 +56,7 @@ jobs:
           cd backend
           npm install
           npx wrangler deploy
-          zip -r ../source_code.zip . -x "*.git*" "*node_modules*"
-          npx wrangler r2 put notarium-backups/source_code_latest.zip --file=../source_code.zip
+
+      - name: Skip Backend (no CLOUDFLARE_API_TOKEN)
+        if: env.HAS_CLOUDFLARE_API_TOKEN != 'true'
+        run: echo "::warning::CLOUDFLARE_API_TOKEN is not set in the production environment; backend deploy skipped. Deploy from the owner's machine (STATE.md)."
