@@ -364,3 +364,42 @@ If you encounter issues:
 **Generated:** November 17, 2025
 **Version:** 1.0
 **Security Implementation Status:** Complete (Deployment Required)
+
+---
+
+## History scan 21 Sep 2026
+
+Secret-shaped strings in the git history of `main` (49 commits, tip `927b278`),
+counted only — no matched value was printed or copied anywhere. Patterns:
+Google API key (`AIza` + 30 or more key chars), OpenAI/DeepSeek-style key (`sk-` +
+32 hex), AWS access key id (`AKIA` + 16 chars).
+
+Scoped command (as specified, run on `main` only):
+
+```bash
+git log main -p -- backend/src 'backend/*.js' 'backend/*.ts' \
+  | grep -cE '^\+.*(AIza[0-9A-Za-z_-]{30,}|sk-[0-9a-f]{32}|AKIA[0-9A-Z]{16})'
+```
+
+| Scope | Added lines | Removed lines | Distinct strings |
+|---|---|---|---|
+| `backend/src`, `backend/*.js`, `backend/*.ts` | 1 | 1 | 1 (`sk-` shape) |
+| whole tree | 3 | 3 | 2 (1 `sk-` shape, 1 `AIza` shape; `AKIA`: 0) |
+
+Commits whose diff adds or removes a match
+(`git log main --format=%h -G'<pattern>'`, same paths):
+
+| Commit | Date | What | Files |
+|---|---|---|---|
+| `21bc1bf` | 2026-07-23 | initial import — adds all 3 lines | `backend/src/index.ts` (+1, `sk-` shape), `QUICK_START.md` (+2, `AIza` shape) |
+| `4edc321` | 2026-07-24 | security hardening — removes all 3 lines | same two files |
+
+Nothing matches at the tip of `main` (`git grep -cE '<pattern>' main`: 0 files).
+Both strings lived in history for one day of commits but remain retrievable from
+any clone (`git show 21bc1bf`), and `github.com/machtumens/Notarium` is
+**public** (`gh repo view`: visibility PUBLIC, 21 Sep 2026). Treat both as
+exposed: if either is a key that was ever real, rotate it (DeepSeek: new key
+from the account, `npx wrangler secret put DEEPSEEK_API_KEY` in `backend/`;
+Google: regenerate in Cloud Console and `npx wrangler secret put` the Vision
+key). Rotation is the effective control — a history rewrite would not recall
+forks or caches — so no rewrite is planned here.
