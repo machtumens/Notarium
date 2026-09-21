@@ -95,12 +95,14 @@ describe('E. Boundary handling over HTTP (83-90)', () => {
     expect(((await r.json()) as any).user.name).toBe('José 🚀 王');
   });
 
-  it('88. FINDING: malformed/truncated JSON returns 500, not a clean 400', async () => {
+  it('88. FIXED: malformed/truncated JSON is a clean 400, not a 500', async () => {
     const r = await call('/api/auth/signup', { rawBody: '{"name":"x", "email":', ip: '11.0.0.5' });
-    // `await request.json()` throws SyntaxError -> caught by the generic handler ->
-    // 500. A malformed body from an anonymous caller should be a 400 (client error),
-    // not a server error. Hardening: guard request.json() and return 400.
-    expect(r.status).toBe(500); // documents current behaviour
+    // `await request.json()` used to throw SyntaxError out of the handler and
+    // surface as a 500 from the generic catch. Signup now reads the body through
+    // parseBody (Wave M3), which answers the client error it always was. The
+    // route-by-route sweep lives in malformed-json-400.test.ts.
+    expect(r.status).toBe(400);
+    expect(((await r.json()) as { error: string }).error).toBe('Invalid request body format');
   });
 
   it('89. massive array where a scalar is expected is rejected', async () => {

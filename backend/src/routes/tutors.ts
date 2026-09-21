@@ -1,6 +1,14 @@
 import type { Env } from '../lib/env';
 import { jsonResponse } from '../lib/response';
 import { getAuthedUser, requireRole } from '../lib/auth';
+import {
+  availabilitySchema,
+  parseBody,
+  rateBookingSchema,
+  sessionCreateSchema,
+  tutorApplySchema,
+  tutorReviewSchema,
+} from '../lib/validation';
 
 // Tutor wing — T1: profiles and directory.
 //
@@ -122,12 +130,8 @@ export async function applyAsTutor(request: Request, env: Env) {
   const user = await getAuthedUser(request, env);
   if (!user) return jsonResponse({ error: 'Unauthorized' }, 401, env);
 
-  let body: Record<string, unknown>;
-  try {
-    body = (await request.json()) as Record<string, unknown>;
-  } catch {
-    return jsonResponse({ error: 'Invalid JSON body' }, 400, env);
-  }
+  const body = await parseBody(request, tutorApplySchema, env);
+  if (body instanceof Response) return body;
 
   const subjectId = Number(body.subject_id);
   if (!Number.isFinite(subjectId) || subjectId <= 0) {
@@ -180,12 +184,8 @@ export async function reviewTutorApplication(profileId: string, request: Request
   const admin = await requireRole(request, env, ['moderator']);
   if (admin instanceof Response) return admin;
 
-  let body: Record<string, unknown>;
-  try {
-    body = (await request.json()) as Record<string, unknown>;
-  } catch {
-    return jsonResponse({ error: 'Invalid JSON body' }, 400, env);
-  }
+  const body = await parseBody(request, tutorReviewSchema, env);
+  if (body instanceof Response) return body;
 
   const status = String(body.status ?? '');
   if (!['active', 'paused', 'revoked', 'pending'].includes(status)) {
@@ -254,12 +254,8 @@ export async function addAvailability(profileId: string, request: Request, env: 
     return jsonResponse({ error: 'Your tutor profile is not active yet' }, 403, env);
   }
 
-  let body: Record<string, unknown>;
-  try {
-    body = (await request.json()) as Record<string, unknown>;
-  } catch {
-    return jsonResponse({ error: 'Invalid JSON body' }, 400, env);
-  }
+  const body = await parseBody(request, availabilitySchema, env);
+  if (body instanceof Response) return body;
 
   const startsAt = String(body.starts_at ?? '');
   const endsAt = String(body.ends_at ?? '');
@@ -311,12 +307,8 @@ export async function createSession(request: Request, env: Env) {
   const user = await getAuthedUser(request, env);
   if (!user) return jsonResponse({ error: 'Unauthorized' }, 401, env);
 
-  let body: Record<string, unknown>;
-  try {
-    body = (await request.json()) as Record<string, unknown>;
-  } catch {
-    return jsonResponse({ error: 'Invalid JSON body' }, 400, env);
-  }
+  const body = await parseBody(request, sessionCreateSchema, env);
+  if (body instanceof Response) return body;
 
   const kind = body.kind === 'one_to_one' ? 'one_to_one' : 'group';
 
@@ -710,12 +702,8 @@ export async function rateBooking(bookingId: string, request: Request, env: Env)
   const user = await getAuthedUser(request, env);
   if (!user) return jsonResponse({ error: 'Unauthorized' }, 401, env);
 
-  let body: Record<string, unknown>;
-  try {
-    body = (await request.json()) as Record<string, unknown>;
-  } catch {
-    return jsonResponse({ error: 'Invalid JSON body' }, 400, env);
-  }
+  const body = await parseBody(request, rateBookingSchema, env);
+  if (body instanceof Response) return body;
 
   const rating = Number(body.rating);
   if (!Number.isInteger(rating) || rating < 1 || rating > 5) {

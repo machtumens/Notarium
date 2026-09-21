@@ -1,7 +1,13 @@
 import type { Env } from '../lib/env';
 import { jsonResponse } from '../lib/response';
 import { getAuthedUser, requireModerator } from '../lib/auth';
-import { promoteClassesSchema } from '../lib/validation';
+import {
+  gradeClassCreateSchema,
+  gradeClassUpdateSchema,
+  parseBody,
+  promoteClassesSchema,
+  reassignClassSchema,
+} from '../lib/validation';
 import { currentAcademicYear, nextAcademicYear } from '../lib/academicYear';
 import { SQL_NOW_ISO } from '../lib/time';
 
@@ -83,7 +89,8 @@ export async function adminGetGradeClasses(request: Request, env: Env) {
 export async function adminCreateGradeClass(request: Request, env: Env) {
   const admin = await requireModerator(request, env);
   if (admin instanceof Response) return admin;
-  const body = (await request.json()) as any;
+  const body = await parseBody(request, gradeClassCreateSchema, env);
+  if (body instanceof Response) return body;
   const { grade, class_name, semester = '' } = body;
   if (!grade || !class_name)
     return jsonResponse({ error: 'grade and class_name are required' }, 400, env);
@@ -107,7 +114,8 @@ export async function adminCreateGradeClass(request: Request, env: Env) {
 export async function adminUpdateGradeClass(id: string, request: Request, env: Env) {
   const admin = await requireModerator(request, env);
   if (admin instanceof Response) return admin;
-  const body = (await request.json()) as any;
+  const body = await parseBody(request, gradeClassUpdateSchema, env);
+  if (body instanceof Response) return body;
   const fields: string[] = [];
   const params: (string | number)[] = [];
   if (body.class_name !== undefined) {
@@ -157,12 +165,10 @@ export async function adminPromoteClasses(request: Request, env: Env) {
   const admin = await requireModerator(request, env);
   if (admin instanceof Response) return admin;
 
-  const parsed = promoteClassesSchema.safeParse(await request.json());
-  if (!parsed.success) {
-    return jsonResponse({ error: 'Invalid input', details: parsed.error.errors }, 400, env);
-  }
-  const { class_ids } = parsed.data;
-  const targetYear = parsed.data.new_academic_year || nextAcademicYear(currentAcademicYear());
+  const parsed = await parseBody(request, promoteClassesSchema, env);
+  if (parsed instanceof Response) return parsed;
+  const { class_ids } = parsed;
+  const targetYear = parsed.new_academic_year || nextAcademicYear(currentAcademicYear());
 
   const summary: Array<Record<string, unknown>> = [];
   for (const classId of class_ids) {
@@ -226,7 +232,8 @@ export async function adminPromoteClasses(request: Request, env: Env) {
 export async function adminReassignUserClass(request: Request, env: Env) {
   const admin = await requireModerator(request, env);
   if (admin instanceof Response) return admin;
-  const body = (await request.json()) as any;
+  const body = await parseBody(request, reassignClassSchema, env);
+  if (body instanceof Response) return body;
   const { user_id, new_class, send_notification = true } = body;
   if (!user_id || !new_class)
     return jsonResponse({ error: 'user_id and new_class are required' }, 400, env);

@@ -2,6 +2,15 @@ import type { Env } from '../lib/env';
 import { jsonResponse } from '../lib/response';
 import { getUserFromToken } from '../lib/auth';
 import { SQL_NOW_ISO } from '../lib/time';
+import {
+  aiTitleContentSchema,
+  conceptExplainSchema,
+  ocrSchema,
+  parseBody,
+  primerSchema,
+  structuredQuizSchema,
+  studyPlanSchema,
+} from '../lib/validation';
 
 // Best-effort AI usage logging. Never throws.
 export async function logAiUsage(
@@ -427,7 +436,8 @@ export async function performOCREndpoint(request: Request, env: Env) {
     const user = await getUserFromToken(request, env);
     if (!user) return jsonResponse({ error: 'Unauthorized' }, 401, env);
 
-    const body = (await request.json()) as any;
+    const body = await parseBody(request, ocrSchema, env);
+    if (body instanceof Response) return body;
     const { imageBase64, mimeType } = body;
 
     if (!imageBase64) {
@@ -447,7 +457,8 @@ export async function generateNoteSummaryEndpoint(noteId: string, request: Reque
     const user = await getUserFromToken(request, env);
     if (!user) return jsonResponse({ error: 'Unauthorized' }, 401, env);
 
-    const body = (await request.json()) as any;
+    const body = await parseBody(request, aiTitleContentSchema, env);
+    if (body instanceof Response) return body;
     const { content, title } = body;
 
     if (!content) {
@@ -471,7 +482,8 @@ export async function generateQuizEndpoint(noteId: string, request: Request, env
     const user = await getUserFromToken(request, env);
     if (!user) return jsonResponse({ error: 'Unauthorized' }, 401, env);
 
-    const body = (await request.json()) as any;
+    const body = await parseBody(request, aiTitleContentSchema, env);
+    if (body instanceof Response) return body;
     const { content, title } = body;
 
     if (!content) {
@@ -658,7 +670,8 @@ export async function generateStructuredQuizEndpoint(request: Request, env: Env)
     const user = await getUserFromToken(request, env);
     if (!user) return jsonResponse({ error: 'Unauthorized' }, 401, env);
 
-    const body = (await request.json()) as any;
+    const body = await parseBody(request, structuredQuizSchema, env);
+    if (body instanceof Response) return body;
     const sourceType = body.source_type;
     const sourceId = Number(body.source_id);
     const count = Number(body.count);
@@ -677,12 +690,10 @@ export async function generateStructuredQuizEndpoint(request: Request, env: Env)
     if (difficulty !== 'easy' && difficulty !== 'medium' && difficulty !== 'hard') {
       return jsonResponse({ error: 'difficulty must be easy, medium, or hard' }, 400, env);
     }
-    const allowedTypes = ['mcq', 'true_false', 'short_answer'];
-    if (
-      !Array.isArray(types) ||
-      types.length === 0 ||
-      !types.every((t: unknown) => typeof t === 'string' && allowedTypes.includes(t))
-    ) {
+    const allowedTypes: readonly string[] = ['mcq', 'true_false', 'short_answer'];
+    const isQuestionType = (t: unknown): t is QuizQuestionType =>
+      typeof t === 'string' && allowedTypes.includes(t);
+    if (!Array.isArray(types) || types.length === 0 || !types.every(isQuestionType)) {
       return jsonResponse(
         { error: 'types must be a non-empty array of: mcq, true_false, short_answer' },
         400,
@@ -714,7 +725,8 @@ export async function generateStudyPlanEndpoint(request: Request, env: Env) {
     const user = await getUserFromToken(request, env);
     if (!user) return jsonResponse({ error: 'Unauthorized' }, 401, env);
 
-    const body = (await request.json()) as any;
+    const body = await parseBody(request, studyPlanSchema, env);
+    if (body instanceof Response) return body;
     const { subject, topic } = body;
 
     if (!subject || !topic) {
@@ -734,7 +746,8 @@ export async function explainConceptEndpoint(request: Request, env: Env) {
     const user = await getUserFromToken(request, env);
     if (!user) return jsonResponse({ error: 'Unauthorized' }, 401, env);
 
-    const body = (await request.json()) as any;
+    const body = await parseBody(request, conceptExplainSchema, env);
+    if (body instanceof Response) return body;
     const { concept, subject } = body;
 
     if (!concept) {
@@ -754,7 +767,8 @@ export async function generatePrimerEndpoint(request: Request, env: Env) {
     const user = await getUserFromToken(request, env);
     if (!user) return jsonResponse({ error: 'Unauthorized' }, 401, env);
 
-    const body = (await request.json()) as any;
+    const body = await parseBody(request, primerSchema, env);
+    if (body instanceof Response) return body;
     const { topic } = body;
 
     if (!topic) {

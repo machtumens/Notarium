@@ -10,7 +10,7 @@ import {
 } from '../lib/auth';
 import { checkRateLimit, validateRequestSize } from '../lib/ratelimit';
 import { RATE_LIMIT_MAX_ATTEMPTS_PER_IP } from '../lib/env';
-import { signupSchema, loginSchema } from '../lib/validation';
+import { loginSchema, parseBody, signupSchema } from '../lib/validation';
 import { createMfaChallenge } from '../lib/totp';
 import { currentAcademicYear } from '../lib/academicYear';
 import { SQL_NOW_ISO, isValidZone } from '../lib/time';
@@ -30,21 +30,10 @@ export async function signupEndpoint(request: Request, env: Env) {
       );
     }
 
-    const body = (await request.json()) as any;
+    const body = await parseBody(request, signupSchema, env);
+    if (body instanceof Response) return body;
 
-    const validation = signupSchema.safeParse(body);
-    if (!validation.success) {
-      return jsonResponse(
-        {
-          error: 'Invalid input',
-          details: validation.error.errors,
-        },
-        400,
-        env,
-      );
-    }
-
-    const { name, email, password, class: userClass, academic_year, timezone } = validation.data;
+    const { name, email, password, class: userClass, academic_year, timezone } = body;
     const academicYear = academic_year || currentAcademicYear();
     // A browser-supplied zone that this runtime cannot format in is dropped
     // rather than rejected: a bad zone is not a reason to fail a signup, and
@@ -159,26 +148,10 @@ export async function loginEndpoint(request: Request, env: Env) {
       return jsonResponse({ error: 'Request too large' }, 413, env);
     }
     const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
-    let body;
-    try {
-      body = (await request.json()) as any;
-    } catch (parseError) {
-      return jsonResponse({ error: 'Invalid request body format' }, 400, env);
-    }
+    const body = await parseBody(request, loginSchema, env);
+    if (body instanceof Response) return body;
 
-    const validation = loginSchema.safeParse(body);
-    if (!validation.success) {
-      return jsonResponse(
-        {
-          error: 'Invalid input',
-          details: validation.error.errors,
-        },
-        400,
-        env,
-      );
-    }
-
-    const { email, password } = validation.data;
+    const { email, password } = body;
 
     // Keyed on IP *and* account, not IP alone. The school sits behind one NAT,
     // so an IP-only key gives the entire school five logins per quarter hour —

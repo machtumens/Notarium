@@ -1,7 +1,12 @@
 import type { Env } from '../lib/env';
 import { jsonResponse } from '../lib/response';
 import { getOrCreateUser, getAuthedUser } from '../lib/auth';
-import { noteSummarySchema, noteUpdateSchema, parseBody } from '../lib/validation';
+import {
+  createNoteSchema,
+  noteSummarySchema,
+  noteUpdateSchema,
+  parseBody,
+} from '../lib/validation';
 import { SQL_NOW_ISO } from '../lib/time';
 
 export async function getNotesBySubject(subjectId: string, request: Request, env: Env) {
@@ -218,7 +223,8 @@ export async function searchNotes(query: string, request: Request, env: Env) {
 export async function createNote(request: Request, env: Env) {
   try {
     const user = await getOrCreateUser(request, env);
-    const body = (await request.json()) as any;
+    const body = await parseBody(request, createNoteSchema, env);
+    if (body instanceof Response) return body;
 
     if (!body.subject_id) {
       return jsonResponse({ error: 'Subject ID is required' }, 400);

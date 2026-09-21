@@ -14,7 +14,16 @@ import {
   timingSafeEqualStr,
 } from './lib/auth';
 import { checkRateLimit, capRequestBody, validateRequestSize } from './lib/ratelimit';
-import { parseBody, profileUpdateSchema } from './lib/validation';
+import {
+  adminLoginSchema,
+  adminPasswordResetSchema,
+  aiSummarizeSchema,
+  aiTitleContentSchema,
+  changePasswordSchema,
+  migratePasswordsSchema,
+  parseBody,
+  profileUpdateSchema,
+} from './lib/validation';
 import { initializeDatabase, MOCK_SUBJECTS, SCHEMA_VERSION } from './lib/db';
 import { isValidZone, isoUtc, SQL_NOW_ISO } from './lib/time';
 import { handleOAuthRoutes } from './routes/oauth';
@@ -360,7 +369,8 @@ export default {
             return jsonResponse({ error: 'Too many login attempts. Try again later.' }, 429, env);
           }
 
-          const body = (await request.json()) as any;
+          const body = await parseBody(request, adminLoginSchema, env);
+          if (body instanceof Response) return body;
           const { token: adminToken } = body;
 
           // Match the supplied token against each configured admin credential.
@@ -558,7 +568,8 @@ export default {
           const adminCheck = await requireAdmin(request, env);
           if (adminCheck instanceof Response) return adminCheck;
 
-          const body = (await request.json()) as any;
+          const body = await parseBody(request, migratePasswordsSchema, env);
+          if (body instanceof Response) return body;
           const { batchSize = 5, offset = 0 } = body;
 
           const users = await env.DB.prepare(
@@ -622,7 +633,8 @@ export default {
           const adminCheck = await requireAdmin(request, env);
           if (adminCheck instanceof Response) return adminCheck;
 
-          const body = (await request.json()) as any;
+          const body = await parseBody(request, adminPasswordResetSchema, env);
+          if (body instanceof Response) return body;
           const { email, newPassword } = body;
 
           if (!email || !newPassword) {
@@ -682,7 +694,8 @@ export default {
             return jsonResponse({ error: 'Too many requests. Try again later.' }, 429, env);
           }
 
-          const body = (await request.json()) as any;
+          const body = await parseBody(request, changePasswordSchema, env);
+          if (body instanceof Response) return body;
           const { currentPassword, newPassword } = body;
 
           if (!currentPassword || !newPassword) {
@@ -747,7 +760,8 @@ export default {
           if (adminCheck instanceof Response) return adminCheck;
           const decoded = adminCheck;
 
-          const body = (await request.json()) as any;
+          const body = await parseBody(request, adminPasswordResetSchema, env);
+          if (body instanceof Response) return body;
           const { email, newPassword } = body;
 
           if (!email || !newPassword) {
@@ -850,14 +864,14 @@ export default {
         if (!(await checkRateLimit(String(_qsUser.id), 'ai', env))) {
           return jsonResponse({ error: 'Too many requests. Try again later.' }, 429, env);
         }
+        const body = await parseBody(request, aiTitleContentSchema, env);
+        if (body instanceof Response) return body;
         if (!env.GEMINI_API_KEY) {
-          const body = (await request.json()) as any;
           const summary = `${body.title || 'Study material'}: ${body.content?.substring(0, 80) || 'No content available'}...`;
           return jsonResponse({ success: true, summary });
         }
 
         try {
-          const body = (await request.json()) as any;
           const { title, content } = body;
 
           if (!content) {
@@ -878,8 +892,9 @@ export default {
         if (!(await checkRateLimit(String(_atUser.id), 'ai', env))) {
           return jsonResponse({ error: 'Too many requests. Try again later.' }, 429, env);
         }
+        const body = await parseBody(request, aiTitleContentSchema, env);
+        if (body instanceof Response) return body;
         try {
-          const body = (await request.json()) as any;
           const { title, content } = body;
 
           const deepseekApiKey = env.DEEPSEEK_API_KEY;
@@ -936,16 +951,19 @@ Tags:`,
         if (!(await checkRateLimit(String(_sumUser.id), 'ai', env))) {
           return jsonResponse({ error: 'Too many requests. Try again later.' }, 429, env);
         }
+        const body = await parseBody(request, aiSummarizeSchema, env);
+        if (body instanceof Response) return body;
         if (!env.GEMINI_API_KEY) {
-          const body = (await request.json()) as any;
           const summary = `${body.title || 'Topic'}: ${body.description || 'This covers key concepts'}.`;
           return jsonResponse({ success: true, summary });
         }
 
         try {
-          const body = (await request.json()) as any;
+          // Both fields are optional; a body with neither reaches
+          // generateNoteSummary as it always did and fails there (a 500
+          // 'Failed to generate summary') — unchanged by the parse guard.
           const summary = await generateNoteSummary(
-            body.content || body.description,
+            (body.content || body.description) as string,
             body.title || 'Untitled',
             env,
           );

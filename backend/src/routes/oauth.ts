@@ -9,6 +9,7 @@ import {
   importAesKey,
   revokeToken,
 } from '../services/google-oauth';
+import { oauthExchangeSchema, parseBody } from '../lib/validation';
 
 export interface OAuthEnv {
   DB: D1Database;
@@ -404,12 +405,10 @@ async function handleStatus(request: Request, env: OAuthEnv): Promise<Response> 
 }
 
 async function handleExchange(request: Request, env: OAuthEnv): Promise<Response> {
-  let body: { code?: unknown };
-  try {
-    body = (await request.json()) as { code?: unknown };
-  } catch {
-    return jsonErr('Invalid JSON body', 400);
-  }
+  // parseBody answers a malformed or non-object body with the shared 400; the
+  // outer fetch re-stamps CORS and the security headers on it like any other.
+  const body = await parseBody(request, oauthExchangeSchema);
+  if (body instanceof Response) return body;
 
   const code = typeof body.code === 'string' ? body.code : null;
   if (!code) {

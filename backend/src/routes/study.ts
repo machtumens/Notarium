@@ -3,6 +3,12 @@ import { jsonResponse } from '../lib/response';
 import { getUserFromToken } from '../lib/auth';
 import { checkRateLimit } from '../lib/ratelimit';
 import { localDate, addLocalDays, startOfLocalDay, resolveZone, isoUtc } from '../lib/time';
+import {
+  gradeReviewSchema,
+  parseBody,
+  quizAttemptSchema,
+  recallGradeSchema,
+} from '../lib/validation';
 
 const POINTS_CORRECT = 10;
 const POINTS_CONFIDENCE_BONUS = 5;
@@ -227,9 +233,10 @@ export async function logQuizAttempt(request: Request, env: Env) {
     const allowed = await checkRateLimit(ip, `quiz:${user.id}`, env);
     if (!allowed) return jsonResponse({ error: 'Too many requests' }, 429, env);
 
-    const body = (await request.json()) as any;
+    const body = await parseBody(request, quizAttemptSchema, env);
+    if (body instanceof Response) return body;
     const noteId: number | null = body.note_id != null ? Number(body.note_id) : null;
-    const questionText: string = body.question_text;
+    const questionText = body.question_text;
     const isCorrect = !!body.is_correct;
     const confidence: number | null = body.confidence != null ? Number(body.confidence) : null;
 
@@ -350,7 +357,8 @@ export async function gradeReview(itemId: string, request: Request, env: Env) {
       return jsonResponse({ error: 'Invalid item ID' }, 400, env);
     }
 
-    const body = (await request.json()) as any;
+    const body = await parseBody(request, gradeReviewSchema, env);
+    if (body instanceof Response) return body;
     const isCorrect = !!body.is_correct;
     const confidence: number | null = body.confidence != null ? Number(body.confidence) : null;
 
@@ -428,9 +436,10 @@ export async function gradeRecall(request: Request, env: Env) {
     const allowed = await checkRateLimit(ip, `recall:${user.id}`, env);
     if (!allowed) return jsonResponse({ error: 'Too many requests' }, 429, env);
 
-    const body = (await request.json()) as any;
-    const noteContent: string = body.note_content;
-    const recallText: string = body.recall_text;
+    const body = await parseBody(request, recallGradeSchema, env);
+    if (body instanceof Response) return body;
+    const noteContent = body.note_content;
+    const recallText = body.recall_text;
 
     if (!noteContent || !recallText) {
       return jsonResponse({ error: 'note_content and recall_text are required' }, 400, env);

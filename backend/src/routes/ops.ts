@@ -2,6 +2,13 @@ import type { Env } from '../lib/env';
 import { jsonResponse } from '../lib/response';
 import { requireTechnical } from '../lib/auth';
 import { logAdminActivity } from './admin';
+import {
+  flagSchema,
+  maintenanceSchema,
+  parseBody,
+  purgeNotesSchema,
+  recomputeSchema,
+} from '../lib/validation';
 import { SCHEMA_VERSION } from '../lib/db';
 import { SCHOOL_TIMEZONE, addLocalDays, isoUtc, localDate, startOfLocalDay } from '../lib/time';
 
@@ -340,13 +347,9 @@ export async function setMaintenance(request: Request, env: Env): Promise<Respon
   const auth = await requireTechnical(request, env);
   if (auth instanceof Response) return auth;
 
-  let on: boolean;
-  try {
-    const body = (await request.json()) as { on?: boolean };
-    on = !!body.on;
-  } catch {
-    return jsonResponse({ error: 'Invalid request body' }, 400, env);
-  }
+  const body = await parseBody(request, maintenanceSchema, env);
+  if (body instanceof Response) return body;
+  const on = !!body.on;
 
   try {
     if (on) {
@@ -380,15 +383,10 @@ export async function setFlag(request: Request, env: Env): Promise<Response> {
   const auth = await requireTechnical(request, env);
   if (auth instanceof Response) return auth;
 
-  let flag: string;
-  let enabled: boolean;
-  try {
-    const body = (await request.json()) as { flag?: string; enabled?: boolean };
-    flag = String(body.flag || '');
-    enabled = !!body.enabled;
-  } catch {
-    return jsonResponse({ error: 'Invalid request body' }, 400, env);
-  }
+  const body = await parseBody(request, flagSchema, env);
+  if (body instanceof Response) return body;
+  const flag = String(body.flag || '');
+  const enabled = !!body.enabled;
 
   if (!ALLOWED_FLAGS.includes(flag)) {
     return jsonResponse({ error: 'Unknown flag' }, 400, env);
@@ -425,13 +423,9 @@ export async function recompute(request: Request, env: Env): Promise<Response> {
   const auth = await requireTechnical(request, env);
   if (auth instanceof Response) return auth;
 
-  let target: string;
-  try {
-    const body = (await request.json()) as { target?: string };
-    target = String(body.target || '');
-  } catch {
-    return jsonResponse({ error: 'Invalid request body' }, 400, env);
-  }
+  const body = await parseBody(request, recomputeSchema, env);
+  if (body instanceof Response) return body;
+  const target = String(body.target || '');
 
   try {
     switch (target) {
@@ -592,14 +586,11 @@ export async function purgeDeletedNotes(request: Request, env: Env): Promise<Res
   if (auth instanceof Response) return auth;
   if (!isSuper(auth)) return jsonResponse({ error: 'Forbidden' }, 403, env);
 
+  const body = await parseBody(request, purgeNotesSchema, env);
+  if (body instanceof Response) return body;
   let olderThanDays = 30;
-  try {
-    const body = (await request.json()) as { olderThanDays?: number };
-    if (body.olderThanDays != null && Number.isFinite(Number(body.olderThanDays))) {
-      olderThanDays = Math.max(0, Number(body.olderThanDays));
-    }
-  } catch {
-    return jsonResponse({ error: 'Invalid request body' }, 400, env);
+  if (body.olderThanDays != null && Number.isFinite(Number(body.olderThanDays))) {
+    olderThanDays = Math.max(0, Number(body.olderThanDays));
   }
 
   let deleted: number;

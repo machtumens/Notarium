@@ -1,6 +1,7 @@
 import type { Env } from '../lib/env';
 import { jsonResponse } from '../lib/response';
 import { getAuthedUser } from '../lib/auth';
+import { completeTestSchema, parseBody } from '../lib/validation';
 
 // Test history + badges.
 //
@@ -26,12 +27,8 @@ export async function completeTest(request: Request, env: Env) {
   const user = await getAuthedUser(request, env);
   if (!user) return jsonResponse({ error: 'Unauthorized' }, 401, env);
 
-  let body: Record<string, unknown>;
-  try {
-    body = (await request.json()) as Record<string, unknown>;
-  } catch {
-    return jsonResponse({ error: 'Invalid JSON body' }, 400, env);
-  }
+  const body = await parseBody(request, completeTestSchema, env);
+  if (body instanceof Response) return body;
 
   const questionCount = Number(body.question_count);
   const correctCount = Number(body.correct_count);

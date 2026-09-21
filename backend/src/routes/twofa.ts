@@ -3,6 +3,14 @@ import { jsonResponse } from '../lib/response';
 import { getUserFromToken, createToken, hashPassword, verifyPassword } from '../lib/auth';
 import { checkRateLimit } from '../lib/ratelimit';
 import {
+  forgotPasswordSchema,
+  parseBody,
+  setPasswordSchema,
+  twoFaDisableSchema,
+  twoFaEnableSchema,
+  twoFaVerifySchema,
+} from '../lib/validation';
+import {
   generateTotpSecret,
   buildOtpAuthUri,
   verifyTotp,
@@ -39,7 +47,9 @@ export async function enable2fa(request: Request, env: Env) {
   }
   const decoded = await authUser(request, env);
   if (!decoded) return jsonResponse({ error: 'Unauthorized' }, 401, env);
-  const { code } = (await request.json()) as any;
+  const body = await parseBody(request, twoFaEnableSchema, env);
+  if (body instanceof Response) return body;
+  const { code } = body;
   const user = (await env.DB.prepare(`SELECT totp_secret FROM users WHERE id = ?`)
     .bind(decoded.id)
     .first()) as any;
@@ -62,7 +72,9 @@ export async function enable2fa(request: Request, env: Env) {
 export async function disable2fa(request: Request, env: Env) {
   const decoded = await authUser(request, env);
   if (!decoded) return jsonResponse({ error: 'Unauthorized' }, 401, env);
-  const { code, password } = (await request.json()) as any;
+  const body = await parseBody(request, twoFaDisableSchema, env);
+  if (body instanceof Response) return body;
+  const { code, password } = body;
   const user = (await env.DB.prepare(`SELECT totp_secret, password_hash FROM users WHERE id = ?`)
     .bind(decoded.id)
     .first()) as any;
@@ -92,7 +104,9 @@ export async function verify2fa(request: Request, env: Env) {
   if (!(await checkRateLimit(ip, '2fa-verify', env))) {
     return jsonResponse({ error: 'Too many requests. Try again later.' }, 429, env);
   }
-  const { challenge, code } = (await request.json()) as any;
+  const body = await parseBody(request, twoFaVerifySchema, env);
+  if (body instanceof Response) return body;
+  const { challenge, code } = body;
   const userId = await verifyMfaChallenge(String(challenge || ''), env);
   // Also rate-limit per user id if the challenge is valid, so an attacker with
   // multiple IPs cannot brute-force a 6-digit code for a specific account.
@@ -163,7 +177,9 @@ export async function forgotPassword(request: Request, env: Env) {
   if (!(await checkRateLimit(ip, 'forgot-password', env))) {
     return jsonResponse({ error: 'Too many requests. Try again later.' }, 429, env);
   }
-  const { email } = (await request.json()) as any;
+  const body = await parseBody(request, forgotPasswordSchema, env);
+  if (body instanceof Response) return body;
+  const { email } = body;
   if (!email) return jsonResponse({ error: 'Email is required' }, 400, env);
   const user = (await env.DB.prepare(`SELECT google_id, oauth_provider FROM users WHERE email = ?`)
     .bind(email)
@@ -202,7 +218,9 @@ export async function setPassword(request: Request, env: Env) {
   }
   const decoded = await authUser(request, env);
   if (!decoded) return jsonResponse({ error: 'Unauthorized' }, 401, env);
-  const { newPassword } = (await request.json()) as any;
+  const body = await parseBody(request, setPasswordSchema, env);
+  if (body instanceof Response) return body;
+  const { newPassword } = body;
   if (!newPassword || String(newPassword).length < 8) {
     return jsonResponse({ error: 'Password must be at least 8 characters' }, 400, env);
   }

@@ -2,7 +2,15 @@ import type { Env } from '../lib/env';
 import { jsonResponse } from '../lib/response';
 import { requireModerator, timingSafeEqualStr } from '../lib/auth';
 import { checkRateLimit } from '../lib/ratelimit';
-import { noteUpdateSchema, parseBody, suspendUserSchema, warnUserSchema } from '../lib/validation';
+import {
+  adminUserUpdateSchema,
+  adminVerifySchema,
+  noteUpdateSchema,
+  parseBody,
+  subjectWriteSchema,
+  suspendUserSchema,
+  warnUserSchema,
+} from '../lib/validation';
 import { SQL_NOW_ISO } from '../lib/time';
 
 export async function logAdminActivity(
@@ -229,7 +237,8 @@ export async function verifyAdmin(request: Request, env: Env) {
     return jsonResponse({ error: 'Too many requests. Try again later.' }, 429, env);
   }
 
-  const body = (await request.json()) as any;
+  const body = await parseBody(request, adminVerifySchema, env);
+  if (body instanceof Response) return body;
   const { email, password } = body;
 
   if (
@@ -758,9 +767,12 @@ export async function updateUserProfile(userId: string, request: Request, env: E
   const adminUser = await requireModerator(request, env);
   if (adminUser instanceof Response) return adminUser;
 
-  try {
-    const body = (await request.json()) as any;
+  // Parsed outside the try: a malformed body is the caller's 400, not a
+  // 'Failed to update user' 500.
+  const body = await parseBody(request, adminUserUpdateSchema, env);
+  if (body instanceof Response) return body;
 
+  try {
     const updates: string[] = [];
     const values: any[] = [];
     const changedFields: string[] = [];
@@ -909,7 +921,8 @@ export async function createSubject(request: Request, env: Env) {
   const adminUser = await requireModerator(request, env);
   if (adminUser instanceof Response) return adminUser;
 
-  const body = (await request.json()) as any;
+  const body = await parseBody(request, subjectWriteSchema, env);
+  if (body instanceof Response) return body;
   const { name, icon } = body;
   if (!name) return jsonResponse({ error: 'name is required' }, 400, env);
 
@@ -942,7 +955,8 @@ export async function updateSubject(id: string, request: Request, env: Env) {
   const adminUser = await requireModerator(request, env);
   if (adminUser instanceof Response) return adminUser;
 
-  const body = (await request.json()) as any;
+  const body = await parseBody(request, subjectWriteSchema, env);
+  if (body instanceof Response) return body;
   const updates: string[] = [];
   const values: any[] = [];
 

@@ -1,6 +1,7 @@
 import type { Env } from '../lib/env';
 import { jsonResponse } from '../lib/response';
 import { getOrCreateUser, requireModerator } from '../lib/auth';
+import { adminNotificationSchema, parseBody } from '../lib/validation';
 
 /** Strip HTML tags and escape angle brackets to prevent stored-XSS. */
 function stripHtml(input: string): string {
@@ -14,7 +15,8 @@ function stripHtml(input: string): string {
 export async function adminCreateNotification(request: Request, env: Env) {
   const admin = await requireModerator(request, env);
   if (admin instanceof Response) return admin;
-  const body = (await request.json()) as any;
+  const body = await parseBody(request, adminNotificationSchema, env);
+  if (body instanceof Response) return body;
   const {
     target_type,
     target_grade,
