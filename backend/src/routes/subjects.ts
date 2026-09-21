@@ -1,20 +1,42 @@
 import type { Env } from '../lib/env';
 import { jsonResponse } from '../lib/response';
-import { requireModerator } from '../lib/auth';
+import { getAuthedUser, requireModerator } from '../lib/auth';
 import { promoteClassesSchema } from '../lib/validation';
 import { currentAcademicYear, nextAcademicYear } from '../lib/academicYear';
 import { SQL_NOW_ISO } from '../lib/time';
 
-export async function getSubjects(_request: Request, env: Env) {
-  // Public list — no auth needed and no per-user data. (Previously called
-  // getOrCreateUser purely as a side effect, which minted ghost users.)
+export async function getSubjects(request: Request, env: Env) {
+  // Public list: a missing or bad token means "guest", never a 401, and no
+  // user is ever created here. The token only personalises note_count.
+  const user = await getAuthedUser(request, env);
+  const callerClass = user?.class ?? '';
+
+  // note_count is the number of notes THIS caller would get from
+  // GET /api/notes/subject/:id — same status and visibility rule as
+  // getNotesBySubject (published; everyone, or class-only from an author in
+  // the caller's class). The stored subjects.note_count is not served: it is
+  // bumped on publish regardless of visibility, and syncNoteCounts() /
+  // ops recompute rebuild it from every row, drafts included.
   const { results } = await env.DB.prepare(
     `
-    SELECT id, name, icon, note_count
-    FROM subjects
-    ORDER BY name
+    SELECT s.id, s.name, s.icon,
+      (SELECT COUNT(*)
+         FROM notes n
+         LEFT JOIN users u ON n.author_id = u.id
+        WHERE n.subject_id = s.id
+          AND (n.status = 'published' OR n.status IS NULL OR n.status = '')
+          AND (
+            n.visibility = 'everyone'
+            OR n.visibility IS NULL
+            OR n.visibility = ''
+            OR (n.visibility = 'class' AND (u.class = ? OR u.class IS NULL OR u.class = ''))
+          )) AS note_count
+    FROM subjects s
+    ORDER BY s.name
   `,
-  ).all();
+  )
+    .bind(callerClass)
+    .all();
 
   return jsonResponse({ subjects: results });
 }
