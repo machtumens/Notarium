@@ -19,12 +19,15 @@ export function getAllowedOrigin(env: Env, requestOrigin?: string | null): strin
 // now, but a browser blocks the whole request at preflight if it is not listed.
 export const CORS_ALLOWED_HEADERS = 'Content-Type, Authorization, X-Is-Login, X-Notarium-Session';
 
+// No Access-Control-Allow-Credentials: the app is bearer-only (token in the
+// Authorization header, nothing cookie-based) and neither frontend calls fetch
+// with `credentials: 'include'`, so the header bought nothing and would turn
+// any future allow-list slip into a credentialed cross-site request.
 export function getCorsHeaders(env: Env, requestOrigin?: string | null) {
   return {
     'Access-Control-Allow-Origin': getAllowedOrigin(env, requestOrigin),
     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
     'Access-Control-Allow-Headers': CORS_ALLOWED_HEADERS,
-    'Access-Control-Allow-Credentials': 'true',
   };
 }
 

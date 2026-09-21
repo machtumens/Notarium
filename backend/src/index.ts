@@ -188,7 +188,6 @@ export default {
           'Access-Control-Allow-Origin': corsOrigin,
           'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS, PATCH',
           'Access-Control-Allow-Headers': CORS_ALLOWED_HEADERS,
-          'Access-Control-Allow-Credentials': 'true',
           'Access-Control-Max-Age': '86400',
         },
       });
@@ -236,7 +235,6 @@ export default {
             );
             const bh = new Headers(blocked.headers);
             bh.set('Access-Control-Allow-Origin', corsOrigin);
-            bh.set('Access-Control-Allow-Credentials', 'true');
             return new Response(blocked.body, { status: 503, headers: bh });
           }
         }
@@ -269,7 +267,6 @@ export default {
     // those built without `env` (most error paths and the 404 fallback).
     const newHeaders = new Headers(response.headers);
     newHeaders.set('Access-Control-Allow-Origin', corsOrigin);
-    newHeaders.set('Access-Control-Allow-Credentials', 'true');
     for (const [name, value] of Object.entries(SECURITY_HEADERS)) newHeaders.set(name, value);
     return new Response(response.body, {
       status: response.status,
