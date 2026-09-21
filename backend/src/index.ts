@@ -14,6 +14,7 @@ import {
   timingSafeEqualStr,
 } from './lib/auth';
 import { checkRateLimit, capRequestBody, validateRequestSize } from './lib/ratelimit';
+import { parseBody, profileUpdateSchema } from './lib/validation';
 import { initializeDatabase, MOCK_SUBJECTS, SCHEMA_VERSION } from './lib/db';
 import { isValidZone, isoUtc, SQL_NOW_ISO } from './lib/time';
 import { handleOAuthRoutes } from './routes/oauth';
@@ -477,12 +478,9 @@ export default {
           }
 
           const userId = decoded.id;
-          let body;
-          try {
-            body = (await request.json()) as any;
-          } catch (bodyError) {
-            return jsonResponse({ error: 'Invalid request body' }, 400);
-          }
+          // Typed and length-capped; `email` is not accepted here (see schema).
+          const body = await parseBody(request, profileUpdateSchema, env);
+          if (body instanceof Response) return body;
 
           const updates: string[] = [];
           const values: any[] = [];
@@ -497,10 +495,6 @@ export default {
           if (body.photo_url) {
             updates.push('photo_url = ?');
             values.push(body.photo_url);
-          }
-          if (body.email) {
-            updates.push('email = ?');
-            values.push(body.email);
           }
           if (body.class) {
             updates.push('class = ?');

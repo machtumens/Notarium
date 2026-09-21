@@ -2,6 +2,7 @@ import type { Env } from '../lib/env';
 import { jsonResponse } from '../lib/response';
 import { requireModerator, timingSafeEqualStr } from '../lib/auth';
 import { checkRateLimit } from '../lib/ratelimit';
+import { noteUpdateSchema, parseBody, suspendUserSchema, warnUserSchema } from '../lib/validation';
 import { SQL_NOW_ISO } from '../lib/time';
 
 export async function logAdminActivity(
@@ -391,9 +392,10 @@ export async function updateNote(noteId: string, request: Request, env: Env) {
   const adminUser = await requireModerator(request, env);
   if (adminUser instanceof Response) return adminUser;
 
-  try {
-    const body = (await request.json()) as any;
+  const body = await parseBody(request, noteUpdateSchema, env);
+  if (body instanceof Response) return body;
 
+  try {
     const originalNote = (await env.DB.prepare('SELECT title FROM notes WHERE id = ?')
       .bind(noteId)
       .first()) as any;
@@ -482,7 +484,8 @@ export async function suspendUser(userId: string, request: Request, env: Env) {
     return jsonResponse({ error: 'Cannot suspend an admin account' }, 403, env);
   }
 
-  const body = (await request.json()) as any;
+  const body = await parseBody(request, suspendUserSchema, env);
+  if (body instanceof Response) return body;
   const { days, reason } = body;
   const endDate = new Date();
   endDate.setDate(endDate.getDate() + (days || 7));
@@ -519,7 +522,8 @@ export async function warnUser(userId: string, request: Request, env: Env) {
     return jsonResponse({ error: 'Cannot warn an admin account' }, 403, env);
   }
 
-  const body = (await request.json()) as any;
+  const body = await parseBody(request, warnUserSchema, env);
+  if (body instanceof Response) return body;
   const { message } = body;
   const warningMessage = message || 'Warning issued by admin';
 

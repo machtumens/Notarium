@@ -1,6 +1,7 @@
 import type { Env } from '../lib/env';
 import { jsonResponse } from '../lib/response';
 import { getOrCreateUser, getAuthedUser } from '../lib/auth';
+import { noteSummarySchema, noteUpdateSchema, parseBody } from '../lib/validation';
 import { SQL_NOW_ISO } from '../lib/time';
 
 export async function getNotesBySubject(subjectId: string, request: Request, env: Env) {
@@ -390,7 +391,8 @@ export async function updateNoteSummary(noteId: string, request: Request, env: E
     return jsonResponse({ error: 'Unauthorized - You can only edit your own notes' }, 403);
   }
 
-  const body = (await request.json()) as any;
+  const body = await parseBody(request, noteSummarySchema);
+  if (body instanceof Response) return body;
 
   await env.DB.prepare(`UPDATE notes SET summary = ?, updated_at = ${SQL_NOW_ISO} WHERE id = ?`)
     .bind(body.summary, noteId)
@@ -454,7 +456,6 @@ export async function toggleNoteLike(noteId: string, request: Request, env: Env)
 export async function userUpdateNote(noteId: string, request: Request, env: Env) {
   try {
     const user = await getOrCreateUser(request, env);
-    const body = (await request.json()) as any;
 
     const note = (await env.DB.prepare('SELECT author_id FROM notes WHERE id = ?')
       .bind(noteId)
@@ -467,6 +468,9 @@ export async function userUpdateNote(noteId: string, request: Request, env: Env)
     if (note.author_id !== user.id) {
       return jsonResponse({ error: 'Unauthorized - You can only edit your own notes' }, 403);
     }
+
+    const body = await parseBody(request, noteUpdateSchema);
+    if (body instanceof Response) return body;
 
     const updates: string[] = [];
     const values: any[] = [];
