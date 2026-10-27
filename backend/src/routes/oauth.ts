@@ -195,9 +195,17 @@ async function handleStart(url: URL, request: Request, env: OAuthEnv): Promise<R
     state,
     challenge,
     loginHint: user?.email,
-    // A hint only: it makes Google's own picker show school accounts first and
-    // say so when a personal one is chosen. `hd` is a request, not a promise —
-    // a crafted authorize URL can drop it — so the callback checks the claims.
+    // Filters Google's picker to the school's Workspace accounts. Students sign
+    // in to school devices with a personal account alongside the school one, and
+    // without this they pick the wrong one and bounce off the domain check.
+    //
+    // This is safe ONLY because the school's mail actually runs on Google
+    // Workspace (confirmed with the owner, 27 Oct). `hd` filters to a *hosted*
+    // domain, so against a domain with no Workspace behind it, it would match
+    // nothing and nobody could sign in. If the school ever leaves Workspace,
+    // drop this line first. It is a convenience either way — the gate is
+    // checkSchoolIdentity on the signed token's claims, which also refuses an
+    // hd claim naming another domain.
     hostedDomain: SCHOOL_EMAIL_DOMAIN,
   });
 
