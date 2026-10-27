@@ -62,7 +62,13 @@ import {
   userDeleteNote,
 } from './routes/notes';
 import { getLeaderboard } from './routes/leaderboard';
-import { signupEndpoint, loginEndpoint, meEndpoint } from './routes/auth';
+import {
+  signupEndpoint,
+  loginEndpoint,
+  meEndpoint,
+  refreshEndpoint,
+  logoutEndpoint,
+} from './routes/auth';
 import {
   setup2fa,
   enable2fa,
@@ -324,6 +330,20 @@ export default {
           return jsonResponse({ error: 'Database not available' }, 503);
         }
         return await loginEndpoint(request, env);
+      }
+
+      if (path === '/api/auth/refresh' && request.method === 'POST') {
+        if (!env.DB) {
+          return jsonResponse({ error: 'Database not available' }, 503);
+        }
+        return await refreshEndpoint(request, env);
+      }
+
+      if (path === '/api/auth/logout' && request.method === 'POST') {
+        if (!env.DB) {
+          return jsonResponse({ error: 'Database not available' }, 503);
+        }
+        return await logoutEndpoint(request, env);
       }
 
       if (path === '/api/auth/me' && request.method === 'GET') {

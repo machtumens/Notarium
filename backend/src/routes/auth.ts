@@ -9,11 +9,36 @@ import {
   touchLastSeen,
 } from '../lib/auth';
 import { checkRateLimit, validateRequestSize } from '../lib/ratelimit';
-import { RATE_LIMIT_MAX_ATTEMPTS_PER_IP } from '../lib/env';
-import { loginSchema, parseBody, signupSchema } from '../lib/validation';
+import { RATE_LIMIT_MAX_ATTEMPTS_PER_IP, REFRESH_MAX_PER_WINDOW } from '../lib/env';
+import { loginSchema, logoutSchema, parseBody, refreshSchema, signupSchema } from '../lib/validation';
+import {
+  issueSessionPair,
+  revokeSession,
+  rotateRefreshToken,
+  wantsShortSession,
+  type SessionUser,
+} from '../lib/session';
 import { createMfaChallenge } from '../lib/totp';
 import { currentAcademicYear } from '../lib/academicYear';
 import { SQL_NOW_ISO, isValidZone } from '../lib/time';
+
+/**
+ * The token(s) a successful sign-in hands back. A client that asked for a short
+ * session (`X-Notarium-Session: refresh`) gets a 15-minute access token plus a
+ * refresh token; everyone else gets the flat 24-hour token and no `refreshToken`
+ * key at all, which is what every client before this change expects.
+ *
+ * 2FA completion (`/api/auth/2fa/verify`) still issues the long token only — it
+ * has its own endpoint and no client opts in there yet.
+ */
+async function openSession(
+  user: SessionUser,
+  request: Request,
+  env: Env,
+): Promise<{ token: string; refreshToken?: string }> {
+  if (!wantsShortSession(request)) return { token: await createToken(user, env) };
+  return await issueSessionPair(user, env);
+}
 
 export async function signupEndpoint(request: Request, env: Env) {
   try {
@@ -95,12 +120,13 @@ export async function signupEndpoint(request: Request, env: Env) {
     if (!user) {
       return jsonResponse({ error: 'Failed to create user' }, 500, env);
     }
-    const token = await createToken(
+    const session = await openSession(
       {
         id: (user as any).id,
         email: (user as any).email,
         role: (user as any).role,
       },
+      request,
       env,
     );
 
@@ -111,7 +137,7 @@ export async function signupEndpoint(request: Request, env: Env) {
 
     return jsonResponse(
       {
-        token,
+        ...session,
         user: {
           id: (user as any).id,
           email: (user as any).email,
@@ -322,12 +348,13 @@ export async function loginEndpoint(request: Request, env: Env) {
       return jsonResponse({ requires_2fa: true, challenge }, 200, env);
     }
 
-    const token = await createToken(
+    const session = await openSession(
       {
         id: (user as any).id,
         email: (user as any).email,
         role: (user as any).role || 'student',
       },
+      request,
       env,
     );
 
@@ -339,7 +366,7 @@ export async function loginEndpoint(request: Request, env: Env) {
     return jsonResponse(
       {
         success: true,
-        token,
+        ...session,
         user: {
           id: (user as any).id,
           email: (user as any).email,
@@ -569,5 +596,85 @@ export async function meEndpoint(request: Request, env: Env) {
   } catch (error: any) {
     console.error('me error:', error);
     return jsonResponse({ error: 'Failed to get current user' }, 500);
+  }
+}
+
+
+/**
+ * POST /api/auth/refresh — spend a refresh token, get the next pair.
+ *
+ * Every failure is the same 401 with the same body: the client's only decision
+ * is "can this session continue", and telling it apart would tell an attacker
+ * whether a token was ever real. A replay additionally revokes the family, which
+ * `rotateRefreshToken` has already done by the time we answer.
+ */
+export async function refreshEndpoint(request: Request, env: Env) {
+  try {
+    if (!validateRequestSize(request)) {
+      return jsonResponse({ error: 'Request too large' }, 413, env);
+    }
+    const body = await parseBody(request, refreshSchema, env);
+    if (body instanceof Response) return body;
+
+    // Per user, NOT per IP: the whole school shares one public IP, and an access
+    // token lasts exactly one rate-limit window, so an IP bucket would run out
+    // mid-lesson and sign the class out. A forged token never gets here — it
+    // fails signature verification below, which costs no database read — so the
+    // only thing left to bound is one account's own refreshes. Ten per quarter
+    // hour covers a student on a laptop and a phone with room to spare.
+    const claims = await verifyToken(body.refreshToken, env, { allowRefresh: true });
+    if (!claims || claims.typ !== 'refresh') {
+      return jsonResponse({ error: 'Invalid refresh token' }, 401, env);
+    }
+    if (!(await checkRateLimit(String(claims.id), 'refresh', env, REFRESH_MAX_PER_WINDOW))) {
+      return jsonResponse({ error: 'Too many requests' }, 429, env);
+    }
+
+    const result = await rotateRefreshToken(body.refreshToken, env);
+    if (result.outcome !== 'rotated') {
+      return jsonResponse({ error: 'Invalid refresh token' }, 401, env);
+    }
+    return jsonResponse({ success: true, ...result.pair }, 200, env);
+  } catch (error: any) {
+    console.error('refresh error:', error);
+    return jsonResponse({ error: 'Refresh failed' }, 500, env);
+  }
+}
+
+/**
+ * POST /api/auth/logout — end the session server-side.
+ *
+ * Identity comes from the access token, or, when that has already expired, from
+ * the refresh token in the body: a client signing out after fifteen idle minutes
+ * should not be told it is unauthorized. With a refresh token only that device's
+ * family goes; without one, every refresh token the user holds.
+ *
+ * The access token itself stays valid until it expires — these are stateless
+ * JWTs, and the short TTL is what bounds them. A client must drop it locally,
+ * which the V2.0 client does whether this call succeeds or not.
+ */
+export async function logoutEndpoint(request: Request, env: Env) {
+  try {
+    if (!validateRequestSize(request)) {
+      return jsonResponse({ error: 'Request too large' }, 413, env);
+    }
+    const body = await parseBody(request, logoutSchema, env);
+    if (body instanceof Response) return body;
+
+    const auth = request.headers.get('Authorization');
+    const bearer = auth?.startsWith('Bearer ') ? auth.slice(7) : null;
+    const access = bearer ? await verifyToken(bearer, env) : null;
+    const presented = body.refreshToken
+      ? await verifyToken(body.refreshToken, env, { allowRefresh: true })
+      : null;
+    const userId =
+      access?.id ?? (presented?.typ === 'refresh' ? presented.id : null);
+    if (!userId) return jsonResponse({ error: 'Unauthorized' }, 401, env);
+
+    await revokeSession(userId, body.refreshToken, env);
+    return jsonResponse({ success: true }, 200, env);
+  } catch (error: any) {
+    console.error('logout error:', error);
+    return jsonResponse({ error: 'Logout failed' }, 500, env);
   }
 }

@@ -3,7 +3,7 @@
 // The V2.0 client sends `X-Notarium-Session: refresh` on login/signup. A
 // custom header missing from Access-Control-Allow-Headers makes the browser
 // block the request at preflight, so sign-in was unreachable from V2.0. The
-// worker ignores the header for now (no refresh tokens in this wave).
+// header is now acted on — see refresh-rotation.test.ts for what it returns.
 //
 // /api/ready is the dependency probe deploy checks and monitors use: D1 and
 // KV must both answer, and the result must never be cached.
@@ -37,7 +37,7 @@ describe('CORS — X-Notarium-Session is an allowed request header', () => {
     expect(res.headers.get('Access-Control-Allow-Headers')).toMatch(/X-Notarium-Session/);
   });
 
-  it('login still works when the client sends the header (it is ignored)', async () => {
+  it('login still works when the client sends the header', async () => {
     const res = await call('/api/auth/login', {
       body: { email: 'nobody@sekolahkristencalvin.org', password: 'wrong' },
       headers: { 'X-Notarium-Session': 'refresh' },

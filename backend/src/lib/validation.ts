@@ -50,6 +50,16 @@ export const promoteClassesSchema = z.object({
     .optional(),
 });
 
+/** POST /api/auth/refresh — the client sends only the token it is spending. */
+export const refreshSchema = z.object({
+  refreshToken: z.string().min(1).max(4096),
+});
+
+/** POST /api/auth/logout — no token means "every session I have". */
+export const logoutSchema = z.object({
+  refreshToken: z.string().min(1).max(4096).optional(),
+});
+
 export const loginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(1),

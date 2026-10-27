@@ -63,4 +63,16 @@ export const RATE_LIMIT_MAX_ATTEMPTS = 5;
  */
 export const RATE_LIMIT_MAX_ATTEMPTS_PER_IP = 100;
 export const JWT_EXPIRATION = '24h';
+/**
+ * Access-token life for a client that opted into short sessions
+ * (`X-Notarium-Session: refresh`). Short enough that a leaked access token
+ * is worth little, and the refresh token below keeps the user signed in.
+ */
+export const ACCESS_TOKEN_EXPIRATION_SHORT = '15m';
 export const REFRESH_TOKEN_EXPIRATION = '7d';
+/**
+ * Refreshes allowed per user per RATE_LIMIT_WINDOW. A client needs one per
+ * window per device; ten leaves room for several devices while still bounding
+ * how fast one account's refresh chain can be driven.
+ */
+export const REFRESH_MAX_PER_WINDOW = 10;

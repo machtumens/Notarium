@@ -245,6 +245,31 @@ export async function initializeDatabase(env: Env) {
       )
     `,
     ).run();
+    // Rotating refresh tokens (src/lib/session.ts). Lived only in schema.sql and
+    // migrations/0008 until now, so a database that has never had migrations
+    // applied — production — does not have it. `token` holds a SHA-256, never the
+    // token itself; `family` ties one rotation chain to one device.
+    await env.DB.prepare(
+      `
+      CREATE TABLE IF NOT EXISTS refresh_tokens (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        token TEXT NOT NULL UNIQUE,
+        family TEXT,
+        expires_at TEXT NOT NULL,
+        created_at DATETIME DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      )
+    `,
+    ).run();
+    try {
+      await env.DB.prepare(`ALTER TABLE refresh_tokens ADD COLUMN family TEXT`).run();
+    } catch (e) {}
+    try {
+      await env.DB.prepare(
+        `CREATE INDEX IF NOT EXISTS idx_refresh_tokens_user ON refresh_tokens(user_id)`,
+      ).run();
+    } catch (e) {}
     await env.DB.prepare(
       `
       CREATE TABLE IF NOT EXISTS note_likes (

@@ -22,6 +22,7 @@ export const TEST_SECRETS = {
 
 // Tables the suites touch — cleared between tests so each starts clean.
 const TABLES = [
+  'refresh_tokens',
   'tutor_bookings',
   'tutor_sessions',
   'tutor_availability',

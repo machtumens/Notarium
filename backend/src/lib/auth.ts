@@ -95,7 +95,18 @@ export async function verifyPassword(password: string, hash: string): Promise<bo
 }
 
 export async function createToken(
-  payload: { id: number; email: string; role: string; admin_role?: string },
+  payload: {
+    id: number;
+    email: string;
+    role: string;
+    admin_role?: string;
+    /** Marks a refresh token. `verifyToken` refuses one unless asked to allow it. */
+    typ?: 'refresh';
+    /** Unique per refresh token: without it two minted in the same second are identical. */
+    jti?: string;
+    /** Rotation family — the chain this refresh token belongs to (one per device). */
+    fam?: string;
+  },
   env: Env,
   expiresIn: string = JWT_EXPIRATION,
 ): Promise<string> {
@@ -107,18 +118,36 @@ export async function createToken(
     .sign(secret);
 }
 
+/**
+ * Verify an access token. A refresh token (`typ: 'refresh'`) is signed with the
+ * same secret and carries the same claims, so without this guard a stolen
+ * refresh token would double as a seven-day access token. Only the refresh
+ * endpoint passes `allowRefresh`.
+ */
 export async function verifyToken(
   token: string,
   env: Env,
-): Promise<{ id: number; email: string; role: string; admin_role?: string } | null> {
+  opts: { allowRefresh?: boolean } = {},
+): Promise<{
+  id: number;
+  email: string;
+  role: string;
+  admin_role?: string;
+  typ?: 'refresh';
+  fam?: string;
+} | null> {
   try {
     const secret = new TextEncoder().encode(env.JWT_SECRET);
     const { payload } = await jwtVerify(token, secret);
+    const typ = payload.typ === 'refresh' ? ('refresh' as const) : undefined;
+    if (typ === 'refresh' && !opts.allowRefresh) return null;
     return {
       id: payload.id as number,
       email: payload.email as string,
       role: payload.role as string,
       admin_role: payload.admin_role as string | undefined,
+      typ,
+      fam: payload.fam as string | undefined,
     };
   } catch (error) {
     return null;

@@ -126,6 +126,7 @@ CREATE TABLE IF NOT EXISTS refresh_tokens (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id INTEGER NOT NULL,
   token TEXT NOT NULL UNIQUE,
+  family TEXT,
   expires_at TEXT NOT NULL,
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE

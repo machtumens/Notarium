@@ -14,6 +14,7 @@ import { initializeDatabase } from '../src/lib/db';
 // `users` without admin_role, `notes` still defaulting to datetime('now'),
 // and none of the tables that only migrations/ ever created.
 const ABSENT_IN_PRODUCTION = [
+  'refresh_tokens',
   'tutor_bookings',
   'tutor_sessions',
   'tutor_availability',
