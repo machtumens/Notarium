@@ -62,6 +62,7 @@ import {
   userDeleteNote,
 } from './routes/notes';
 import { getLeaderboard } from './routes/leaderboard';
+import { getMastery, getProgressTimeseries } from './routes/mastery';
 import {
   signupEndpoint,
   loginEndpoint,
@@ -1268,6 +1269,16 @@ Tags:`,
         if (!env.DB) return jsonResponse({ error: 'Database not available' }, 503);
         return await getBadges(request, env);
       }
+      if (path === '/api/progress/mastery' && request.method === 'GET') {
+        if (!env.DB) return jsonResponse({ error: 'Database not available' }, 503);
+        return await getMastery(request, env);
+      }
+
+      if (path === '/api/progress/timeseries' && request.method === 'GET') {
+        if (!env.DB) return jsonResponse({ error: 'Database not available' }, 503);
+        return await getProgressTimeseries(request, env);
+      }
+
       if (path === '/api/study/stats' && request.method === 'GET') {
         if (!env.DB) return jsonResponse({ error: 'Database not available' }, 503);
         return await getStudyStats(request, env);
