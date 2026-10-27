@@ -10,7 +10,7 @@ import {
 } from '../lib/auth';
 import { checkRateLimit, validateRequestSize } from '../lib/ratelimit';
 import { RATE_LIMIT_MAX_ATTEMPTS_PER_IP, REFRESH_MAX_PER_WINDOW } from '../lib/env';
-import { loginSchema, logoutSchema, parseBody, refreshSchema, signupSchema } from '../lib/validation';
+import { loginSchema, logoutSchema, parseBody, refreshSchema, signupSchema, SCHOOL_EMAIL_DOMAIN, isSchoolEmail } from '../lib/validation';
 import {
   issueSessionPair,
   revokeSession,
@@ -65,9 +65,9 @@ export async function signupEndpoint(request: Request, env: Env) {
     // NULL already means "use the school default".
     const userZone = isValidZone(timezone) ? timezone : null;
 
-    if (!email.toLowerCase().endsWith('@sekolahkristencalvin.org')) {
+    if (!isSchoolEmail(email)) {
       return jsonResponse(
-        { error: 'Only @sekolahkristencalvin.org email addresses are allowed' },
+        { error: `Only @${SCHOOL_EMAIL_DOMAIN} email addresses are allowed` },
         400,
         env,
       );
@@ -143,6 +143,7 @@ export async function signupEndpoint(request: Request, env: Env) {
           email: (user as any).email,
           name: (user as any).display_name,
           class: (user as any).class,
+          focus_subject_ids: parseFocusSubjectIds((user as any).focus_subject_ids),
           grade: (user as any).grade || null,
           academic_year: (user as any).academic_year || null,
           timezone: (user as any).timezone || null,
@@ -229,6 +230,7 @@ export async function loginEndpoint(request: Request, env: Env) {
             display_name,
             password_hash,
             class,
+            focus_subject_ids,
             role,
             notes_uploaded,
             total_likes,
@@ -372,6 +374,7 @@ export async function loginEndpoint(request: Request, env: Env) {
           email: (user as any).email,
           name: (user as any).display_name,
           class: (user as any).class,
+          focus_subject_ids: parseFocusSubjectIds((user as any).focus_subject_ids),
           grade: (user as any).grade || null,
           role: (user as any).role,
           notes_count: (user as any).notes_uploaded || 0,
@@ -389,6 +392,17 @@ export async function loginEndpoint(request: Request, env: Env) {
   } catch (error: any) {
     console.error('login error:', error);
     return jsonResponse({ error: 'Login failed' }, 500, env);
+  }
+}
+
+/** JSON text column -> number[]; anything unexpected reads as the empty list. */
+function parseFocusSubjectIds(raw: unknown): number[] {
+  if (typeof raw !== 'string' || raw.length === 0) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((id): id is number => Number.isInteger(id)) : [];
+  } catch {
+    return [];
   }
 }
 
@@ -419,6 +433,7 @@ export async function meEndpoint(request: Request, env: Env) {
             display_name,
             photo_url,
             class,
+            focus_subject_ids,
             grade,
             grade_class_id,
             role,
@@ -453,6 +468,7 @@ export async function meEndpoint(request: Request, env: Env) {
             display_name,
             photo_url,
             class,
+            focus_subject_ids,
             role,
             notes_uploaded,
             total_likes,
@@ -562,6 +578,10 @@ export async function meEndpoint(request: Request, env: Env) {
         email: userData.email,
         name: userData.display_name,
         class: userData.class,
+        // Stored as JSON text; the client gets an array or an empty one. A row
+        // written before this column existed, or by hand, must not 500 the
+        // whole /me call, so a parse failure reads as "no focus subjects".
+        focus_subject_ids: parseFocusSubjectIds(userData.focus_subject_ids),
         role: userData.role,
         admin_role: userData.admin_role || null,
         notes_count: userData.notes_uploaded || 0,

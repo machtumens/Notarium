@@ -9,7 +9,13 @@ import {
   importAesKey,
   revokeToken,
 } from '../services/google-oauth';
-import { oauthExchangeSchema, parseBody } from '../lib/validation';
+import { currentAcademicYear } from '../lib/academicYear';
+import {
+  SCHOOL_EMAIL_DOMAIN,
+  isSchoolEmail,
+  oauthExchangeSchema,
+  parseBody,
+} from '../lib/validation';
 
 export interface OAuthEnv {
   DB: D1Database;
@@ -84,6 +90,17 @@ function jsonErr(msg: string, status: number): Response {
 function errorRedirect(env: OAuthEnv, reason: string): Response {
   return Response.redirect(
     `${feBase(env)}/settings?google=error&reason=${encodeURIComponent(reason)}`,
+    302,
+  );
+}
+
+/**
+ * A failure during the *signup* intent belongs on the sign-in screen — the
+ * visitor has no session yet, so /settings would only bounce them again.
+ */
+function signinErrorRedirect(env: OAuthEnv, reason: string): Response {
+  return Response.redirect(
+    `${feBase(env)}/login?google=error&reason=${encodeURIComponent(reason)}`,
     302,
   );
 }
@@ -178,9 +195,36 @@ async function handleStart(url: URL, request: Request, env: OAuthEnv): Promise<R
     state,
     challenge,
     loginHint: user?.email,
+    // A hint only: it makes Google's own picker show school accounts first and
+    // say so when a personal one is chosen. `hd` is a request, not a promise —
+    // a crafted authorize URL can drop it — so the callback checks the claims.
+    hostedDomain: SCHOOL_EMAIL_DOMAIN,
   });
 
   return Response.redirect(authorizeUrl, 302);
+}
+
+/**
+ * THE DOOR. Google proves who holds the mailbox; this decides whose mailbox is
+ * allowed in. Pure on purpose — it is the whole account-creation rule, and a
+ * rule worth one direct test is worth not burying in a 150-line handler.
+ *
+ *  - `email_verified` must be true: without it a Workspace admin could hand out
+ *    an unverified alias carrying any address at all.
+ *  - The address suffix decides, because it is the check that holds for every
+ *    account shape. `hd` (set only on Workspace accounts) only has to not
+ *    disagree — it arrives in the signed token, but a crafted authorize URL can
+ *    omit the `hd` *request*, so it cannot be the check on its own.
+ */
+export function checkSchoolIdentity(
+  payload: JWTPayload,
+): { ok: true } | { ok: false; reason: 'email_unverified' | 'domain' } {
+  if (payload.email_verified !== true) return { ok: false, reason: 'email_unverified' };
+  const email = typeof payload.email === 'string' ? payload.email : '';
+  const hd = typeof payload.hd === 'string' ? payload.hd.trim().toLowerCase() : null;
+  if (!isSchoolEmail(email)) return { ok: false, reason: 'domain' };
+  if (hd !== null && hd !== SCHOOL_EMAIL_DOMAIN) return { ok: false, reason: 'domain' };
+  return { ok: true };
 }
 
 async function handleCallback(url: URL, _request: Request, env: OAuthEnv): Promise<Response> {
@@ -227,6 +271,11 @@ async function handleCallback(url: URL, _request: Request, env: OAuthEnv): Promi
 
   await env.DB.prepare(`DELETE FROM oauth_states WHERE state = ?`).bind(state).run();
 
+  // Everything from here on knows which flow it is, so a failure can land on the
+  // screen that can do something about it: /login for a visitor, /settings for a
+  // signed-in account linking Classroom or Docs.
+  const fail = stateRow.intent === 'signup' ? signinErrorRedirect : errorRedirect;
+
   let tokens;
   try {
     tokens = await exchangeCode({
@@ -238,12 +287,12 @@ async function handleCallback(url: URL, _request: Request, env: OAuthEnv): Promi
     });
   } catch (err: unknown) {
     console.error('[oauth] exchangeCode failed:', err instanceof Error ? err.message : err);
-    return errorRedirect(env, 'token_exchange_failed');
+    return fail(env, 'token_exchange_failed');
   }
 
   if (!tokens.idToken) {
     console.error('[oauth] id_token missing from token response');
-    return errorRedirect(env, 'id_token_missing');
+    return fail(env, 'id_token_missing');
   }
 
   let idPayload: JWTPayload;
@@ -254,47 +303,82 @@ async function handleCallback(url: URL, _request: Request, env: OAuthEnv): Promi
       '[oauth] id_token verification failed:',
       err instanceof Error ? err.message : err,
     );
-    return errorRedirect(env, 'id_token_invalid');
+    return fail(env, 'id_token_invalid');
   }
 
   if (idPayload.aud !== env.GOOGLE_CLIENT_ID) {
     console.error('[oauth] id_token aud mismatch');
-    return errorRedirect(env, 'id_token_aud_mismatch');
+    return fail(env, 'id_token_aud_mismatch');
   }
   if (!GOOGLE_ISSUERS.has(idPayload.iss as string)) {
     console.error('[oauth] id_token iss invalid:', idPayload.iss);
-    return errorRedirect(env, 'id_token_iss_invalid');
+    return fail(env, 'id_token_iss_invalid');
   }
 
   const email = idPayload.email as string | undefined;
   const sub = idPayload.sub as string | undefined;
 
   if (!email || !sub) {
-    return errorRedirect(env, 'id_token_missing_claims');
+    return fail(env, 'id_token_missing_claims');
   }
 
   const { intent } = stateRow;
 
   if (intent === 'signup') {
-    let user = (await env.DB.prepare(`SELECT id, email, role FROM users WHERE email = ?`)
-      .bind(email)
-      .first()) as { id: number; email: string; role: string } | null;
+    const allowed = checkSchoolIdentity(idPayload);
+    if (!allowed.ok) {
+      console.error('[oauth] rejected google account:', email, '-', allowed.reason);
+      return fail(env, allowed.reason);
+    }
 
-    if (!user) {
-      const name = (idPayload.name as string | undefined) ?? email.split('@')[0];
-      const picture = (idPayload.picture as string | undefined) ?? null;
-      user = (await env.DB.prepare(
-        `INSERT INTO users (encrypted_yw_id, display_name, email, photo_url, google_id, oauth_provider, role, created_at)
-         VALUES (?, ?, ?, ?, ?, 'google', 'student', strftime('%Y-%m-%dT%H:%M:%SZ','now'))
-         RETURNING id, email, role`,
+    const mail = email.trim().toLowerCase();
+    // The display name is Google's, not the student's: it is re-read on every
+    // sign-in, so a rename in the school directory follows them here and no
+    // Notarium screen offers to edit it.
+    const name = (idPayload.name as string | undefined)?.trim() || mail.split('@')[0];
+    const picture = (idPayload.picture as string | undefined) ?? null;
+
+    let user = (await env.DB.prepare(
+      `SELECT id, email, role, suspended FROM users WHERE LOWER(email) = ?`,
+    )
+      .bind(mail)
+      .first()) as { id: number; email: string; role: string; suspended: number } | null;
+
+    if (user) {
+      // An account that signed up with a password keeps its row and gains the
+      // Google link; `class` is left exactly as it was, so an existing student
+      // is not sent back through the profile step.
+      await env.DB.prepare(
+        `UPDATE users
+            SET display_name = ?,
+                photo_url = COALESCE(?, photo_url),
+                google_id = COALESCE(google_id, ?),
+                oauth_provider = CASE WHEN password_hash IS NULL THEN 'google' ELSE oauth_provider END,
+                updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now')
+          WHERE id = ?`,
       )
-        .bind(`google_${sub}`, name, email, picture, sub)
-        .first()) as { id: number; email: string; role: string };
+        .bind(name, picture, sub, user.id)
+        .run();
+    } else {
+      // `class` stays NULL on purpose: it is the flag the frontend reads to send
+      // a brand-new account through the profile step before the app proper.
+      user = (await env.DB.prepare(
+        `INSERT INTO users (encrypted_yw_id, display_name, email, photo_url, google_id, oauth_provider, role, academic_year, created_at)
+         VALUES (?, ?, ?, ?, ?, 'google', 'student', ?, strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+         RETURNING id, email, role, suspended`,
+      )
+        .bind(`google_${sub}`, name, mail, picture, sub, currentAcademicYear())
+        .first()) as { id: number; email: string; role: string; suspended: number };
     }
 
     if (!user) {
-      console.error('[oauth] failed to find or create user for email:', email);
-      return errorRedirect(env, 'user_create_failed');
+      console.error('[oauth] failed to find or create user for email:', mail);
+      return fail(env, 'user_create_failed');
+    }
+
+    if (user.suspended === 1) {
+      console.error('[oauth] suspended account tried to sign in:', mail);
+      return fail(env, 'suspended');
     }
 
     const jwt = await issueJwt({ id: user.id, email: user.email, role: user.role }, env);

@@ -12,7 +12,7 @@
 // password_hash: never appeared in a response (audit §3); the assertions below
 // only lock that in. They were green before this change.
 import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
-import { applySchema, resetData, call, seedUser, env, SELF } from './helpers';
+import { applySchema, resetData, call, seedGradeClass, seedUser, env, SELF } from './helpers';
 import worker from '../../src/index';
 import { MAX_REQUEST_SIZE } from '../../src/lib/env';
 
@@ -124,6 +124,9 @@ describe('Body-size cap on every /api/ route with a body', () => {
 
   it('a normal streamed JSON body still reaches the handler intact', async () => {
     const me = await seedUser();
+    // The handler this probes refuses a class off the school register, so the
+    // class has to exist — the subject here is the body, not the class rule.
+    await seedGradeClass('11.3');
     const payload = new TextEncoder().encode(JSON.stringify({ class: '11.3' }));
     const body = new ReadableStream<Uint8Array>({
       start(controller) {

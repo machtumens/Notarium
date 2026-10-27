@@ -13,6 +13,9 @@ CREATE TABLE IF NOT EXISTS users (
   -- Free-form class label (e.g. '10.1'..'12.3'); the canonical class registry
   -- is the grade_classes table. No hardcoded grade-10 CHECK — grades 10-12 exist.
   class TEXT,
+  -- JSON array of subject ids (max 5), set in the profile step. See
+  -- migrations/0022 for why this is a column and not a join table.
+  focus_subject_ids TEXT,
   grade INTEGER,
   grade_class_id INTEGER,
   academic_year TEXT,

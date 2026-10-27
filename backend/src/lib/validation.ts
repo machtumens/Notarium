@@ -27,6 +27,15 @@ export async function parseBody<T extends z.ZodTypeAny>(
   return result.data;
 }
 
+/**
+ * The only email domain that may hold a Notarium account. Enforced on the email
+ * signup path (routes/auth.ts) and on the Google callback (routes/oauth.ts) —
+ * both, because a Google account is created without ever touching signupEndpoint.
+ */
+export const SCHOOL_EMAIL_DOMAIN = 'sekolahkristencalvin.org';
+export const isSchoolEmail = (email: string | undefined | null): boolean =>
+  typeof email === 'string' && email.trim().toLowerCase().endsWith(`@${SCHOOL_EMAIL_DOMAIN}`);
+
 export const signupSchema = z.object({
   name: z.string().min(1).max(100),
   email: z.string().email().max(255),
@@ -105,8 +114,17 @@ export const userUpdateSchema = z.object({
   photo_url: photoUrlSchema.optional(),
 });
 
+// PUT /api/user/class — the profile step a Google account lands on, and the
+// same route Customize re-saves from. `class` and the focus list are the only
+// two things a student may set about themselves; the display name comes from
+// Google and is not writable here.
+/** How many subjects a student may mark as a focus. A choice, not a storage limit. */
+export const FOCUS_SUBJECTS_MAX = 5;
+
 export const userClassSchema = z.object({
   class: classNameSchema,
+  // Subject ids. An explicit empty array clears the list; omitted leaves it alone.
+  focus_subject_ids: z.array(z.number().int().positive()).max(FOCUS_SUBJECTS_MAX).optional(),
 });
 
 // PUT /api/notes/:id (author) and PUT /api/admin/notes/:id (moderator): every

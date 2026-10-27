@@ -6,10 +6,14 @@
 // re-email or re-class any account by naming its encrypted_yw_id in a header.
 // Identity must come from the Bearer token only (getUserIdFromToken).
 import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
-import { applySchema, resetData, call, seedUser, env } from './helpers';
+import { applySchema, resetData, call, seedGradeClass, seedUser, env } from './helpers';
 
 beforeAll(applySchema);
 beforeEach(resetData);
+// PUT /api/user/class refuses a class the school does not run, so the class the
+// cases below write has to be on the register. These tests are about *whose*
+// row gets written, not about the class registry.
+beforeEach(() => seedGradeClass('12.9'));
 
 const ROUTES = [
   {

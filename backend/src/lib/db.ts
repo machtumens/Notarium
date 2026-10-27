@@ -486,6 +486,9 @@ export async function initializeDatabase(env: Env) {
       await env.DB.prepare(`ALTER TABLE users ADD COLUMN graduated INTEGER DEFAULT 0`).run();
     } catch (e) {}
     try {
+      await env.DB.prepare(`ALTER TABLE users ADD COLUMN focus_subject_ids TEXT`).run();
+    } catch (e) {}
+    try {
       await env.DB.prepare(`ALTER TABLE grade_classes ADD COLUMN academic_year TEXT`).run();
     } catch (e) {}
     try {

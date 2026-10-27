@@ -155,6 +155,21 @@ export async function seedSubject(name = 'Mathematics'): Promise<number> {
   return row.id;
 }
 
+/**
+ * Seed an active class in the school's class registry. PUT /api/user/class now
+ * refuses a class the school does not run (the check signup has always made),
+ * so a test that saves a class has to put it on the register first.
+ */
+export async function seedGradeClass(className: string): Promise<number> {
+  const grade = Number(className.split('.')[0]);
+  const row = (await env.DB.prepare(
+    `INSERT INTO grade_classes (grade, class_name, semester, is_active) VALUES (?, ?, '', 1) RETURNING id`,
+  )
+    .bind(grade, className)
+    .first()) as { id: number };
+  return row.id;
+}
+
 /** Seed a note owned by author. status defaults to published. */
 export async function seedNote(
   authorId: number,

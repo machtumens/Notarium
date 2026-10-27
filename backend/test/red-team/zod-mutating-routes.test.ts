@@ -8,7 +8,16 @@
 // must answer a clean 400 for junk and leave the row untouched; a valid body
 // still works exactly as before.
 import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
-import { applySchema, resetData, call, seedUser, seedSubject, seedNote, env } from './helpers';
+import {
+  applySchema,
+  resetData,
+  call,
+  seedUser,
+  seedSubject,
+  seedNote,
+  seedGradeClass,
+  env,
+} from './helpers';
 
 beforeAll(applySchema);
 beforeEach(resetData);
@@ -105,6 +114,7 @@ describe('PUT /api/user/class — zod (class pattern)', () => {
 
   it('a well-formed class still updates the caller', async () => {
     const me = await seedUser();
+    await seedGradeClass('11.2');
     const res = await call('/api/user/class', {
       method: 'PUT',
       token: me.token,
@@ -112,6 +122,63 @@ describe('PUT /api/user/class — zod (class pattern)', () => {
     });
     expect(res.status).toBe(200);
     expect(await userColumn(me.id, 'class')).toBe('11.2');
+  });
+
+  // The pattern is not the whole rule: '12.9' is shaped like a class and is not
+  // one. Accepting it would store a class every class-scoped query misses.
+  it('a well-formed class the school does not run is a 400', async () => {
+    const me = await seedUser();
+    const res = await call('/api/user/class', {
+      method: 'PUT',
+      token: me.token,
+      body: { class: '12.9' },
+    });
+    expect(res.status).toBe(400);
+    expect(await userColumn(me.id, 'class')).toBe('10.1');
+  });
+
+  it('focus subjects save with the class, and an unknown subject id is a 400', async () => {
+    const me = await seedUser();
+    await seedGradeClass('11.2');
+    const a = await seedSubject('Biology');
+    const b = await seedSubject('Physics');
+
+    const ok = await call('/api/user/class', {
+      method: 'PUT',
+      token: me.token,
+      body: { class: '11.2', focus_subject_ids: [a, b, a] },
+    });
+    expect(ok.status).toBe(200);
+    expect(await userColumn(me.id, 'focus_subject_ids')).toBe(JSON.stringify([a, b]));
+
+    const bad = await call('/api/user/class', {
+      method: 'PUT',
+      token: me.token,
+      body: { class: '11.2', focus_subject_ids: [a, 999999] },
+    });
+    expect(bad.status).toBe(400);
+    expect(await userColumn(me.id, 'focus_subject_ids')).toBe(JSON.stringify([a, b]));
+
+    const cleared = await call('/api/user/class', {
+      method: 'PUT',
+      token: me.token,
+      body: { class: '11.2', focus_subject_ids: [] },
+    });
+    expect(cleared.status).toBe(200);
+    expect(await userColumn(me.id, 'focus_subject_ids')).toBe(null);
+  });
+
+  it('more than five focus subjects is a 400', async () => {
+    const me = await seedUser();
+    await seedGradeClass('11.2');
+    const ids = [];
+    for (let i = 0; i < 6; i++) ids.push(await seedSubject(`S${i}`));
+    const res = await call('/api/user/class', {
+      method: 'PUT',
+      token: me.token,
+      body: { class: '11.2', focus_subject_ids: ids },
+    });
+    expect(res.status).toBe(400);
   });
 });
 

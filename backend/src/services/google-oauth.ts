@@ -28,6 +28,8 @@ export function buildAuthorizeUrl(opts: {
   state: string;
   challenge: string;
   loginHint?: string;
+  /** Google's `hd` — restricts the account picker to one Workspace domain. */
+  hostedDomain?: string;
 }): string {
   const params = new URLSearchParams({
     client_id: opts.clientId,
@@ -41,6 +43,7 @@ export function buildAuthorizeUrl(opts: {
     prompt: 'consent',
   });
   if (opts.loginHint) params.set('login_hint', opts.loginHint);
+  if (opts.hostedDomain) params.set('hd', opts.hostedDomain);
   return `https://accounts.google.com/o/oauth2/v2/auth?${params}`;
 }
 
