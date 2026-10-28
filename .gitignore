@@ -67,3 +67,11 @@ README_INTERNAL.md
 # writes. These are full database dumps — real student names, emails and notes —
 # and must never be committed.
 backend/backups/
+
+# Playwright (e2e/): run artifacts, per-run local D1/KV state, the shared-account storage state.
+# None of it is reproducible input — every run rebuilds it from scratch.
+e2e/__screenshots__/
+e2e/test-results/
+e2e/playwright-report/
+e2e/.wrangler-state/
+e2e/.auth/
