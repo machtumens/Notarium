@@ -1,4 +1,4 @@
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { GUTTER } from '@/components/layout/shell';
 import { Kicker } from '@/components/ui/kicker';
 import { cn } from '@/lib/utils';
@@ -20,6 +20,9 @@ export function ControlBar() {
   const { ctx, setCtx, session, isUser, learner, signOut } = useApp();
   const nav = useNavigate();
   const ctxs = isUser ? CTXS.filter((c) => c.id !== 'session') : CTXS;
+  // Same rule as the sign-in screen: every one of these buttons navigates to /app/home, so on the
+  // admin dashboard it is chrome that would walk you out of the page you opened.
+  const onAdmin = useLocation().pathname.startsWith('/admin');
   return (
     // The masthead rule is ink. `py-3` and the 19px wordmark are load
     // bearing: they set the 53px the Shell and the sign-in layout subtract from the viewport height.
@@ -37,7 +40,7 @@ export function ControlBar() {
         {/* The context switcher only means something inside the app: every one of these navigates to
             /app/home, which a visitor with no session is bounced straight back out of. On the sign-in
             screen it was chrome that did nothing, so it is not drawn there. */}
-        {session && (
+        {session && !onAdmin && (
           <div className="flex flex-wrap items-baseline gap-2.5">
             <Kicker size="sm">Context</Kicker>
             <div className="flex flex-wrap gap-4">
@@ -60,6 +63,15 @@ export function ControlBar() {
         )}
         {session?.kind === 'user' && (
           <div className="flex items-center gap-3 text-[13px]">
+            {/* The only way in to the dashboard, and only for an account the worker calls an admin. */}
+            {session.user.role === 'admin' && (
+              <Link
+                to="/admin"
+                className="inline-flex items-center border border-ink px-3 py-1 text-[12px] font-bold text-ink no-underline whitespace-nowrap hover:bg-ink hover:text-accent-100 hover:no-underline"
+              >
+                Admin
+              </Link>
+            )}
             <span className="font-bold truncate max-w-[20ch]">{session.user.name || learner}</span>
             <button
               type="button"

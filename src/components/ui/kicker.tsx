@@ -13,8 +13,13 @@ const SIZE = {
 
 type Props = React.HTMLAttributes<HTMLElement> & {
   size: keyof typeof SIZE;
-  /** A span unless the spot is a block (the Shell rail label) or a heading (the Home stat title). */
-  as?: 'span' | 'div' | 'h4';
+  /**
+   * A span unless the spot is a block (the Shell rail label) or a heading — the Home stat title
+   * (`h4`), or an admin panel's own section heading (`h2`/`h3`, where the kicker IS the heading and
+   * the document needs the level for its outline). The size's utilities still win over the base
+   * element rule, so an `h2` kicker is a kicker, not a 64px headline.
+   */
+  as?: 'span' | 'div' | 'h2' | 'h3' | 'h4';
 };
 
 /** One kicker for every small label — the pages used to carry the string each, and the shell had its own CSS rule. */
