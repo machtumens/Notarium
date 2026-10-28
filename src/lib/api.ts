@@ -1,801 +1,474 @@
-import { logger } from './logger';
-import { browserZone } from './datetime';
-import type {
-  User,
-  LoginResponse,
-  LoginCredentials,
-  SignupData,
-  ProfileUpdateData,
-  Note,
-  CreateNoteData,
-  NotesResponse,
-  SubjectsResponse,
-  RequestOptions,
-  GradeClass,
-  GradeClassesResponse,
-  AppNotification,
-  NotificationsListResponse,
-  UnreadCountResponse,
-  TwoFactorSetup,
-  TwoFactorEnableResponse,
-  ForgotPasswordResponse,
-  SetPasswordResponse,
-  PromoteClassesResponse,
-  AdminSubject,
-  OpsHealth,
-  OpsMetrics,
-  OpsTimeseries,
-  OpsFlags,
-  OpsCloudflare,
-  PrimerResponse,
-} from '../types';
+/**
+ * Notarium backend client for the LIVE worker lineage (Notarium-main `origin/main`, `backend/src/index.ts`
+ * — a hand-rolled `fetch` router, not Hono). Every call below matches a route main serves; the shapes are the
+ * ones its handlers return (AUDIT/main-lineage-delta.md §2). Token lives in localStorage under `token`, same
+ * key as the live app, so a session carries across.
+ *
+ * Main issues a flat 24-hour token and never a refresh token, has no `/api/auth/refresh` and no
+ * `/api/auth/logout`. The short-session client below (`X-Notarium-Session: refresh` opt-in, `refreshToken`,
+ * refresh-once-then-replay, logout) therefore stays DORMANT against main: a refresh token is only stored when
+ * a worker hands one out, and refresh/logout are only called when one is stored. Kept, tested, harmless — a
+ * later backend wave may light it up. See `request` for the refresh-once rule and `refreshSession` for what a
+ * failed refresh means.
+ */
+export const API_URL: string =
+  import.meta.env.VITE_API_URL || 'https://notarium-backend.notarium-backend.workers.dev';
 
-const baseURL =
-  import.meta.env.MODE === 'development'
-    ? 'http://localhost:8787'
-    : import.meta.env.VITE_API_URL || 'https://notarium-backend.notarium-backend.workers.dev';
+/** Mirrors the worker's cap on focus subjects (lib/validation.ts FOCUS_SUBJECTS_MAX). */
+export const FOCUS_SUBJECTS_MAX = 5;
+/**
+ * Main's class names are `grade.number` (`10.1` … `12.3`, seeded in `initializeDatabase`); signup rejects any name
+ * that is not an active `grade_classes` row (400 `Invalid class selection`), so this only catches the obvious shape.
+ */
+export const CLASS_RE = /^\d{1,2}\.\d{1,2}$/;
 
-const TOKEN_KEY = 'notarium_token';
-
-let cachedToken: string | null = null;
-
-if (typeof window !== 'undefined') {
-  cachedToken = sessionStorage.getItem(TOKEN_KEY);
-}
-
-const getToken = () => {
-  if (typeof window !== 'undefined') {
-    return sessionStorage.getItem(TOKEN_KEY);
-  }
-  return cachedToken;
+export type User = {
+  id: number;
+  email: string;
+  name: string;
+  class: string | null;
+  role: string;
+  /** Subject ids the student marked as a focus (max 5). `[]` until they pick any. */
+  focus_subject_ids?: number[];
+  /** notes_uploaded + total_likes + total_admin_upvotes, computed by main. */
+  points: number;
+  notes_count: number;
+  total_likes: number;
+  total_admin_upvotes: number;
+  photo_url: string | null;
+  grade?: number | null;
+  description?: string | null;
 };
-
-const setToken = (token: string) => {
-  cachedToken = token;
-  if (typeof window !== 'undefined') {
-    sessionStorage.setItem(TOKEN_KEY, token);
-  }
-};
-
-// Single-note detail shape returned by GET /api/notes/:id. Kept local to the
-// api/process surface (not added to the shared `Note` type) because it carries
-// `status` and nullable fields the community-facing `Note` does not model.
-export interface NoteDetail {
+export type Subject = { id: number; name: string; icon: string; note_count: number };
+/**
+ * A note row as main returns it. The body lives in `extracted_text` (what the live app writes and searches);
+ * `content` is this app's block text, mirrored into both on create. `my-notes` rows carry neither `content`
+ * nor `description`, and only `search` rows carry `subject_name` — read the body through `noteText`.
+ */
+export type Note = {
   id: number;
   title: string;
-  extracted_text: string | null;
-  description: string | null;
-  image_path: string | null;
-  summary: string | null;
-  status: string | null;
   subject_id: number;
+  subject_name?: string;
+  extracted_text?: string | null;
+  content?: string | null;
+  description?: string | null;
+  summary?: string | null;
+  author_id?: number;
+  author_name?: string;
+  author_class?: string | null;
+  author_photo?: string | null;
+  /** JSON-encoded string array, e.g. `'["remix-ok"]'`. */
+  tags: string | null;
+  likes: number;
+  admin_upvotes: number;
+  created_at: string;
+  updated_at?: string;
+  status: string | null;
+  visibility: string | null;
+  image_path?: string | null;
+  liked_by_me?: number;
+  upvoted_by_me?: number;
+};
+/** The note body in the order main fills it: OCR/mirrored text, then this app's block text, then the description. */
+export const noteText = (n: Note) => n.extracted_text || n.content || n.description || '';
+/**
+ * A leaderboard row. `points` is what the board is ranked by — main's `learning_points` (its own leaderboard
+ * page shows that number) — falling back to the notes+likes+upvotes sum main also sends for rows that predate it.
+ */
+export type Leader = {
+  display_name: string;
+  photo_url?: string | null;
+  class: string | null;
+  notes_uploaded: number;
+  total_likes: number;
+  total_admin_upvotes?: number;
+  learning_points?: number | null;
+  current_streak?: number | null;
+  points: number;
+};
+
+/** The body `POST /api/notes` takes — see `api.notes.create` for how main reads each field. */
+export type NewNote = {
+  title: string;
+  subject_id: number;
+  extracted_text: string;
+  content: string;
+  description?: string;
+  tags?: string[];
+  status: 'draft' | 'published';
+  visibility: 'everyone' | 'class';
+};
+
+/** Every failure surfaces as one of these; `status` is 0 when the request never reached the worker. */
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    public status: number,
+  ) {
+    super(message);
+  }
+}
+
+/** Plain-language message per failure class. A 401 only means "session expired" when we actually sent a token — on sign-in it is a wrong password, so the server's wording stays. */
+const friendly = (status: number, server: string | undefined, sentToken: boolean) =>
+  status === 0
+    ? 'Could not reach Notarium. Check your connection and try again.'
+    : status === 401 && sentToken
+      ? 'Your session has expired. Sign in again.'
+      : status === 404
+        ? 'That was not found.'
+        : status === 429
+          ? 'Too many requests — wait a moment.'
+          : status >= 500
+            ? 'Notarium is having trouble right now. Try again in a minute.'
+            : server || 'Something went wrong.';
+
+const stored = (key: string) => ({
+  get: () => {
+    try {
+      return localStorage.getItem(key);
+    } catch {
+      return null;
+    }
+  },
+  set: (value: string) => {
+    try {
+      localStorage.setItem(key, value);
+    } catch {
+      /* private mode */
+    }
+  },
+  clear: () => {
+    try {
+      localStorage.removeItem(key);
+    } catch {
+      /* ignore */
+    }
+  },
+});
+export const token = stored('token');
+/** Where to land after Google comes back — this tab only, and only for one trip. */
+const GOOGLE_RETURN_KEY = 'google:return';
+/** The rotating refresh token the worker hands out next to `token` (absent against a worker that predates W2.1). */
+export const refreshToken = stored('refreshToken');
+
+/** Subscribe to "a request that carried our token came back 401 and could not be refreshed" — the session is dead, whichever screen hit it. Returns the unsubscribe. */
+const unauthorized = new Set<() => void>();
+export const onUnauthorized = (cb: () => void) => {
+  unauthorized.add(cb);
+  return () => {
+    unauthorized.delete(cb);
+  };
+};
+
+type SessionPair = { token: string; refreshToken: string };
+
+/** The header that asks the worker for a 15-minute access token plus a refresh token instead of the 24-hour token alone. */
+const OPT_IN_HEADERS = { 'X-Notarium-Session': 'refresh' };
+
+/**
+ * What a refresh attempt concluded — the caller decides what dies.
+ *  - rotated: both keys now hold a live pair (swapped by us, or by another tab that got there first) — replay.
+ *  - rejected: the worker refused the token (401/400, or an answer with no pair): the session is dead. The keys were
+ *    cleared, unless another tab had already replaced them.
+ *  - unavailable: the worker could not be asked (429/5xx/network): nothing is known about the session, both keys
+ *    stay, and `error` is the transient failure to show.
+ */
+type RefreshOutcome = 'rotated' | 'rejected' | 'unavailable';
+type RefreshResult =
+  | { outcome: Exclude<RefreshOutcome, 'unavailable'> }
+  | { outcome: 'unavailable'; error: ApiError };
+
+/** Tabs rotate one at a time: whoever holds this Web Lock refreshes, the others find the new pair when they get it. */
+const REFRESH_LOCK = 'notarium-refresh';
+function withRefreshLock<T>(fn: () => Promise<T>): Promise<T> {
+  const locks = typeof navigator !== 'undefined' ? navigator.locks : undefined;
+  // ponytail: lib.dom types the callback's return as the resolved value; Web Locks actually unwrap the promise.
+  return locks ? (locks.request(REFRESH_LOCK, fn) as Promise<T>) : fn();
+}
+
+/**
+ * Trade `current` (the refresh token the caller saw when it hit the 401) for a new pair. One flight per tab —
+ * concurrent 401s wait on the same promise — and one tab at a time across the browser, so the worker sees one
+ * rotation per refresh token (a second use of the same one would revoke the family).
+ */
+let refreshing: Promise<RefreshResult> | null = null;
+function refreshSession(current: string): Promise<RefreshResult> {
+  if (!refreshing) {
+    refreshing = withRefreshLock(() => rotate(current)).finally(() => {
+      refreshing = null;
+    });
+  }
+  return refreshing;
+}
+
+async function rotate(current: string): Promise<RefreshResult> {
+  // Another tab rotated while we waited for the lock: its pair is the live one.
+  if (refreshToken.get() !== current) return { outcome: 'rotated' };
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}/api/auth/refresh`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refreshToken: current }),
+    });
+  } catch {
+    return { outcome: 'unavailable', error: new ApiError(friendly(0, undefined, true), 0) };
+  }
+  const data = (await res.json().catch(() => ({}))) as Partial<SessionPair> & { error?: string };
+  if (res.ok && data.token && data.refreshToken) {
+    token.set(data.token);
+    refreshToken.set(data.refreshToken);
+    return { outcome: 'rotated' };
+  }
+  const refused = res.ok || res.status === 401 || res.status === 400;
+  if (!refused)
+    return {
+      outcome: 'unavailable',
+      error: new ApiError(friendly(res.status, data.error, true), res.status),
+    };
+  // Refused — but if another tab rotated this very token while our request was in flight, the worker refused a
+  // token that is simply stale on our side, and that tab's pair is what to use.
+  if (refreshToken.get() !== current) return { outcome: 'rotated' };
+  token.clear();
+  refreshToken.clear();
+  return { outcome: 'rejected' };
+}
+
+/** Sign-in responses carry the refresh token; keep it (or drop a stale one when the worker sends none). */
+function rememberRefreshToken<T extends { refreshToken?: string }>(res: T): T {
+  if (res.refreshToken) refreshToken.set(res.refreshToken);
+  else refreshToken.clear();
+  return res;
+}
+
+type RequestOptions = { method?: string; body?: unknown; headers?: Record<string, string> };
+
+async function request<T>(path: string, init: RequestOptions = {}, replay = false): Promise<T> {
+  // ponytail: sign-in/sign-up authenticate by credentials, so a stale stored token must not ride along, and their 401 means wrong password — never a dead session.
+  // The Google exchange is a credential call too: it proves identity with the
+  // worker's one-time code, so a stale stored token must not ride along (its 401
+  // would sign out the session the exchange is in the middle of opening).
+  const isCredentialCall =
+    path === '/api/auth/login' || path === '/api/auth/signup' || path === '/auth/google/exchange';
+  // ponytail: logout is the caller already ending the session — its 401 must not re-enter signOut through onUnauthorized.
+  const isLogout = path === '/api/auth/logout';
+  const t = isCredentialCall ? null : token.get();
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}${path}`, {
+      method: init.method ?? 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        ...init.headers,
+        ...(t ? { Authorization: `Bearer ${t}` } : {}),
+      },
+      body: init.body === undefined ? undefined : JSON.stringify(init.body),
+    });
+  } catch {
+    throw new ApiError(friendly(0, undefined, !!t), 0);
+  }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const sessionRejected = res.status === 401 && !!t && !isCredentialCall;
+    if (sessionRejected) {
+      // A live pair another tab stored while this request was in flight beats anything we know.
+      const replaced = () => {
+        const stored = token.get();
+        return !!stored && stored !== t;
+      };
+      // Refresh once, replay once. A refresh the worker could not be asked for (429/5xx/network) surfaces as that
+      // transient error and touches nothing; only a refused refresh — or the replay's own 401 — ends the session.
+      if (!replay) {
+        if (replaced()) return request<T>(path, init, true);
+        const current = refreshToken.get();
+        if (current) {
+          const result = await refreshSession(current);
+          if (result.outcome === 'rotated') return request<T>(path, init, true);
+          if (result.outcome === 'unavailable') throw result.error;
+        }
+      }
+      // Dead session: forget the keys (a refused refresh already did) and tell subscribers — unless another tab replaced them meanwhile.
+      if (!replaced()) {
+        token.clear();
+        refreshToken.clear();
+        if (!isLogout)
+          unauthorized.forEach((cb) => {
+            try {
+              cb();
+            } catch (e) {
+              console.error('onUnauthorized subscriber failed', e);
+            }
+          });
+      }
+    }
+    throw new ApiError(friendly(res.status, (data as { error?: string }).error, !!t), res.status);
+  }
+  return data as T;
+}
+
+/** Sign-in answers carry the session; main can also answer a 2FA challenge with no token, which this app cannot complete. */
+type SessionAnswer = { token?: string; refreshToken?: string; user?: User; requires_2fa?: boolean };
+function openSession(res: SessionAnswer): { token: string; refreshToken?: string; user: User } {
+  if (!res.token || !res.user)
+    throw new ApiError(
+      res.requires_2fa
+        ? 'This account uses two-factor sign-in, which this app does not support yet.'
+        : 'Sign-in did not return a session.',
+      200,
+    );
+  return rememberRefreshToken({ token: res.token, refreshToken: res.refreshToken, user: res.user });
 }
 
 export const api = {
-  // ponytail: default T = any so the many legacy untyped callers (response.foo)
-  // keep working; typed callers still pass an explicit <T> and get full safety.
-  async request<T = any>(endpoint: string, options: RequestOptions = {}): Promise<T> {
-    const url = `${baseURL}${endpoint}`;
-
-    const currentToken = getToken();
-    const config = {
-      headers: {
-        'Content-Type': 'application/json',
-        ...(currentToken && { Authorization: `Bearer ${currentToken}` }),
-        ...options.headers,
-      },
-      ...options,
-    };
-
-    if (config.body && typeof config.body === 'object') {
-      config.body = JSON.stringify(config.body);
-    }
-
-    const response = await fetch(url, config as RequestInit);
-    const data = await response.json();
-
-    if (!response.ok) {
-      const errorMsg = data.error || `API request failed: ${response.status}`;
-      // Log only non-sensitive fields — never log full response bodies or token length.
-      logger.error('api', `Error ${response.status}`, { url, hasToken: !!currentToken });
-      throw new Error(errorMsg);
-    }
-
-    return data;
-  },
-
-  isAuthenticated: () => !!getToken(),
-
-  getToken,
-  setToken,
-
-  clearToken: () => {
-    cachedToken = null;
-    if (typeof window !== 'undefined') {
-      sessionStorage.removeItem(TOKEN_KEY);
-    }
-  },
-
-  logout: () => {
-    api.clearToken();
-  },
-
   auth: {
-    signup: (data: SignupData): Promise<LoginResponse> =>
-      api.request<LoginResponse>('/api/auth/signup', {
+    /** POST /api/auth/login → main: `{ success, token, user }` (no refreshToken; `{ requires_2fa, challenge }` for 2FA accounts). */
+    login: (email: string, password: string) =>
+      request<SessionAnswer>('/api/auth/login', {
         method: 'POST',
-        body: data,
-      }),
-    login: (credentials: LoginCredentials): Promise<LoginResponse> =>
-      api.request<LoginResponse>('/api/auth/login', {
+        body: { email, password },
+        headers: OPT_IN_HEADERS,
+      }).then(openSession),
+    /** POST /api/auth/signup → main: 201 `{ token, user }` (no success field, no refreshToken). Main only accepts its school domain and a seeded class name. */
+    signup: (email: string, password: string, name: string, cls?: string) =>
+      request<SessionAnswer>('/api/auth/signup', {
         method: 'POST',
-        body: credentials,
-      }),
-    adminLogin: (credentials: LoginCredentials): Promise<LoginResponse> =>
-      api.request<LoginResponse>('/api/auth/admin-login', {
-        method: 'POST',
-        body: credentials,
-      }),
-    verify2fa: (challenge: string, code: string): Promise<LoginResponse> =>
-      api.request<LoginResponse>('/api/auth/2fa/verify', {
-        method: 'POST',
-        body: { challenge, code },
-      }),
-    me: (): Promise<{ user: User }> =>
-      api.request<{ user: User }>('/api/auth/me', { method: 'GET' }),
-  },
-
-  twoFactor: {
-    setup: (): Promise<TwoFactorSetup> =>
-      api.request<TwoFactorSetup>('/api/auth/2fa/setup', { method: 'POST' }),
-    enable: (code: string): Promise<TwoFactorEnableResponse> =>
-      api.request<TwoFactorEnableResponse>('/api/auth/2fa/enable', {
-        method: 'POST',
-        body: { code },
-      }),
-    disable: (params: { code?: string; password?: string }): Promise<{ success: boolean }> =>
-      api.request<{ success: boolean }>('/api/auth/2fa/disable', {
-        method: 'POST',
-        body: params,
-      }),
-  },
-
-  forgotPassword: (email: string): Promise<ForgotPasswordResponse> =>
-    api.request<ForgotPasswordResponse>('/api/auth/forgot-password', {
-      method: 'POST',
-      body: { email },
-    }),
-
-  setPassword: (newPassword: string): Promise<SetPasswordResponse> =>
-    api.request<SetPasswordResponse>('/api/auth/set-password', {
-      method: 'POST',
-      body: { newPassword },
-    }),
-
-  register: async (
-    email: string,
-    password: string,
-    name: string,
-    _role: string,
-    classValue: string,
-    academic_year?: string,
-  ) => {
-    // Captured here, not asked for: the browser already knows, and a signup
-    // form is the wrong place to make a fifteen-year-old pick an IANA zone. The
-    // server drops it if it cannot format in it, and Settings can correct it.
-    const response = await api.auth.signup({
-      email,
-      password,
-      name,
-      class: classValue,
-      ...(academic_year && { academic_year }),
-      ...(browserZone() && { timezone: browserZone() }),
-    });
-    if (response.token) {
-      setToken(response.token);
-    }
-    return { success: true, user: response.user, token: response.token };
-  },
-
-  login: async (email: string, password: string) => {
-    const response = await api.auth.login({ email, password });
-    if (response.requires_2fa) {
-      return response;
-    }
-    if (response.token) {
-      setToken(response.token);
-    }
-    return { success: true, user: response.user, token: response.token };
-  },
-
-  getCurrentUser: async (): Promise<User> => {
-    const token = getToken();
-    logger.debug('api', 'getCurrentUser', { hasToken: !!token });
-    // /api/auth/me answers with an envelope; unwrap it. Returning the envelope
-    // leaves every consumer reading user.name / user.role / user.timezone as
-    // undefined, which reads as "logged in but nobody" rather than as an error.
-    const response = await api.request<{ user: User }>('/api/auth/me', {
-      method: 'GET',
-    });
-    return response.user;
-  },
-
-  updateProfile: async (data: ProfileUpdateData): Promise<User> => {
-    const token = getToken();
-    logger.debug('api', 'updateProfile', { hasToken: !!token });
-    // Same envelope as /api/auth/me — unwrap rather than hand back the wrapper.
-    const response = await api.request<{ user: User }>('/api/auth/profile', {
-      method: 'PUT',
-      body: data,
-    });
-    return response.user;
-  },
-
-  notes: {
-    getAll: (): Promise<NotesResponse> => api.request<NotesResponse>('/api/notes'),
-    create: (note: CreateNoteData): Promise<Note> =>
-      api.request<Note>('/api/notes', {
-        method: 'POST',
-        body: note,
-      }),
-    getNote: (id: number): Promise<{ note: NoteDetail }> =>
-      api.request<{ note: NoteDetail }>(`/api/notes/${id}`, { method: 'GET' }),
-  },
-
-  getNotes: (): Promise<NotesResponse> => api.request<NotesResponse>('/api/notes'),
-
-  subjects: {
-    getAll: (): Promise<SubjectsResponse> => api.request<SubjectsResponse>('/api/subjects'),
-  },
-
-  getSubjects: async () => {
-    try {
-      const response = await api.request('/api/subjects');
-      return {
-        subjects: response.subjects || response.data || response || [],
-      };
-    } catch (error) {
-      return { subjects: [] };
-    }
-  },
-
-  getSubjectNotes: async (subjectId: number) => {
-    try {
-      const response = await api.request(`/api/subjects/${subjectId}/notes`);
-      return {
-        notes: response.notes || response.data || response || [],
-      };
-    } catch (error) {
-      return { notes: [] };
-    }
-  },
-
-  getLeaderboard: async () => {
-    try {
-      const response = await api.request('/api/leaderboard');
-      return {
-        leaderboard: response.leaderboard || response.data || response || [],
-      };
-    } catch (error) {
-      return { leaderboard: [] };
-    }
-  },
-
-  searchNotes: async (query: string) => {
-    try {
-      const response = await api.request(`/api/notes/search?q=${encodeURIComponent(query)}`);
-      return {
-        notes: response.notes || response.data || [],
-      };
-    } catch (error) {
-      return { notes: [] };
-    }
-  },
-
-  likeNote: async (noteId: number) => {
-    try {
-      const response = await api.request(`/api/notes/${noteId}/like`, {
-        method: 'POST',
-      });
-      return { success: true, note: response.note };
-    } catch (error) {
-      return { success: false };
-    }
-  },
-
-  upvoteNote: async (noteId: number) => {
-    try {
-      const response = await api.request(`/api/notes/${noteId}/upvote`, {
-        method: 'POST',
-      });
-      return { success: true, note: response.note };
-    } catch (error) {
-      return { success: false };
-    }
-  },
-
-  ai: {
-    generateSummary: async (noteId: number, content: string = '') => {
-      const response = await api.request(`/api/notes/${noteId}/summary`, {
-        method: 'POST',
-        body: { content },
-      });
-      return { summary: response.summary || '' };
+        body: { email, password, name, class: cls },
+        headers: OPT_IN_HEADERS,
+      }).then(openSession),
+    /** GET /api/auth/me → `{ user }`. */
+    me: () => request<{ user: User }>('/api/auth/me'),
+    /**
+     * Hand the browser to the worker, which hands it to Google. There is no
+     * client id and no secret in this app: the worker owns the whole exchange
+     * and sends us back to /auth/callback with a one-time code.
+     *
+     * Not `/api/...` — the OAuth routes sit at the root of the worker.
+     */
+    googleSignIn: (from?: string) => {
+      if (from)
+        try {
+          sessionStorage.setItem(GOOGLE_RETURN_KEY, from);
+        } catch {
+          /* private mode */
+        }
+      window.location.assign(`${API_URL}/auth/google/start?intent=signup`);
     },
-    generateQuiz: async (noteId: number, content: string = '') => {
-      const response = await api.request(`/api/notes/${noteId}/quiz`, {
-        method: 'POST',
-        body: { content },
-      });
-      return { quiz: response.quiz || { questions: [] } };
-    },
-    // Structured multi-type quiz (POST /api/ai/quiz). Source is a single owned
-    // note or the caller's own notes within a subject (author-scoped server-side).
-    generateStructuredQuiz: async (params: {
-      source_type: 'note' | 'subject';
-      source_id: number;
-      count: number;
-      difficulty: 'easy' | 'medium' | 'hard';
-      types: Array<'mcq' | 'true_false' | 'short_answer'>;
-    }) => {
-      const response = await api.request('/api/ai/quiz', {
-        method: 'POST',
-        body: params,
-      });
-      return { questions: response.questions || [] };
-    },
-    generateStudyPlan: async (subject: string, topic: string) => {
-      const response = await api.request('/api/study-plan', {
-        method: 'POST',
-        body: { subject, topic },
-      });
-      return { plan: response.plan || '' };
-    },
-    explainConcept: async (concept: string) => {
-      const response = await api.request('/api/concept-explain', {
-        method: 'POST',
-        body: { concept },
-      });
-      return { explanation: response.explanation || '' };
-    },
-    // Stateless class primer (POST /api/ai/primer). Topic string only — no note,
-    // no DB read, no persistence. Returns the flat 3-field PrimerResponse shape.
-    generatePrimer: async (topic: string): Promise<PrimerResponse> => {
-      const response = await api.request('/api/ai/primer', {
-        method: 'POST',
-        body: { topic },
-      });
-      return {
-        overview: response.overview || '',
-        key_concepts: response.key_concepts || [],
-        questions: response.questions || [],
-      };
-    },
-    performOCR: async (imageBase64: string, mimeType: string = 'image/jpeg') => {
-      const response = await api.request('/api/gemini/ocr', {
-        method: 'POST',
-        body: { imageBase64, mimeType },
-      });
-      return { text: response.text || '', success: response.success || false };
-    },
-  },
-
-  debug: {
-    testUpdate: async (userId: number, name: string) => {
-      const response = await api.request('/api/debug/verify-update', {
-        method: 'POST',
-        body: { userId, name },
-      });
-      return response;
-    },
-  },
-
-  admin: {
-    verify: async (email: string, password: string) => {
+    /** Where the visitor was headed before Google took over; consumed once. */
+    takeGoogleReturn: () => {
       try {
-        const response = await api.request('/api/admin/verify', {
-          method: 'POST',
-          body: { email, password },
-        });
-        return { success: response.success || false };
-      } catch (error: unknown) {
-        return { success: false };
+        const v = sessionStorage.getItem(GOOGLE_RETURN_KEY);
+        sessionStorage.removeItem(GOOGLE_RETURN_KEY);
+        return v;
+      } catch {
+        return null;
       }
     },
-    getUsers: async () => {
-      try {
-        const response = await api.request('/api/admin/users', {
-          method: 'GET',
-        });
-        return { users: response.users || [] };
-      } catch (error) {
-        return { users: [] };
-      }
-    },
-    getNotes: async () => {
-      try {
-        const response = await api.request('/api/admin/notes', {
-          method: 'GET',
-        });
-        return { notes: response.notes || [] };
-      } catch (error) {
-        return { notes: [] };
-      }
-    },
-    deleteUser: async (userId: number) => {
-      await api.request(`/api/admin/user/${userId}`, {
-        method: 'DELETE',
-      });
-      return { success: true };
-    },
-    suspendUser: async (userId: number, days: number, reason: string) => {
-      const response = await api.request(`/api/admin/suspend/${userId}`, {
-        method: 'POST',
-        body: { days, reason },
-      });
-      return { success: true, ...response };
-    },
-    warnUser: async (userId: number, message: string) => {
-      const response = await api.request(`/api/admin/warn/${userId}`, {
-        method: 'POST',
-        body: { message },
-      });
-      return { success: true, ...response };
-    },
-    unsuspendUser: async (userId: number) => {
-      const response = await api.request(`/api/admin/unsuspend/${userId}`, {
-        method: 'POST',
-      });
-      return { success: true, ...response };
-    },
-    likeNote: async (noteId: number) => {
-      const response = await api.request(`/api/admin/notes/${noteId}/like`, {
-        method: 'POST',
-      });
-      return { liked: response.liked };
-    },
-    deleteNote: async (noteId: number) => {
-      const response = await api.request(`/api/admin/notes/${noteId}`, {
-        method: 'DELETE',
-      });
-      return { success: response.success };
-    },
-    restoreNote: async (noteId: number) => {
-      const response = await api.request(`/api/admin/notes/${noteId}/restore`, {
-        method: 'POST',
-      });
-      return { success: response.success };
-    },
-    featureNote: async (noteId: number) => {
-      const response = await api.request(`/api/admin/notes/${noteId}/feature`, {
-        method: 'POST',
-      });
-      return { success: response.success, featured: response.featured };
-    },
-    searchNotes: async (params: {
-      q?: string;
-      subject?: string;
-      status?: string;
-      sort?: string;
-    }) => {
-      const qs = new URLSearchParams();
-      if (params.q) qs.set('q', params.q);
-      if (params.subject) qs.set('subject', params.subject);
-      if (params.status) qs.set('status', params.status);
-      if (params.sort) qs.set('sort', params.sort);
-      const query = qs.toString();
-      try {
-        const response = await api.request(`/api/admin/notes${query ? `?${query}` : ''}`, {
-          method: 'GET',
-        });
-        return { notes: response.notes || [] };
-      } catch (error) {
-        return { notes: [] };
-      }
-    },
-    updateUser: async (
-      userId: number,
-      data: {
-        display_name?: string;
-        class?: string;
-        diamonds?: number;
-        learning_points?: number;
-      },
-    ) => {
-      const response = await api.request(`/api/admin/user/${userId}`, {
-        method: 'PUT',
-        body: data,
-      });
-      return { success: response.success, user: response.user };
-    },
-    getSubjects: () =>
-      api.request<{ subjects: AdminSubject[] }>('/api/admin/subjects', { method: 'GET' }),
-    createSubject: (data: { name: string; icon?: string }) =>
-      api.request<{ subject: AdminSubject }>('/api/admin/subjects', {
-        method: 'POST',
-        body: data,
-      }),
-    updateSubject: (id: number, data: { name?: string; icon?: string }) =>
-      api.request<{ subject: AdminSubject }>(`/api/admin/subjects/${id}`, {
-        method: 'PUT',
-        body: data,
-      }),
-    deleteSubject: (id: number) =>
-      api.request<{ success: boolean }>(`/api/admin/subjects/${id}`, { method: 'DELETE' }),
-    getGradeClasses: () => api.request<{ grade_classes: GradeClass[] }>('/api/admin/grade-classes'),
-    createGradeClass: (data: { grade: number; class_name: string; semester?: string }) =>
-      api.request<{ grade_class: GradeClass }>('/api/admin/grade-classes', {
-        method: 'POST',
-        body: data,
-      }),
-    updateGradeClass: (id: number, data: Partial<GradeClass>) =>
-      api.request<{ grade_class: GradeClass }>(`/api/admin/grade-classes/${id}`, {
-        method: 'PUT',
-        body: data,
-      }),
-    deleteGradeClass: (id: number) =>
-      api.request<{ success: boolean }>(`/api/admin/grade-classes/${id}`, { method: 'DELETE' }),
-    reassignUserClass: (data: {
-      user_id: number;
-      new_class: string;
-      send_notification?: boolean;
-    }) =>
-      api.request<{ success: boolean }>('/api/admin/grade-classes/reassign', {
-        method: 'POST',
-        body: data,
-      }),
-    promoteClasses: (class_ids: number[], new_academic_year?: string) =>
-      api.request<PromoteClassesResponse>('/api/admin/grade-classes/promote', {
-        method: 'POST',
-        body: { class_ids, ...(new_academic_year && { new_academic_year }) },
-      }),
-    getNotifications: () => api.request<NotificationsListResponse>('/api/admin/notifications'),
-    createNotification: (data: {
-      target_type: string;
-      target_grade?: number;
-      target_class?: string;
-      target_user_id?: number;
-      notification_type?: string;
-      title: string;
-      message: string;
-    }) =>
-      api.request<{ notification: AppNotification }>('/api/admin/notifications', {
-        method: 'POST',
-        body: data,
-      }),
-    deleteNotification: (id: number) =>
-      api.request<{ success: boolean }>(`/api/admin/notifications/${id}`, { method: 'DELETE' }),
-  },
-
-  ops: {
-    health: () => api.request<OpsHealth>('/api/health'),
-    metrics: () => api.request<OpsMetrics>('/api/ops/metrics'),
-    timeseries: (metric: string, range: number) =>
-      api.request<OpsTimeseries>(
-        `/api/ops/timeseries?metric=${encodeURIComponent(metric)}&range=${range}`,
+    /**
+     * POST /auth/google/exchange → `{ token }`. The code is single-use and lives
+     * 60 seconds in the worker's KV; the JWT never travels in a URL.
+     */
+    googleExchange: (code: string) =>
+      request<{ token: string }>('/auth/google/exchange', { method: 'POST', body: { code } }).then(
+        (r) => {
+          if (!r.token) throw new ApiError('Google sign-in did not return a session.', 200);
+          token.set(r.token);
+          return r.token;
+        },
       ),
-    flags: () => api.request<OpsFlags>('/api/ops/flags'),
-    cloudflare: (range = 7) => api.request<OpsCloudflare>(`/api/ops/cloudflare?range=${range}`),
-    setMaintenance: (on: boolean) =>
-      api.request<{ success: boolean; maintenance: boolean }>('/api/ops/maintenance', {
+    /** POST /api/auth/logout — not on main (404, swallowed by the store). Revokes this session's refresh family on a worker that issued one (every family when none is stored). Reads the tokens synchronously, so it may be fired right before clearing them. */
+    logout: () => {
+      const current = refreshToken.get();
+      return request<{ success: boolean }>('/api/auth/logout', {
         method: 'POST',
-        body: { on },
-      }),
-    setFlag: (flag: string, enabled: boolean) =>
-      api.request<{ success: boolean; flag: string; enabled: boolean }>('/api/ops/flags', {
-        method: 'POST',
-        body: { flag, enabled },
-      }),
-    recompute: (target: string) =>
-      api.request<{ success: boolean; target: string; skipped?: boolean }>('/api/ops/recompute', {
-        method: 'POST',
-        body: { target },
-      }),
-    // Fetches the CSV as text and triggers a browser download.
-    exportActivityLog: async () => {
-      const token = getToken();
-      const res = await fetch(`${baseURL}/api/ops/activity-log.csv`, {
-        headers: { ...(token && { Authorization: `Bearer ${token}` }) },
+        body: current ? { refreshToken: current } : {},
       });
-      if (!res.ok) {
-        throw new Error(`Export failed: ${res.status}`);
-      }
-      const csv = await res.text();
-      if (typeof window !== 'undefined') {
-        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
-        const objectUrl = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = objectUrl;
-        a.download = 'admin-activity-log.csv';
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(objectUrl);
-      }
-      return csv;
     },
-    purgeNotes: (days: number) =>
-      api.request<{ success: boolean; deleted: number }>('/api/ops/danger/purge-notes', {
-        method: 'POST',
-        body: { olderThanDays: days },
-      }),
-    revokeTokens: () =>
-      api.request<{ success: boolean }>('/api/ops/danger/revoke-tokens', {
-        method: 'POST',
+  },
+  user: {
+    /**
+     * PUT /api/user/class → `{ success }`. The class and the focus subjects in
+     * one call: the worker checks the class against the school's register and
+     * every subject id against the subjects table, so a 400 here means one of
+     * those two and nothing was written.
+     *
+     * The display name is not in this body on purpose — on a Google account it
+     * is re-read from Google at every sign-in and nothing may overwrite it.
+     */
+    saveProfile: (cls: string, focusSubjectIds: number[]) =>
+      request<{ success: boolean }>('/api/user/class', {
+        method: 'PUT',
+        body: { class: cls, focus_subject_ids: focusSubjectIds },
       }),
   },
-
-  getGradeClasses: () => api.request<GradeClassesResponse>('/api/grade-classes'),
-
-  notifications: {
-    getAll: () => api.request<NotificationsListResponse>('/api/notifications'),
-    getUnreadCount: () => api.request<UnreadCountResponse>('/api/notifications/unread-count'),
-    markRead: (id: number) =>
-      api.request<{ success: boolean }>(`/api/notifications/${id}/read`, { method: 'POST' }),
-    markAllRead: () =>
-      api.request<{ success: boolean }>('/api/notifications/read-all', { method: 'POST' }),
+  /** GET /api/subjects → `{ subjects }`, public. */
+  subjects: () => request<{ subjects: Subject[] }>('/api/subjects').then((r) => r.subjects),
+  /** GET /api/leaderboard → `{ leaderboard }`, public, ranked by `learning_points` — surfaced as `points`, see `Leader`. */
+  leaderboard: () =>
+    request<{ leaderboard: (Omit<Leader, 'points'> & { points?: number })[] }>(
+      '/api/leaderboard',
+    ).then((r) =>
+      r.leaderboard.map((l) => ({
+        ...l,
+        points:
+          l.learning_points ??
+          l.points ??
+          (l.notes_uploaded ?? 0) + (l.total_likes ?? 0) + (l.total_admin_upvotes ?? 0),
+      })),
+    ),
+  notes: {
+    /** GET /api/notes/subject/:id → `{ notes }` (published, class-visible; no `subject_name`). Needs a token. */
+    bySubject: (id: number) =>
+      request<{ notes: Note[] }>(`/api/notes/subject/${id}`).then((r) => r.notes),
+    /** GET /api/notes/search?q= → `{ notes }` with `subject_name`; matches title/description/extracted_text/author/tags/subject. Needs a token. */
+    search: (q: string) =>
+      request<{ notes: Note[] }>(`/api/notes/search?q=${encodeURIComponent(q)}`).then(
+        (r) => r.notes,
+      ),
+    /** GET /api/notes/my-notes → `{ notes }` grouped by subject name; rows have no `content`/`description`. */
+    mine: () => request<{ notes: Note[] }>('/api/notes/my-notes').then((r) => r.notes),
+    /**
+     * POST /api/notes → `{ note, notes, success, totalParts }`. Main checks only `title` and a real `subject_id`
+     * (its zod `noteSchema` is unused; the live `notes` table has no NOT NULL columns). Text goes in BOTH
+     * `extracted_text` (what main's app reads, search scores and my-notes returns) and `content` (our block
+     * text); `tags` is an array main JSON-encodes; `visibility` '' means everyone; `status` other than 'draft'
+     * is published. Main writes one row per image chunk — with no images it writes NOTHING and still answers
+     * `success: true` with an empty `notes`, so a missing `note` is treated as a failure here.
+     */
+    create: (body: NewNote) =>
+      request<{ success?: boolean; note?: Note; notes?: Note[]; totalParts?: number }>(
+        '/api/notes',
+        { method: 'POST', body },
+      ).then((r) => {
+        if (!r.note)
+          throw new ApiError(
+            'Notarium did not save this note. The worker stores nothing for a text-only note yet.',
+            200,
+          );
+        return { ...r, note: r.note };
+      }),
+    /** POST /api/notes/:id/like → `{ liked }` (a toggle). */
+    like: (id: number) => request<{ liked: boolean }>(`/api/notes/${id}/like`, { method: 'POST' }),
   },
-
-  logQuizAttempt: (payload: {
-    note_id?: number;
-    question_text: string;
-    is_correct: boolean;
-    confidence?: number;
-  }): Promise<{
-    success: boolean;
-    due_at: string;
-    current_streak: number;
-    learning_points: number;
-  }> => api.request('/api/quiz/attempt', { method: 'POST', body: payload }),
-
-  getDueReviews: (): Promise<{
-    items: Array<{
-      id: number;
-      note_id: number | null;
-      question_text: string;
-      question_hash: string;
-      ease_factor: number;
-      interval_days: number;
-      repetitions: number;
-      due_at: string | null;
-      created_at: string;
-      updated_at: string;
-    }>;
-    due_count: number;
-  }> => api.request('/api/reviews/due'),
-
-  gradeReview: (
-    itemId: number,
-    payload: { is_correct: boolean; confidence?: number },
-  ): Promise<{
-    due_at: string;
-    current_streak: number;
-    learning_points: number;
-  }> => api.request(`/api/reviews/${itemId}/grade`, { method: 'POST', body: payload }),
-
-  gradeRecall: (payload: {
-    note_id?: number;
-    note_content: string;
-    recall_text: string;
-  }): Promise<{
-    score: number;
-    feedback: string;
-    missed_points: string[];
-  }> => api.request('/api/recall/grade', { method: 'POST', body: payload }),
-
-  getTutors: (
-    subjectId?: number,
-  ): Promise<{
-    tutors: Array<{
-      id: number;
-      user_id: number;
-      name: string;
-      photo_url: string | null;
-      grade: number | null;
-      alumni: boolean;
-      subject_id: number;
-      subject_name: string | null;
-      subject_icon: string | null;
-      blurb: string | null;
-      grade_min: number | null;
-      grade_max: number | null;
-      languages: string | null;
-      rating_avg: number | null;
-      session_count: number;
-      learning_points: number;
-    }>;
-  }> => api.request(`/api/tutors${subjectId ? `?subject_id=${subjectId}` : ''}`),
-
-  getSessions: (): Promise<{
-    sessions: Array<{
-      id: number;
-      topic: string | null;
-      kind: string;
-      seat_cap: number;
-      seats_taken: number;
-      seats_left: number;
-      i_am_in: boolean;
-      i_am_tutor: boolean;
-      starts_at: string;
-      ends_at: string;
-      location: string | null;
-      tutor_name: string;
-      tutor_user_id: number;
-      subject_name: string | null;
-      subject_icon: string | null;
-    }>;
-  }> => api.request('/api/sessions'),
-
-  bookSession: (id: number): Promise<{ success: boolean; seat_no: number }> =>
-    api.request(`/api/sessions/${id}/book`, { method: 'POST' }),
-
-  completeSession: (
-    id: number,
-  ): Promise<{
-    success: boolean;
-    points_awarded?: number;
-    already_completed?: boolean;
-    attended?: number;
-  }> => api.request(`/api/sessions/${id}/complete`, { method: 'POST' }),
-
-  rateBooking: (
-    bookingId: number,
-    rating: number,
-  ): Promise<{ success: boolean; rating: number; rating_avg: number | null }> =>
-    api.request(`/api/bookings/${bookingId}/rate`, { method: 'POST', body: { rating } }),
-
-  cancelSession: (id: number): Promise<{ success: boolean; cancelled: string }> =>
-    api.request(`/api/sessions/${id}/cancel`, { method: 'POST' }),
-
-  getTutorEligibility: (): Promise<{
-    eligible: boolean;
-    reasons: string[];
-    learning_points: number;
-    notes_uploaded: number;
-    requirements: { learning_points: number; notes_uploaded: number };
-    my_profiles: Array<{ id: number; subject_id: number; status: string; subject_name: string }>;
-  }> => api.request('/api/tutors/eligibility'),
-
-  applyAsTutor: (payload: {
-    subject_id: number;
-    blurb?: string;
-    grade_min?: number;
-    grade_max?: number;
-  }): Promise<{ success: boolean; status: string; message: string }> =>
-    api.request('/api/tutors/apply', { method: 'POST', body: payload }),
-
-  getBadges: (): Promise<{
-    badges: Array<{
-      key: string;
-      label: string;
-      hint: string;
-      earned: boolean;
-      progress?: { have: number; need: number };
-      unavailable?: string;
-    }>;
-    rank: number;
-    tests_completed: number;
-  }> => api.request('/api/badges'),
-
-  completeTest: (payload: {
-    question_count: number;
-    correct_count: number;
-    source_type?: string | null;
-    source_id?: number | null;
-    duration_sec?: number | null;
-  }): Promise<{
-    success: boolean;
-    score_pct: number;
-    tests_completed: number;
-    previous: { score_pct: number; created_at: string; delta: number } | null;
-  }> => api.request('/api/tests/complete', { method: 'POST', body: payload }),
-
-  getStudyStats: (): Promise<{
-    current_streak: number;
-    longest_streak: number;
-    learning_points: number;
-    due_count: number;
-  }> => api.request('/api/study/stats'),
 };
 
-export default api;
+/** Pull the top-liked published notes across every subject (the worker has no cross-subject list). */
+export async function topNotes(subjects: Subject[], limit = 6) {
+  const lists = await Promise.all(
+    subjects
+      .filter((s) => s.note_count > 0)
+      .map((s) =>
+        api.notes
+          .bySubject(s.id)
+          .then((n) => n.map((x) => ({ ...x, subject_name: s.name })))
+          .catch(() => [] as Note[]),
+      ),
+  );
+  return lists
+    .flat()
+    .sort(
+      (a, b) => (b.likes ?? 0) + (b.admin_upvotes ?? 0) - (a.likes ?? 0) - (a.admin_upvotes ?? 0),
+    )
+    .slice(0, limit);
+}
