@@ -44,6 +44,21 @@ NOT EXISTS` never repairs an existing table — that is why `users` needed a
 - Backups from today (full D1 exports, real student data) are in
   `backend/backups/` — gitignored, keep it that way.
 
+## Worker deployed (28 Oct 2026, 15:27 UTC)
+
+- `npx wrangler deploy` from `backend/` at `7769369`. **Version
+  `4f2d22b1-ab7b-4a7a-b5d5-e991c54f2f04`; rollback to
+  `81356472-b32e-4f9b-9345-b7aa847dea23`** (live before, 28 Oct 12:21 UTC).
+- Production had sat at ~`fce5092` since go-live, so this shipped **14 backend
+  commits**, not just the auth fix (owner approved, two `!` commits included).
+- For real users: sign-up is open (`a6c169a`, the domain lock is gone); an
+  off-register class is stored, not refused (`29f77b4`); rotating refresh
+  tokens are issued (`768f416`), lighting up the client's short-session path.
+- Verified after: `/api/health` ok · `/api/ready` `{db:true,kv:true}` · refresh,
+  logout, admin and ops all 401 · CORS preflight from the Vercel origin 204.
+- **NOT verified:** an admin sign-in reaching a moderator panel — pinned by the
+  five C-bis tests, never watched against production. See Next #4.
+
 ## Decided
 
 - Deploy from this machine, not GitHub Actions. `deploy.yml` ends red every
@@ -75,8 +90,21 @@ NOT EXISTS` never repairs an existing table — that is why `users` needed a
 - Rehearse the rebuild on the local D1 — different execution path; the probe
   aborts there, so it proves nothing about production. (12 Sep)
 - Finish the Firebase migration before launch — legacy fallback verified. (8 Sep)
-- Chase the 876 KB three-vendor chunk, 442 lint warnings, UI findings F3–F6 —
-  none block anything. (8 Sep)
+- Chase the 442 lint warnings or UI findings F3–F6 — none block anything.
+  (8 Sep; the 876 KB three-vendor chunk it also listed is gone, three.js left
+  with the old frontend in `025d9cd`.)
+
+Carried from the retired `notarium-v2` repo (28 Oct), still binding on `src/`:
+
+- A shadcn HSL variable layer — token names map straight onto the ramp in
+  `tailwind.config.js` instead. (15 Sep)
+- The prototype's view switcher / theme strip for signed-in accounts —
+  design-tool chrome, not product. (owner, 15 Sep)
+- Showing design-only data (tutors, mastery, practice, AI chat) to accounts
+  behind a "preview" label — hidden via `DemoOnly` instead. (owner, 15 + 20 Sep)
+- Reading a note body `content`-first — the body is `extracted_text` (what the
+  upload form writes and what search scores); `content` defaults to the
+  description. See `noteText()`. (20 Sep)
 
 ## Next
 
@@ -86,19 +114,35 @@ NOT EXISTS` never repairs an existing table — that is why `users` needed a
    part of that flow not yet exercised.
 3. Walk the app as a student: upload a note (exercises Vision OCR), check a
    date reads "Today", book a tutor session.
+4. Sign in on `/admin` and check a panel fills — live 28 Oct (`b15b3fd`),
+   never exercised against production.
 
 ## Landmines
 
-- `npm run lint` at the root shows 325 errors. All one cause: eslint sees a
-  second tsconfig in the gitignored `.claude/worktrees/`. Not real; the
-  pre-commit hook (per-file eslint) is unaffected.
+- `npm run lint` at the root is 0 errors / ~455 warnings (checked 28 Oct, clean
+  checkout). The old "325 errors" note was the gitignored `.claude/worktrees/`
+  tsconfig being picked up — it does not reproduce in a fresh clone.
 - `npm run migrate` only runs migrations 0001–0003 of 21. Nothing uses it.
   Delete it so nobody trusts it.
 - Two `wrangler.toml` files. The root one lacks KV and Durable Object
   bindings. Always deploy from `backend/`.
 - `deploy.yml` goes red on every push (R2 step). Do not read the badge as a
   failed deploy; delete those two lines or enable R2.
-- Signup is domain-locked to `@sekolahkristencalvin.org` (backend check).
+- Signup is NO LONGER domain-locked — any Google account may hold one
+  (`211f75c`, `a6c169a`). The domain string survives only in
+  `backend/src/routes/__tests__/oauth-identity.test.ts` fixtures. Corrected
+  28 Oct; the old claim had gone stale.
+- `react-hooks/set-state-in-effect` is set to `warn` in `eslint.config.js`,
+  over 4 load-on-mount fetch sites the client predates. Deliberate, not a
+  statement that the rule is wrong.
+- Customize's Theme and Background pickers are DEAD UI: both are consumed only
+  by `horizon-glow.tsx`, which the Swiss redesign stopped rendering. They show
+  and change nothing. Drop the two sections or rewire them.
+- Playwright (`npm run e2e`, 16 specs) starts its own `wrangler dev` off
+  `backend/`. On Windows, a long checkout path blows MAX_PATH, every D1 query
+  throws, and the only symptom is `/api/health` 503ing until the 120 s
+  webServer timeout. Keep the checkout path short, or set
+  `git config core.longpaths true`.
 - D1 rejects statements over ~100 KB. `wrangler d1 export` output does not
   round-trip through `d1 execute --file` — notes carry base64 images inline.
   To restore from a backup, split it row-per-INSERT and clip or skip the
