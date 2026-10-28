@@ -1,55 +1,27 @@
-import { defineConfig } from 'vite';
+import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
 
-// https://vitejs.dev/config/
-export default defineConfig({
-  plugins: [react()],
-  server: {
-    // Honour PORT so a second dev server (another agent session, a colleague on
-    // the same box) can be assigned a free port instead of colliding on 5173.
-    // Unset behaves exactly as before.
-    port: Number(process.env.PORT) || 5173,
-  },
-  resolve: {
-    alias: {
-      '@': path.resolve(__dirname, './src'),
-    },
-  },
-  build: {
-    // Enable code splitting and chunk optimization
-    rollupOptions: {
-      output: {
-        manualChunks: {
-          // Split vendor code into separate chunks for better caching
-          'react-vendor': ['react', 'react-dom', 'react-router-dom'],
-          // Motion libs isolated into their own async chunk so they don't bloat
-          // the entry/react-vendor bundle.
-          'motion-vendor': ['framer-motion', 'motion'],
-          'ui-vendor': ['lucide-react'],
-          // three + @react-three/fiber kept in a dedicated heavy-lib chunk,
-          // loaded on demand (SubjectsPage lazy-loads the WebGL scene).
-          'three-vendor': ['three', '@react-three/fiber'],
-          markdown: ['react-markdown'],
-          'radix-ui': [
-            '@radix-ui/react-checkbox',
-            '@radix-ui/react-dialog',
-            '@radix-ui/react-label',
-            '@radix-ui/react-select',
-            '@radix-ui/react-slot',
-            '@radix-ui/react-switch',
-            '@radix-ui/react-tooltip',
-          ],
-        },
-      },
-    },
-    // Optimize chunk size warnings
-    chunkSizeWarningLimit: 500,
-    // Enable minification with esbuild (faster than terser)
-    minify: 'esbuild',
-  },
-  // Optimize dependencies
-  optimizeDeps: {
-    include: ['react', 'react-dom', 'react-router-dom'],
-  },
+export default defineConfig(({ mode }) => {
+  // F3 guard: a production bundle must never point at the dev mock. Vite loads `.env.local` in every
+  // mode, so a forgotten rename would bake http://localhost:8787 into the shipped app; the shell env
+  // (VITE_API_URL=...) still wins over the file, which is how CI builds.
+  // ponytail: this tree still has `.env.local` pointing at the mock, so `npm run build` fails here on
+  // purpose until the owner renames it to `.env.development.local` (Wave 0, H3). Do not weaken the guard.
+  const apiUrl = loadEnv(mode, process.cwd(), 'VITE_').VITE_API_URL ?? '';
+  if (mode === 'production' && /localhost|127\.0\.0\.1/.test(apiUrl)) {
+    throw new Error(
+      `VITE_API_URL is "${apiUrl}" in a production build. Rename .env.local to .env.development.local (or set VITE_API_URL to the worker URL) so the bundle does not ship pointing at a local server.`,
+    );
+  }
+  if (mode === 'production' && apiUrl === '') {
+    console.warn(
+      'VITE_API_URL is not set for this production build; the bundle will use the hardcoded worker URL from src/lib/api.ts.',
+    );
+  }
+  return {
+    plugins: [react()],
+    resolve: { alias: { '@': path.resolve(__dirname, './src') } },
+    server: { port: Number(process.env.PORT) || 5173 },
+  };
 });

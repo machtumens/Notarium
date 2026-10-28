@@ -1,26 +1,21 @@
-import '@testing-library/jest-dom';
+/** Runs before every test file: jest-dom matchers, DOM cleanup, fresh storage, and the browser APIs jsdom lacks. */
+import '@testing-library/jest-dom/vitest';
+import { cleanup } from '@testing-library/react';
+import { afterEach, vi } from 'vitest';
 
-Object.defineProperty(window, 'matchMedia', {
-  writable: true,
-  value: (query: string) => ({
-    matches: false,
-    media: query,
-    onchange: null,
-    addListener: () => {},
-    removeListener: () => {},
-    addEventListener: () => {},
-    removeEventListener: () => {},
-    dispatchEvent: () => false,
-  }),
+// Without `globals: true` Testing Library cannot register its own cleanup.
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+  localStorage.clear();
+  sessionStorage.clear();
 });
 
-class MockIntersectionObserver {
+// jsdom has no ResizeObserver; Home measures its grid with one. A no-op keeps the initial width.
+class ResizeObserverStub {
   observe() {}
   unobserve() {}
   disconnect() {}
 }
-
-Object.defineProperty(window, 'IntersectionObserver', {
-  writable: true,
-  value: MockIntersectionObserver,
-});
+if (!('ResizeObserver' in globalThis))
+  (globalThis as { ResizeObserver?: unknown }).ResizeObserver = ResizeObserverStub;

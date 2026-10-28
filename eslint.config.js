@@ -25,6 +25,10 @@ export default tseslint.config(
         Object.keys(jsxA11y.configs.recommended.rules).map((k) => [k, 'warn']),
       ),
       'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
+      // react-hooks v7 added this; the V2.0 client predates it and its 4 sites are load-on-mount
+      // async fetches. At warn like jsx-a11y above — a later wave reworks them to not setState in
+      // an effect body. Downgraded deliberately, not because the rule is wrong.
+      'react-hooks/set-state-in-effect': 'warn',
       '@typescript-eslint/no-explicit-any': 'warn',
       '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
       'preserve-caught-error': 'warn', // M03
