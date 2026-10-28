@@ -65,6 +65,13 @@ export async function signupEndpoint(request: Request, env: Env) {
     // NULL already means "use the school default".
     const userZone = isValidZone(timezone) ? timezone : null;
 
+    // A class the school runs also tells us the grade and links the row to it.
+    // One it does not run is still STORED (owner decision, 28 Oct: anyone may
+    // sign up and finish their profile), with grade and grade_class_id left
+    // NULL — grade_class_id is a foreign key, so there is nothing to point it
+    // at. The cost is deliberate: class-scoped feeds match on the register, so
+    // such a student sees and is seen by nobody in a class until an admin moves
+    // them onto a real one.
     let gradeValue: number | null = null;
     let gradeClassId: number | null = null;
     if (userClass) {
@@ -72,12 +79,11 @@ export async function signupEndpoint(request: Request, env: Env) {
         'SELECT id, grade FROM grade_classes WHERE class_name = ? AND is_active = 1 LIMIT 1',
       )
         .bind(userClass)
-        .first()) as any;
-      if (!gradeClass) {
-        return jsonResponse({ error: 'Invalid class selection' }, 400, env);
+        .first()) as { id: number; grade: number } | null;
+      if (gradeClass) {
+        gradeValue = gradeClass.grade;
+        gradeClassId = gradeClass.id;
       }
-      gradeValue = gradeClass.grade;
-      gradeClassId = gradeClass.id;
     }
 
     const existing = await env.DB.prepare('SELECT id FROM users WHERE email = ?')

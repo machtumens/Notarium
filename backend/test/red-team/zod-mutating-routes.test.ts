@@ -126,15 +126,35 @@ describe('PUT /api/user/class — zod (class pattern)', () => {
 
   // The pattern is not the whole rule: '12.9' is shaped like a class and is not
   // one. Accepting it would store a class every class-scoped query misses.
-  it('a well-formed class the school does not run is a 400', async () => {
+  // Was a 400. Anyone may finish their profile now (owner decision, 28 Oct), so
+  // a shaped class off the register is STORED, with grade and grade_class_id
+  // left NULL because there is no row to derive or point at. Inverted rather
+  // than deleted: it is what catches the register check being reinstated.
+  it('a well-formed class the school does not run is stored, unlinked', async () => {
     const me = await seedUser();
     const res = await call('/api/user/class', {
       method: 'PUT',
       token: me.token,
       body: { class: '12.9' },
     });
-    expect(res.status).toBe(400);
-    expect(await userColumn(me.id, 'class')).toBe('10.1');
+    expect(res.status).toBe(200);
+    expect(await userColumn(me.id, 'class')).toBe('12.9');
+    expect(await userColumn(me.id, 'grade')).toBeNull();
+    expect(await userColumn(me.id, 'grade_class_id')).toBeNull();
+  });
+
+  it('a class the school DOES run still links the row to it', async () => {
+    const me = await seedUser();
+    await seedGradeClass('11.2');
+    const res = await call('/api/user/class', {
+      method: 'PUT',
+      token: me.token,
+      body: { class: '11.2' },
+    });
+    expect(res.status).toBe(200);
+    expect(await userColumn(me.id, 'class')).toBe('11.2');
+    expect(await userColumn(me.id, 'grade')).toBe(11);
+    expect(await userColumn(me.id, 'grade_class_id')).not.toBeNull();
   });
 
   it('focus subjects save with the class, and an unknown subject id is a 400', async () => {

@@ -157,7 +157,8 @@ export async function seedSubject(name = 'Mathematics'): Promise<number> {
 
 /**
  * Seed an active class in the school's class registry. PUT /api/user/class now
- * refuses a class the school does not run (the check signup has always made),
+ * links a user's row to a class the school runs (and, since 28 Oct, stores one
+ * it does not run with grade/grade_class_id NULL rather than refusing it),
  * so a test that saves a class has to put it on the register first.
  */
 export async function seedGradeClass(className: string): Promise<number> {

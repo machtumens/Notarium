@@ -52,15 +52,18 @@ export async function updateUserClass(request: Request, env: Env) {
   const body = await parseBody(request, userClassSchema, env);
   if (body instanceof Response) return body;
 
-  // The class must be one the school actually runs — the same check signup
-  // makes. Without it a shaped-but-unknown class ('12.9') would be stored and
-  // every class-scoped query would quietly match nobody.
+  // A class the school runs gives us the grade and the row to link to. One it
+  // does not run is accepted anyway (owner decision, 28 Oct: anyone may finish
+  // their profile), stored with grade and grade_class_id NULL. This route used
+  // to 400 on it, which left a student whose class was off the register unable
+  // to save their profile at all — not even to change focus subjects. The
+  // trade-off is known: class-scoped queries match on the register, so an
+  // unregistered class sees nobody until an admin moves them onto a real one.
   const gradeClass = (await env.DB.prepare(
     'SELECT id, grade FROM grade_classes WHERE class_name = ? AND is_active = 1 LIMIT 1',
   )
     .bind(body.class)
     .first()) as { id: number; grade: number } | null;
-  if (!gradeClass) return jsonResponse({ error: 'Invalid class selection' }, 400, env);
 
   // Focus ids are checked against the subjects table, deduped, and stored as
   // JSON. An omitted field leaves the stored list alone; [] clears it.
@@ -96,7 +99,7 @@ export async function updateUserClass(request: Request, env: Env) {
             updated_at = ${SQL_NOW_ISO}
       WHERE id = ?`,
   )
-    .bind(body.class, gradeClass.grade, gradeClass.id, focusJson === undefined ? 0 : 1, focusJson ?? null, userId)
+    .bind(body.class, gradeClass?.grade ?? null, gradeClass?.id ?? null, focusJson === undefined ? 0 : 1, focusJson ?? null, userId)
     .run();
 
   return jsonResponse({ success: true }, 200, env);

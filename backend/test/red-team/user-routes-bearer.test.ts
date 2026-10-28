@@ -10,7 +10,7 @@ import { applySchema, resetData, call, seedGradeClass, seedUser, env } from './h
 
 beforeAll(applySchema);
 beforeEach(resetData);
-// PUT /api/user/class refuses a class the school does not run, so the class the
+// PUT /api/user/class needs a class the register knows to derive grade from, so the class the
 // cases below write has to be on the register. These tests are about *whose*
 // row gets written, not about the class registry.
 beforeEach(() => seedGradeClass('12.9'));
