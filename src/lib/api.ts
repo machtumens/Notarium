@@ -308,6 +308,14 @@ async function request<T>(path: string, init: RequestOptions = {}, replay = fals
   return data as T;
 }
 
+/**
+ * The same authenticated fetch the calls below use, for the admin client in `admin-api.ts`.
+ * Exported rather than duplicated so the admin surface inherits the refresh-once-then-replay
+ * rule, the `onUnauthorized` sign-out and the friendly messages. `GET` bodies are not a thing.
+ */
+export const apiRequest = <T>(path: string, init?: { method?: string; body?: unknown }) =>
+  request<T>(path, init);
+
 /** Sign-in answers carry the session; main can also answer a 2FA challenge with no token, which this app cannot complete. */
 type SessionAnswer = { token?: string; refreshToken?: string; user?: User; requires_2fa?: boolean };
 function openSession(res: SessionAnswer): { token: string; refreshToken?: string; user: User } {

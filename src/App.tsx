@@ -25,6 +25,12 @@ const Session = lazy(() => import('@/pages/session').then((m) => ({ default: m.S
 const Mobile = lazy(() => import('@/pages/mobile').then((m) => ({ default: m.Mobile })));
 
 /**
+ * The admin dashboard is its own chunk: it is seven screens and a second API client, and only an
+ * account whose `role` is 'admin' can open any of it. A student must never download it.
+ */
+const Admin = lazy(() => import('@/pages/admin').then((m) => ({ default: m.Admin })));
+
+/**
  * The front door. There is no landing page any more — Notarium is a tool, so the root is either the
  * app (you are signed in) or the sign-in screen (you are not). Wait for the token check first, or a
  * returning account would be bounced to /login for a frame before being sent back.
@@ -129,6 +135,21 @@ export function App() {
         <Route element={<DemoOnly />}>
           <Route path="/mobile" element={<Mobile />} />
         </Route>
+        {/* `/admin/*` carries its own guard and its own frame, and one Suspense for its chunk. */}
+        <Route
+          path="/admin/*"
+          element={
+            <Suspense
+              fallback={
+                <div className={cn(GUTTER, 'py-8 text-sm text-neutral-700')}>
+                  Loading the dashboard…
+                </div>
+              }
+            >
+              <Admin />
+            </Suspense>
+          }
+        />
         <Route element={<RequireSession />}>
           <Route path="/app" element={<Shell />}>
             <Route index element={<Navigate to="home" replace />} />
