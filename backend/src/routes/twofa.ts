@@ -118,7 +118,7 @@ export async function verify2fa(request: Request, env: Env) {
   if (!userId) return jsonResponse({ error: 'Invalid or expired challenge' }, 401, env);
 
   const user = (await env.DB.prepare(
-    `SELECT id, email, display_name, class, grade, role, notes_uploaded, total_likes,
+    `SELECT id, email, display_name, class, grade, role, admin_role, notes_uploaded, total_likes,
             total_admin_upvotes, COALESCE(diamonds, 0) as diamonds, description, photo_url,
             totp_secret, totp_backup_codes
      FROM users WHERE id = ?`,
@@ -140,7 +140,12 @@ export async function verify2fa(request: Request, env: Env) {
   }
   if (!ok) return jsonResponse({ error: 'Invalid code' }, 401, env);
 
-  const token = await createToken({ id: user.id, email: user.email, role: user.role }, env);
+  // Same claim set as the password and Google paths: completing 2FA must not cost an admin
+  // their sub-role.
+  const token = await createToken(
+    { id: user.id, email: user.email, role: user.role, admin_role: user.admin_role || undefined },
+    env,
+  );
   const points =
     (user.notes_uploaded || 0) + (user.total_likes || 0) + (user.total_admin_upvotes || 0);
   return jsonResponse(

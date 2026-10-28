@@ -128,7 +128,7 @@ async function currentUser(
 }
 
 async function issueJwt(
-  payload: { id: number; email: string; role: string },
+  payload: { id: number; email: string; role: string; admin_role?: string },
   env: OAuthEnv,
 ): Promise<string> {
   const secret = new TextEncoder().encode(env.JWT_SECRET);
@@ -335,10 +335,16 @@ async function handleCallback(url: URL, _request: Request, env: OAuthEnv): Promi
     const picture = (idPayload.picture as string | undefined) ?? null;
 
     let user = (await env.DB.prepare(
-      `SELECT id, email, role, suspended FROM users WHERE LOWER(email) = ?`,
+      `SELECT id, email, role, admin_role, suspended FROM users WHERE LOWER(email) = ?`,
     )
       .bind(mail)
-      .first()) as { id: number; email: string; role: string; suspended: number } | null;
+      .first()) as {
+      id: number;
+      email: string;
+      role: string;
+      admin_role: string | null;
+      suspended: number;
+    } | null;
 
     if (user) {
       // An account that signed up with a password keeps its row and gains the
@@ -361,10 +367,16 @@ async function handleCallback(url: URL, _request: Request, env: OAuthEnv): Promi
       user = (await env.DB.prepare(
         `INSERT INTO users (encrypted_yw_id, display_name, email, photo_url, google_id, oauth_provider, role, academic_year, created_at)
          VALUES (?, ?, ?, ?, ?, 'google', 'student', ?, strftime('%Y-%m-%dT%H:%M:%SZ','now'))
-         RETURNING id, email, role, suspended`,
+         RETURNING id, email, role, admin_role, suspended`,
       )
         .bind(`google_${sub}`, name, mail, picture, sub, currentAcademicYear())
-        .first()) as { id: number; email: string; role: string; suspended: number };
+        .first()) as {
+        id: number;
+        email: string;
+        role: string;
+        admin_role: string | null;
+        suspended: number;
+      };
     }
 
     if (!user) {
@@ -377,7 +389,18 @@ async function handleCallback(url: URL, _request: Request, env: OAuthEnv): Promi
       return fail(env, 'suspended');
     }
 
-    const jwt = await issueJwt({ id: user.id, email: user.email, role: user.role }, env);
+    // `admin_role` rides along for the same reason the password path carries it: `requireRole`
+    // reads a missing claim as 'none', so an admin who signs in with Google would otherwise be
+    // refused by every requireModerator/requireTechnical route. NULL omits the claim entirely.
+    const jwt = await issueJwt(
+      {
+        id: user.id,
+        email: user.email,
+        role: user.role,
+        admin_role: user.admin_role || undefined,
+      },
+      env,
+    );
 
     const oneTimeCode = `${crypto.randomUUID()}${crypto.randomUUID()}`.replace(/-/g, '');
     await env.RATE_LIMIT.put(

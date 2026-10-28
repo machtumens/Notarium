@@ -203,6 +203,7 @@ export async function loginEndpoint(request: Request, env: Env) {
           class,
           grade,
           role,
+          admin_role,
           notes_uploaded,
           total_likes,
           total_admin_upvotes,
@@ -220,6 +221,10 @@ export async function loginEndpoint(request: Request, env: Env) {
         .first();
     } catch (dbError: any) {
       try {
+        // The legacy shape, for a database too old for `grade` / `totp_enabled`. `admin_role` is
+        // deliberately NOT selected here: the point of this path is to still sign people in on a
+        // database that predates the newer columns, and naming one of them would defeat it. An
+        // admin on such a database gets no sub-role claim, exactly as before this change.
         user = await env.DB.prepare(
           `
           SELECT
@@ -279,7 +284,14 @@ export async function loginEndpoint(request: Request, env: Env) {
         adminUser.role = 'admin';
       }
       const adminToken = await createToken(
-        { id: adminUser.id, email: adminUser.email, role: 'admin' },
+        {
+          id: adminUser.id,
+          email: adminUser.email,
+          role: 'admin',
+          // Whatever sub-role the row already holds. This branch must never GRANT one:
+          // a freshly inserted admin has none, and `requireRole` reads that as 'none'.
+          admin_role: adminUser.admin_role || undefined,
+        },
         env,
       );
       return jsonResponse(
@@ -353,6 +365,11 @@ export async function loginEndpoint(request: Request, env: Env) {
         id: (user as any).id,
         email: (user as any).email,
         role: (user as any).role || 'student',
+        // Without this the token carries no sub-role, and `requireRole` reads a missing
+        // `admin_role` as 'none' — so an admin signing in here passed `requireAdmin` but was
+        // refused by every requireModerator/requireTechnical route. NULL stays undefined, so a
+        // student's token gains no claim at all.
+        admin_role: (user as any).admin_role || undefined,
       },
       request,
       env,
