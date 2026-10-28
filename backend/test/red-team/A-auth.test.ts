@@ -1,6 +1,7 @@
 // A. Authentication & Identity (scenarios 1-20)
-// Signup requires a @sekolahkristencalvin.org email (checked AFTER zod). The
-// signup field is `name` (not display_name). Duplicate email -> 409.
+// Signup accepts any email domain — the @sekolahkristencalvin.org gate was
+// removed by owner decision on 27 Oct (see case 3). The signup field is `name`
+// (not display_name). Duplicate email -> 409.
 import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
 import { applySchema, resetData, call, seedUser, signupBody, uniqueEmail } from './helpers';
 
@@ -23,13 +24,15 @@ describe('A. Signup (1-10)', () => {
     expect(res.status).toBe(409);
   });
 
-  it('3. non-school domain rejected (encrypted_yw_id/OAuth identity path is separate)', async () => {
-    // Signup never sets encrypted_yw_id; the domain gate is the identity guard here.
+  it('3. a non-school domain is ACCEPTED — sign-up is open (owner decision, 27 Oct)', async () => {
+    // Was a 400: signup used to refuse anything outside @sekolahkristencalvin.org.
+    // The restriction is gone by decision, so this case is inverted rather than
+    // deleted — it is the one test that would catch the gate coming back by accident.
     const res = await call('/api/auth/signup', {
-      body: signupBody({ email: 'attacker@gmail.com' }),
+      body: signupBody({ email: 'anyone@gmail.com' }),
       ip: '1.1.1.4',
     });
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(201);
   });
 
   it('4. invalid email format rejected (400)', async () => {

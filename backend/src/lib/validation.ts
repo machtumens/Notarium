@@ -27,15 +27,6 @@ export async function parseBody<T extends z.ZodTypeAny>(
   return result.data;
 }
 
-/**
- * The only email domain that may hold a Notarium account. Enforced on the email
- * signup path (routes/auth.ts) and on the Google callback (routes/oauth.ts) —
- * both, because a Google account is created without ever touching signupEndpoint.
- */
-export const SCHOOL_EMAIL_DOMAIN = 'sekolahkristencalvin.org';
-export const isSchoolEmail = (email: string | undefined | null): boolean =>
-  typeof email === 'string' && email.trim().toLowerCase().endsWith(`@${SCHOOL_EMAIL_DOMAIN}`);
-
 export const signupSchema = z.object({
   name: z.string().min(1).max(100),
   email: z.string().email().max(255),

@@ -10,7 +10,7 @@ import {
 } from '../lib/auth';
 import { checkRateLimit, validateRequestSize } from '../lib/ratelimit';
 import { RATE_LIMIT_MAX_ATTEMPTS_PER_IP, REFRESH_MAX_PER_WINDOW } from '../lib/env';
-import { loginSchema, logoutSchema, parseBody, refreshSchema, signupSchema, SCHOOL_EMAIL_DOMAIN, isSchoolEmail } from '../lib/validation';
+import { loginSchema, logoutSchema, parseBody, refreshSchema, signupSchema } from '../lib/validation';
 import {
   issueSessionPair,
   revokeSession,
@@ -64,14 +64,6 @@ export async function signupEndpoint(request: Request, env: Env) {
     // rather than rejected: a bad zone is not a reason to fail a signup, and
     // NULL already means "use the school default".
     const userZone = isValidZone(timezone) ? timezone : null;
-
-    if (!isSchoolEmail(email)) {
-      return jsonResponse(
-        { error: `Only @${SCHOOL_EMAIL_DOMAIN} email addresses are allowed` },
-        400,
-        env,
-      );
-    }
 
     let gradeValue: number | null = null;
     let gradeClassId: number | null = null;

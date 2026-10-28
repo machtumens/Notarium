@@ -10,12 +10,7 @@ import {
   revokeToken,
 } from '../services/google-oauth';
 import { currentAcademicYear } from '../lib/academicYear';
-import {
-  SCHOOL_EMAIL_DOMAIN,
-  isSchoolEmail,
-  oauthExchangeSchema,
-  parseBody,
-} from '../lib/validation';
+import { oauthExchangeSchema, parseBody } from '../lib/validation';
 
 export interface OAuthEnv {
   DB: D1Database;
@@ -195,43 +190,36 @@ async function handleStart(url: URL, request: Request, env: OAuthEnv): Promise<R
     state,
     challenge,
     loginHint: user?.email,
-    // Filters Google's picker to the school's Workspace accounts. Students sign
-    // in to school devices with a personal account alongside the school one, and
-    // without this they pick the wrong one and bounce off the domain check.
-    //
-    // This is safe ONLY because the school's mail actually runs on Google
-    // Workspace (confirmed with the owner, 27 Oct). `hd` filters to a *hosted*
-    // domain, so against a domain with no Workspace behind it, it would match
-    // nothing and nobody could sign in. If the school ever leaves Workspace,
-    // drop this line first. It is a convenience either way — the gate is
-    // checkSchoolIdentity on the signed token's claims, which also refuses an
-    // hd claim naming another domain.
-    hostedDomain: SCHOOL_EMAIL_DOMAIN,
   });
 
   return Response.redirect(authorizeUrl, 302);
 }
 
 /**
- * THE DOOR. Google proves who holds the mailbox; this decides whose mailbox is
- * allowed in. Pure on purpose — it is the whole account-creation rule, and a
- * rule worth one direct test is worth not burying in a 150-line handler.
+ * THE DOOR. Google proves who holds the mailbox; this decides whether that is
+ * enough to hold an account. Pure on purpose — it is the whole account-creation
+ * rule, and a rule worth one direct test is worth not burying in a 150-line
+ * handler.
  *
- *  - `email_verified` must be true: without it a Workspace admin could hand out
- *    an unverified alias carrying any address at all.
- *  - The address suffix decides, because it is the check that holds for every
- *    account shape. `hd` (set only on Workspace accounts) only has to not
- *    disagree — it arrives in the signed token, but a crafted authorize URL can
- *    omit the `hd` *request*, so it cannot be the check on its own.
+ * Sign-up is OPEN: any Google account may hold a Notarium account (owner
+ * decision, 27 Oct). The school-domain restriction that used to live here is
+ * gone, and with it the `hd` hint on the authorize URL — a picker filtered to
+ * the school Workspace would have hidden exactly the accounts now allowed in.
+ * What remains are the two things that are not about *which* mailbox it is:
+ *
+ *  - `email_verified` must be true: without it an administrator of any
+ *    Workspace could hand out an unverified alias carrying someone else's
+ *    address, and we would seat them as that person.
+ *  - the token must actually carry an address. It is the account's identity and
+ *    its only unique key, so a token without one cannot create a user — this is
+ *    the check the removed domain test was quietly also performing.
  */
-export function checkSchoolIdentity(
+export function checkIdentity(
   payload: JWTPayload,
-): { ok: true } | { ok: false; reason: 'email_unverified' | 'domain' } {
+): { ok: true } | { ok: false; reason: 'email_unverified' | 'email_missing' } {
   if (payload.email_verified !== true) return { ok: false, reason: 'email_unverified' };
-  const email = typeof payload.email === 'string' ? payload.email : '';
-  const hd = typeof payload.hd === 'string' ? payload.hd.trim().toLowerCase() : null;
-  if (!isSchoolEmail(email)) return { ok: false, reason: 'domain' };
-  if (hd !== null && hd !== SCHOOL_EMAIL_DOMAIN) return { ok: false, reason: 'domain' };
+  const email = typeof payload.email === 'string' ? payload.email.trim() : '';
+  if (email === '') return { ok: false, reason: 'email_missing' };
   return { ok: true };
 }
 
@@ -333,7 +321,7 @@ async function handleCallback(url: URL, _request: Request, env: OAuthEnv): Promi
   const { intent } = stateRow;
 
   if (intent === 'signup') {
-    const allowed = checkSchoolIdentity(idPayload);
+    const allowed = checkIdentity(idPayload);
     if (!allowed.ok) {
       console.error('[oauth] rejected google account:', email, '-', allowed.reason);
       return fail(env, allowed.reason);
