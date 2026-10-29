@@ -245,7 +245,26 @@ function rememberRefreshToken<T extends { refreshToken?: string }>(res: T): T {
 
 type RequestOptions = { method?: string; body?: unknown; headers?: Record<string, string> };
 
-async function request<T>(path: string, init: RequestOptions = {}, replay = false): Promise<T> {
+// ponytail: GETs are shared for a short window, so the shell and a page asking for the same list (and every page
+// re-asking on each visit) cost one round-trip. Keyed by token, so a different account never reads another's
+// answer; any write clears it all, and a failure is dropped so a retry really goes out. In-memory only.
+const GET_TTL_MS = 30_000;
+export const getCache = new Map<string, { at: number; p: Promise<unknown> }>();
+
+function request<T>(path: string, init: RequestOptions = {}, replay = false): Promise<T> {
+  const isGet = (init.method ?? 'GET') === 'GET';
+  if (!isGet) getCache.clear();
+  if (!isGet || replay) return send<T>(path, init, replay);
+  const key = `${token.get() ?? ''} ${path}`;
+  const hit = getCache.get(key);
+  if (hit && Date.now() - hit.at < GET_TTL_MS) return hit.p as Promise<T>;
+  const p = send<T>(path, init);
+  getCache.set(key, { at: Date.now(), p });
+  p.catch(() => getCache.get(key)?.p === p && getCache.delete(key));
+  return p;
+}
+
+async function send<T>(path: string, init: RequestOptions = {}, replay = false): Promise<T> {
   // ponytail: sign-in/sign-up authenticate by credentials, so a stale stored token must not ride along, and their 401 means wrong password — never a dead session.
   // The Google exchange is a credential call too: it proves identity with the
   // worker's one-time code, so a stale stored token must not ride along (its 401

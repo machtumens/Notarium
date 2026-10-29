@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { ApiError, api, noteText, onUnauthorized, refreshToken, token } from './api';
+import { ApiError, api, apiRequest, noteText, onUnauthorized, refreshToken, token } from './api';
 
 const json = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
@@ -107,19 +107,27 @@ describe('refresh once on 401 (W2.2a)', () => {
         bearer(init) === 'Bearer new'
           ? json(200, { notes: [{ id: 1 }] })
           : json(401, { error: 'Invalid or expired token' }),
+      // Two different GETs: identical ones are now merged into one request by the GET cache.
+      '/api/subjects': (init) =>
+        bearer(init) === 'Bearer new'
+          ? json(200, { subjects: [{ id: 2 }] })
+          : json(401, { error: 'Invalid or expired token' }),
       '/api/auth/refresh': () => json(200, { token: 'new', refreshToken: 'rt2' }),
     });
     const cb = vi.fn();
     const off = onUnauthorized(cb);
-    const [a, b] = await Promise.all([api.notes.mine(), api.notes.mine()]);
+    const [a, b] = await Promise.all([api.notes.mine(), api.subjects()]);
     expect(a).toEqual([{ id: 1 }]);
-    expect(b).toEqual([{ id: 1 }]);
+    expect(b).toEqual([{ id: 2 }]);
     const refreshCalls = callsTo(fetchMock, '/api/auth/refresh');
     expect(refreshCalls).toHaveLength(1);
     expect(bodyOf(refreshCalls[0])).toEqual({ refreshToken: 'rt1' });
     expect(bearer(refreshCalls[0][1])).toBeUndefined();
     // two originals with the dead token, two replays with the new one
-    const notes = callsTo(fetchMock, '/api/notes/my-notes').map(([, init]) => bearer(init));
+    const notes = [
+      ...callsTo(fetchMock, '/api/notes/my-notes'),
+      ...callsTo(fetchMock, '/api/subjects'),
+    ].map(([, init]) => bearer(init));
     expect(notes.filter((h) => h === 'Bearer old')).toHaveLength(2);
     expect(notes.filter((h) => h === 'Bearer new')).toHaveLength(2);
     expect(localStorage.getItem('token')).toBe('new');
@@ -733,5 +741,21 @@ describe('notes.create against main (R3)', () => {
       .catch((e: unknown) => e);
     expect(err).toBeInstanceOf(ApiError);
     expect((err as ApiError).message).toMatch(/did not save/i);
+  });
+});
+
+describe('GET cache', () => {
+  it('merges repeat GETs, and a write makes the next GET go out again', async () => {
+    token.set('t');
+    const fetchMock = routes({
+      '/api/subjects': () => json(200, { subjects: [{ id: 1 }] }),
+      '/api/notes': () => json(201, { id: 9 }),
+    });
+    await Promise.all([api.subjects(), api.subjects()]);
+    await api.subjects();
+    expect(callsTo(fetchMock, '/api/subjects')).toHaveLength(1);
+    await apiRequest('/api/notes', { method: 'POST', body: {} });
+    await api.subjects();
+    expect(callsTo(fetchMock, '/api/subjects')).toHaveLength(2);
   });
 });

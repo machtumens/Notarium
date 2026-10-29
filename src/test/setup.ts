@@ -2,6 +2,7 @@
 import '@testing-library/jest-dom/vitest';
 import { cleanup } from '@testing-library/react';
 import { afterEach, vi } from 'vitest';
+import { getCache } from '@/lib/api';
 
 // Without `globals: true` Testing Library cannot register its own cleanup.
 afterEach(() => {
@@ -9,6 +10,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
   localStorage.clear();
   sessionStorage.clear();
+  getCache.clear();
 });
 
 // jsdom has no ResizeObserver; Home measures its grid with one. A no-op keeps the initial width.

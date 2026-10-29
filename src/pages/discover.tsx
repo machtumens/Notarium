@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { buttonVariants } from '@/components/ui/button';
 import { I } from '@/components/ui/icons';
@@ -72,7 +72,13 @@ export function Discover() {
     [subjects.data],
     isUser && !!subjects.data,
   );
-  const search = useAsync(() => api.notes.search(q), [q], isUser && q.trim().length > 1);
+  // Search waits for a 250 ms pause in typing instead of firing a request per keystroke.
+  const [dq, setDq] = useState('');
+  useEffect(() => {
+    const id = setTimeout(() => setDq(q), 250);
+    return () => clearTimeout(id);
+  }, [q]);
+  const search = useAsync(() => api.notes.search(dq), [dq], isUser && dq.trim().length > 1);
   const leaders = useAsync(() => api.leaderboard(), [], isUser);
 
   const filters = useMemo(
@@ -220,14 +226,12 @@ export function Discover() {
         <div className={cn(BAND, 'gap-3')}>
           <h4 className="text-[18px]">Top contributors</h4>
           {(leaders.data
-            ? leaders.data
-                .slice(0, 4)
-                .map((l) => ({
-                  initials: l.display_name.trim().slice(0, 2).toUpperCase(),
-                  name: l.display_name.trim(),
-                  school: l.class ? `Kelas ${l.class}` : 'Notarium',
-                  xp: `${l.points} pts`,
-                }))
+            ? leaders.data.slice(0, 4).map((l) => ({
+                initials: l.display_name.trim().slice(0, 2).toUpperCase(),
+                name: l.display_name.trim(),
+                school: l.class ? `Kelas ${l.class}` : 'Notarium',
+                xp: `${l.points} pts`,
+              }))
             : CONTRIBUTORS
           ).map((p) => (
             <div key={p.name} className="flex items-center gap-3">
