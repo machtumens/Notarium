@@ -1,10 +1,8 @@
 import type { Env } from '../lib/env';
 import { jsonResponse } from '../lib/response';
-import { requireModerator, timingSafeEqualStr } from '../lib/auth';
-import { checkRateLimit } from '../lib/ratelimit';
+import { requireModerator } from '../lib/auth';
 import {
   adminUserUpdateSchema,
-  adminVerifySchema,
   noteUpdateSchema,
   parseBody,
   subjectWriteSchema,
@@ -229,27 +227,6 @@ export async function getUsageStatistics(request: Request, env: Env) {
   } catch (error: any) {
     return jsonResponse({ error: 'Failed to fetch usage statistics' }, 500);
   }
-}
-
-export async function verifyAdmin(request: Request, env: Env) {
-  const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
-  if (!(await checkRateLimit(ip, 'admin-verify', env))) {
-    return jsonResponse({ error: 'Too many requests. Try again later.' }, 429, env);
-  }
-
-  const body = await parseBody(request, adminVerifySchema, env);
-  if (body instanceof Response) return body;
-  const { email, password } = body;
-
-  if (
-    email &&
-    email.endsWith('@notarium.site') &&
-    (await timingSafeEqualStr(env.ADMIN_PASSWORD, String(password || '')))
-  ) {
-    return jsonResponse({ success: true, isAdmin: true }, 200, env);
-  }
-
-  return jsonResponse({ success: false, isAdmin: false, error: 'Invalid credentials' }, 401, env);
 }
 
 export async function adminUpvoteNote(noteId: string, request: Request, env: Env) {

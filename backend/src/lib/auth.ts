@@ -5,7 +5,33 @@ import { JWT_EXPIRATION } from './env';
 import { jsonResponse } from './response';
 import { isoUtc } from './time';
 
-type Identity = { id: number; email: string; role: string; admin_role?: string };
+type Identity = { id: number; email: string; role: string; admin_role?: string; iat?: number };
+
+/**
+ * Domains that only the worker itself may hand out. `@notarium.internal` holds
+ * the admin-login rows; `@notariumadmin.com` is the legacy admin sign-in. The
+ * latter did not resolve in DNS on 29 Oct 2026, so anyone could register it and
+ * own a Google account on it — no signup or Google sign-in may claim either.
+ */
+const RESERVED_ADMIN_DOMAINS = ['@notarium.internal', '@notariumadmin.com'];
+
+export function isReservedAdminEmail(email: string): boolean {
+  const e = email.trim().toLowerCase();
+  return RESERVED_ADMIN_DOMAINS.some((d) => e.endsWith(d));
+}
+
+/**
+ * A suspension still in force. One whose end date has passed counts as lifted —
+ * the next password login clears the columns, exactly as before.
+ */
+export function isSuspendedNow(row: {
+  suspended?: number | null;
+  suspension_end_date?: string | null;
+}): boolean {
+  if (row.suspended !== 1) return false;
+  if (!row.suspension_end_date) return true;
+  return new Date(row.suspension_end_date).getTime() > Date.now();
+}
 
 // Firebase ID tokens are RS256, signed by Google's securetoken service. We verify
 // against Google's public JWKS with `jose` — no Firebase Admin SDK (it needs Node
@@ -35,6 +61,9 @@ async function verifyFirebaseToken(token: string, env: Env): Promise<Identity | 
     if (!uid) return null;
     const email = typeof payload.email === 'string' ? payload.email : '';
     const emailVerified = payload.email_verified === true;
+    // Same rule as the Google OAuth callback: a reserved admin address is never
+    // linked or provisioned from a third-party identity.
+    if (email && isReservedAdminEmail(email)) return null;
 
     const byUid = await env.DB.prepare(
       `SELECT id, email, role, admin_role FROM users WHERE firebase_uid = ?`,
@@ -46,7 +75,7 @@ async function verifyFirebaseToken(token: string, env: Env): Promise<Identity | 
     // JIT-link an existing local account, but only on a verified email.
     if (email && emailVerified) {
       const byEmail = await env.DB.prepare(
-        `SELECT id, email, role, admin_role FROM users WHERE email = ?`,
+        `SELECT id, email, role, admin_role FROM users WHERE email = ? AND role != 'admin'`,
       )
         .bind(email)
         .first();
@@ -135,10 +164,12 @@ export async function verifyToken(
   admin_role?: string;
   typ?: 'refresh';
   fam?: string;
+  iat?: number;
 } | null> {
   try {
     const secret = new TextEncoder().encode(env.JWT_SECRET);
-    const { payload } = await jwtVerify(token, secret);
+    // Pinned: HS256 is the only algorithm this secret signs with.
+    const { payload } = await jwtVerify(token, secret, { algorithms: ['HS256'] });
     const typ = payload.typ === 'refresh' ? ('refresh' as const) : undefined;
     if (typ === 'refresh' && !opts.allowRefresh) return null;
     return {
@@ -148,36 +179,38 @@ export async function verifyToken(
       admin_role: payload.admin_role as string | undefined,
       typ,
       fam: payload.fam as string | undefined,
+      iat: payload.iat,
     };
   } catch (error) {
     return null;
   }
 }
 
-export async function getUserIdFromToken(request: Request, env: Env): Promise<number | null> {
+/**
+ * Bearer token → identity, refused while the account is suspended. A token
+ * outlives the suspension that should end it (24 h), so the row is the
+ * authority, not the token. ponytail: one indexed read per call; cache it per
+ * request if D1 reads ever show up in the bill.
+ */
+async function activeIdentity(request: Request, env: Env): Promise<Identity | null> {
   const auth = request.headers.get('Authorization');
   const token = auth?.startsWith('Bearer ') ? auth.slice(7) : null;
-
-  if (!token) {
-    return null;
-  }
-
+  if (!token) return null;
   const decoded = await resolveIdentity(token, env);
-  return decoded?.id || null;
+  if (!decoded?.id) return null;
+  const row = (await env.DB.prepare(`SELECT suspended, suspension_end_date FROM users WHERE id = ?`)
+    .bind(decoded.id)
+    .first()) as { suspended: number | null; suspension_end_date: string | null } | null;
+  if (!row || isSuspendedNow(row)) return null;
+  return decoded;
 }
 
-export async function getUserFromToken(
-  request: Request,
-  env: Env,
-): Promise<{ id: number; email: string; role: string; admin_role?: string } | null> {
-  const auth = request.headers.get('Authorization');
-  const token = auth?.startsWith('Bearer ') ? auth.slice(7) : null;
+export async function getUserIdFromToken(request: Request, env: Env): Promise<number | null> {
+  return (await activeIdentity(request, env))?.id || null;
+}
 
-  if (!token) {
-    return null;
-  }
-
-  return await resolveIdentity(token, env);
+export async function getUserFromToken(request: Request, env: Env): Promise<Identity | null> {
+  return await activeIdentity(request, env);
 }
 
 export async function requireAdmin(
@@ -314,12 +347,15 @@ export async function touchLastSeen(
  * optional): treat a null result as "anonymous".
  */
 export async function getAuthedUser(request: Request, env: Env): Promise<User | null> {
-  const userId = await getUserIdFromToken(request, env);
+  const auth = request.headers.get('Authorization');
+  const token = auth?.startsWith('Bearer ') ? auth.slice(7) : null;
+  const userId = token ? (await resolveIdentity(token, env))?.id : null;
   if (!userId) return null;
   const user = await env.DB.prepare(`SELECT ${USER_COLUMNS} FROM users WHERE id = ?`)
     .bind(userId)
     .first();
-  if (!user) return null;
+  // Same rule as activeIdentity, read off the row we already fetched.
+  if (!user || isSuspendedNow(user as { suspended?: number })) return null;
 
   // USER_COLUMNS already carries last_seen_at, so this is free unless a write
   // is actually due.

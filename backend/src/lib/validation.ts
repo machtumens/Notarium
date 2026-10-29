@@ -163,11 +163,6 @@ const stringOrNumber = z.union([z.string(), z.number()]);
 export const adminLoginSchema = z.object({ token: stringOrNumber.optional() });
 
 // POST /api/admin/verify
-export const adminVerifySchema = z.object({
-  email: z.string().optional(),
-  password: stringOrNumber.optional(),
-});
-
 // POST /api/auth/change-password
 export const changePasswordSchema = z.object({
   currentPassword: z.string().optional(),

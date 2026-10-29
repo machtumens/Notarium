@@ -7,10 +7,17 @@ import {
   verifyToken,
   timingSafeEqualStr,
   touchLastSeen,
+  isReservedAdminEmail,
 } from '../lib/auth';
 import { checkRateLimit, validateRequestSize } from '../lib/ratelimit';
 import { RATE_LIMIT_MAX_ATTEMPTS_PER_IP, REFRESH_MAX_PER_WINDOW } from '../lib/env';
-import { loginSchema, logoutSchema, parseBody, refreshSchema, signupSchema } from '../lib/validation';
+import {
+  loginSchema,
+  logoutSchema,
+  parseBody,
+  refreshSchema,
+  signupSchema,
+} from '../lib/validation';
 import {
   issueSessionPair,
   revokeSession,
@@ -59,6 +66,9 @@ export async function signupEndpoint(request: Request, env: Env) {
     if (body instanceof Response) return body;
 
     const { name, email, password, class: userClass, academic_year, timezone } = body;
+    if (isReservedAdminEmail(email)) {
+      return jsonResponse({ error: 'This email domain cannot be used to sign up' }, 400, env);
+    }
     const academicYear = academic_year || currentAcademicYear();
     // A browser-supplied zone that this runtime cannot format in is dropped
     // rather than rejected: a bad zone is not a reason to fail a signup, and
@@ -259,6 +269,12 @@ export async function loginEndpoint(request: Request, env: Env) {
     }
 
     if (email.endsWith('@notariumadmin.com')) {
+      // The per-account bucket above is useless here: every address on this
+      // domain checks the SAME password, so a new address bought five fresh
+      // guesses. Share the IP-only bucket that /api/auth/admin-login uses.
+      if (!(await checkRateLimit(ip, 'admin-login', env))) {
+        return jsonResponse({ error: 'Too many login attempts. Try again later.' }, 429, env);
+      }
       if (!(await timingSafeEqualStr(env.ADMIN_PASSWORD, String(password || '')))) {
         return jsonResponse({ error: 'Invalid email or password' }, 401, env);
       }
@@ -634,7 +650,6 @@ export async function meEndpoint(request: Request, env: Env) {
   }
 }
 
-
 /**
  * POST /api/auth/refresh — spend a refresh token, get the next pair.
  *
@@ -702,8 +717,7 @@ export async function logoutEndpoint(request: Request, env: Env) {
     const presented = body.refreshToken
       ? await verifyToken(body.refreshToken, env, { allowRefresh: true })
       : null;
-    const userId =
-      access?.id ?? (presented?.typ === 'refresh' ? presented.id : null);
+    const userId = access?.id ?? (presented?.typ === 'refresh' ? presented.id : null);
     if (!userId) return jsonResponse({ error: 'Unauthorized' }, 401, env);
 
     await revokeSession(userId, body.refreshToken, env);

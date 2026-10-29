@@ -10,9 +10,10 @@ import {
   verifyPassword,
   createToken,
   verifyToken,
-  requireAdmin,
+  requireRole,
   timingSafeEqualStr,
 } from './lib/auth';
+import { revokeSession } from './lib/session';
 import { checkRateLimit, capRequestBody, validateRequestSize } from './lib/ratelimit';
 import {
   adminLoginSchema,
@@ -82,7 +83,6 @@ import {
   logAdminActivity,
   getAdminActivityLogs,
   getUsageStatistics,
-  verifyAdmin,
   adminUpvoteNote,
   adminLikeNote,
   deleteNote,
@@ -484,9 +484,6 @@ export default {
           return jsonResponse({ error: 'Internal server error' }, 500);
         }
       }
-      if (path === '/api/debug/ping' && request.method === 'POST') {
-        return jsonResponse({ ok: true, message: 'Pong!' });
-      }
 
       if (path === '/api/auth/profile' && request.method === 'PUT') {
         if (!env.DB) {
@@ -586,7 +583,9 @@ export default {
           }
           // Authenticated by admin JWT. The legacy body-password gate is
           // redundant now that a valid admin token is required, so it's removed.
-          const adminCheck = await requireAdmin(request, env);
+          // Super only: any admin seat able to set a student's password could sign in
+          // as that student. An empty allow-list admits admin_role 'super' alone.
+          const adminCheck = await requireRole(request, env, []);
           if (adminCheck instanceof Response) return adminCheck;
 
           const body = await parseBody(request, migratePasswordsSchema, env);
@@ -651,7 +650,9 @@ export default {
           return jsonResponse({ error: 'Database not available' }, 503);
         }
         try {
-          const adminCheck = await requireAdmin(request, env);
+          // Super only: any admin seat able to set a student's password could sign in
+          // as that student. An empty allow-list admits admin_role 'super' alone.
+          const adminCheck = await requireRole(request, env, []);
           if (adminCheck instanceof Response) return adminCheck;
 
           const body = await parseBody(request, adminPasswordResetSchema, env);
@@ -683,10 +684,21 @@ export default {
           )
             .bind(hashedPassword, user.id)
             .run();
+          await revokeSession(user.id, undefined, env);
+          await logAdminActivity(
+            env,
+            adminCheck.id,
+            adminCheck.email,
+            'reset_password',
+            'user',
+            user.id,
+            'admin password reset',
+          );
 
           return jsonResponse({ success: true, message: 'Password reset successfully' }, 200, env);
         } catch (error: any) {
-          return jsonResponse({ error: error.message || 'Failed to reset password' }, 500);
+          console.error('admin password reset error:', error);
+          return jsonResponse({ error: 'Failed to reset password' }, 500, env);
         }
       }
 
@@ -749,6 +761,9 @@ export default {
           )
             .bind(hashedNewPassword, userId)
             .run();
+          // Other devices keep their access token until it expires, but lose
+          // their refresh chain now.
+          await revokeSession(userId, undefined, env);
 
           return jsonResponse(
             { success: true, message: 'Password changed successfully' },
@@ -777,7 +792,9 @@ export default {
           return jsonResponse({ error: 'Database not available' }, 503);
         }
         try {
-          const adminCheck = await requireAdmin(request, env);
+          // Super only: any admin seat able to set a student's password could sign in
+          // as that student. An empty allow-list admits admin_role 'super' alone.
+          const adminCheck = await requireRole(request, env, []);
           if (adminCheck instanceof Response) return adminCheck;
           const decoded = adminCheck;
 
@@ -809,6 +826,16 @@ export default {
           )
             .bind(hashedPassword, user.id)
             .run();
+          await revokeSession(user.id, undefined, env);
+          await logAdminActivity(
+            env,
+            adminCheck.id,
+            adminCheck.email,
+            'reset_password',
+            'user',
+            user.id,
+            'admin password reset',
+          );
 
           return jsonResponse({
             success: true,
@@ -820,7 +847,8 @@ export default {
             },
           });
         } catch (error: any) {
-          return jsonResponse({ error: error.message || 'Failed to reset password' }, 500);
+          console.error('admin password reset error:', error);
+          return jsonResponse({ error: 'Failed to reset password' }, 500, env);
         }
       }
       if (path === '/api/subjects' && request.method === 'GET') {
@@ -1004,14 +1032,18 @@ Tags:`,
         return await performOCREndpoint(request, env);
       }
 
-      if (path.match(/^\/api\/notes\/\d+\/summary$/) && request.method === 'POST') {
+      // Same paid-model guard as every other AI route: these two were the only
+      // ones a signed-in user could call without the shared 'ai' bucket.
+      if (path.match(/^\/api\/notes\/\d+\/(summary|quiz)$/) && request.method === 'POST') {
+        const _nUser = await requireUser(request, env);
+        if (!_nUser) return jsonResponse({ error: 'Unauthorized' }, 401, env);
+        if (!(await checkRateLimit(String(_nUser.id), 'ai', env))) {
+          return jsonResponse({ error: 'Too many requests. Try again later.' }, 429, env);
+        }
         const noteId = path.split('/')[3];
-        return await generateNoteSummaryEndpoint(noteId, request, env);
-      }
-
-      if (path.match(/^\/api\/notes\/\d+\/quiz$/) && request.method === 'POST') {
-        const noteId = path.split('/')[3];
-        return await generateQuizEndpoint(noteId, request, env);
+        return path.endsWith('/summary')
+          ? await generateNoteSummaryEndpoint(noteId, request, env)
+          : await generateQuizEndpoint(noteId, request, env);
       }
 
       if (path === '/api/ai/quiz' && request.method === 'POST') {
@@ -1048,9 +1080,6 @@ Tags:`,
           return jsonResponse({ error: 'Too many requests. Try again later.' }, 429, env);
         }
         return await generatePrimerEndpoint(request, env);
-      }
-      if (path === '/api/admin/verify' && request.method === 'POST') {
-        return await verifyAdmin(request, env);
       }
 
       if (path.match(/^\/api\/admin\/upvote\/\d+$/) && request.method === 'POST') {

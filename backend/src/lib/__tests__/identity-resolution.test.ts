@@ -61,6 +61,12 @@ function makeDb(seed: Row[]) {
           return {
             async first() {
               calls.push(sql);
+              // activeIdentity's suspension check: none of these rows is suspended.
+              if (sql.includes('SELECT suspended')) {
+                return rows.some((r) => r.id === args[0])
+                  ? { suspended: 0, suspension_end_date: null }
+                  : null;
+              }
               if (sql.includes('WHERE firebase_uid = ?')) {
                 const hit = rows.find((r) => r.firebase_uid === args[0]);
                 return hit ? project(hit) : null;
@@ -221,7 +227,15 @@ describe('identity resolution — JIT provisioning', () => {
 
 describe('identity resolution — legacy HS256 fallback', () => {
   it('falls back to the legacy JWT when the token is not a Firebase ID token', async () => {
-    const { db, calls } = makeDb([]);
+    const { db, calls } = makeDb([
+      {
+        id: 42,
+        email: 'legacy@notarium.test',
+        role: 'student',
+        admin_role: null,
+        firebase_uid: null,
+      },
+    ]);
     const env = makeEnv(db);
     // Signed with the real jose SignJWT and verified by the real jwtVerify.
     const legacy = await createToken(
@@ -240,7 +254,15 @@ describe('identity resolution — legacy HS256 fallback', () => {
   it('skips the Firebase leg entirely while FIREBASE_PROJECT_ID is unset', async () => {
     // This is the pre-Phase-0 production state: dual-verify is dormant and every
     // request takes the legacy path, so setting the var is the only live switch.
-    const { db, calls } = makeDb([]);
+    const { db, calls } = makeDb([
+      {
+        id: 9,
+        email: 'dormant@notarium.test',
+        role: 'student',
+        admin_role: null,
+        firebase_uid: null,
+      },
+    ]);
     const env = makeEnv(db, undefined);
     const legacy = await createToken(
       { id: 9, email: 'dormant@notarium.test', role: 'student' },
@@ -250,8 +272,16 @@ describe('identity resolution — legacy HS256 fallback', () => {
     const identity = await getUserFromToken(bearer(legacy), env);
 
     expect(identity?.id).toBe(9);
-    // No Firebase lookup was even attempted — zero DB traffic on that leg.
-    expect(calls).toHaveLength(0);
+    // No Firebase lookup was even attempted — the only DB read is the
+    // suspension check every authenticated request now makes.
+    expect(calls.filter((c) => !c.includes('SELECT suspended'))).toHaveLength(0);
+  });
+
+  it('refuses a valid legacy token whose user row no longer exists', async () => {
+    const { db } = makeDb([]);
+    const env = makeEnv(db, undefined);
+    const orphan = await createToken({ id: 77, email: 'gone@notarium.test', role: 'student' }, env);
+    expect(await getUserFromToken(bearer(orphan), env)).toBeNull();
   });
 
   it('returns null when the token is neither a Firebase nor a valid legacy token', async () => {

@@ -19,6 +19,10 @@ import {
   createMfaChallenge,
   verifyMfaChallenge,
 } from '../lib/totp';
+import { revokeSession } from '../lib/session';
+
+/** How old a token may be and still set a password without the old one. */
+const SET_PASSWORD_MAX_TOKEN_AGE_SEC = 10 * 60;
 
 async function authUser(request: Request, env: Env) {
   const decoded = await getUserFromToken(request, env);
@@ -30,6 +34,15 @@ async function authUser(request: Request, env: Env) {
 export async function setup2fa(request: Request, env: Env) {
   const decoded = await authUser(request, env);
   if (!decoded) return jsonResponse({ error: 'Unauthorized' }, 401, env);
+  // Setup writes totp_enabled = 0. Allowed on an account that already has 2FA,
+  // that turned 2FA off with nothing but a bearer token — disable2fa, which asks
+  // for a code or the password, is the only way off.
+  const current = (await env.DB.prepare(`SELECT totp_enabled FROM users WHERE id = ?`)
+    .bind(decoded.id)
+    .first()) as { totp_enabled: number | null } | null;
+  if (current?.totp_enabled === 1) {
+    return jsonResponse({ error: '2FA is already on. Turn it off first.' }, 409, env);
+  }
   const secret = generateTotpSecret();
   await env.DB.prepare(
     `UPDATE users SET totp_secret = ?, totp_enabled = 0, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?`,
@@ -72,6 +85,11 @@ export async function enable2fa(request: Request, env: Env) {
 export async function disable2fa(request: Request, env: Env) {
   const decoded = await authUser(request, env);
   if (!decoded) return jsonResponse({ error: 'Unauthorized' }, 401, env);
+  // Each call is a guess at the password or a 6-digit code; keyed on the
+  // account so a stolen token cannot grind through either.
+  if (!(await checkRateLimit(String(decoded.id), '2fa-disable', env))) {
+    return jsonResponse({ error: 'Too many requests. Try again later.' }, 429, env);
+  }
   const body = await parseBody(request, twoFaDisableSchema, env);
   if (body instanceof Response) return body;
   const { code, password } = body;
@@ -223,6 +241,13 @@ export async function setPassword(request: Request, env: Env) {
   }
   const decoded = await authUser(request, env);
   if (!decoded) return jsonResponse({ error: 'Unauthorized' }, 401, env);
+  // No old password is asked for, so the token must be fresh: a token lifted
+  // from a device hours ago may not mint a permanent credential. The recovery
+  // flow this exists for (Google sign-in, then set a password) is minutes old.
+  const ageSec = decoded.iat ? Date.now() / 1000 - decoded.iat : Infinity;
+  if (ageSec > SET_PASSWORD_MAX_TOKEN_AGE_SEC) {
+    return jsonResponse({ error: 'Sign in again, then set your password', reauth: true }, 401, env);
+  }
   const body = await parseBody(request, setPasswordSchema, env);
   if (body instanceof Response) return body;
   const { newPassword } = body;
@@ -235,6 +260,8 @@ export async function setPassword(request: Request, env: Env) {
   )
     .bind(hashed, decoded.id)
     .run();
+  // A new password ends every other device's refresh chain.
+  await revokeSession(decoded.id, undefined, env);
   return jsonResponse({ success: true, message: 'Password set successfully' }, 200, env);
 }
 

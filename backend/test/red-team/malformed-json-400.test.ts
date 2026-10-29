@@ -220,13 +220,6 @@ const ROUTES: Row[] = [
     status: 200,
   },
   {
-    route: 'POST /api/admin/verify',
-    path: '/api/admin/verify',
-    as: 'anon',
-    happy: async () => ({ email: 'ops@notarium.site', password: TEST_SECRETS.ADMIN_PASSWORD }),
-    status: 200,
-  },
-  {
     route: 'POST /api/auth/forgot-password',
     path: '/api/auth/forgot-password',
     as: 'anon',

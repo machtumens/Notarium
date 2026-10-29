@@ -11,6 +11,7 @@ import {
 } from '../services/google-oauth';
 import { currentAcademicYear } from '../lib/academicYear';
 import { oauthExchangeSchema, parseBody } from '../lib/validation';
+import { isReservedAdminEmail } from '../lib/auth';
 
 export interface OAuthEnv {
   DB: D1Database;
@@ -328,6 +329,13 @@ async function handleCallback(url: URL, _request: Request, env: OAuthEnv): Promi
     }
 
     const mail = email.trim().toLowerCase();
+    // Admin rows live on reserved domains and sign in only through the admin
+    // password paths. Whoever owns a Google account at such an address (the
+    // legacy domain is registrable) must not land in one.
+    if (isReservedAdminEmail(mail)) {
+      console.error('[oauth] reserved admin domain refused:', mail);
+      return fail(env, 'admin_oauth_forbidden');
+    }
     // The display name is Google's, not the student's: it is re-read on every
     // sign-in, so a rename in the school directory follows them here and no
     // Notarium screen offers to edit it.
@@ -387,6 +395,12 @@ async function handleCallback(url: URL, _request: Request, env: OAuthEnv): Promi
     if (user.suspended === 1) {
       console.error('[oauth] suspended account tried to sign in:', mail);
       return fail(env, 'suspended');
+    }
+    // Defence in depth for an admin row on any other domain: Google proves the
+    // mailbox, not the right to an admin seat.
+    if (user.role === 'admin') {
+      console.error('[oauth] admin account refused on google sign-in:', mail);
+      return fail(env, 'admin_oauth_forbidden');
     }
 
     // `admin_role` rides along for the same reason the password path carries it: `requireRole`
