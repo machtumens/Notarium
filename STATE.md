@@ -11,8 +11,7 @@ tutors. Cloudflare Worker + D1 behind a Vite/React frontend on Vercel.
 ## True right now
 
 - Live. Worker and frontend both run `main` (`fd5b4ed`, pushed 12 Sep).
-  Deployed from this machine — `npx wrangler deploy` in `backend/`,
-  `npx vercel --prod` at the root. `/api/health` returns 200.
+  Worker: `npx wrangler deploy` in `backend/`. Frontend: push to main. `/api/health` returns 200.
 - 12 Sep: production `users` rebuilt without CHECK constraints (grade 11/12 signups had 500'd);
   706 space-form timestamps rewritten to ISO-8601 UTC, kept so by 24 AFTER INSERT triggers.
 - Google sign-in: `OAUTH_REDIRECT_URI` set; the callback URI is registered in
@@ -38,7 +37,7 @@ NOT EXISTS` never repairs an existing table — that is why `users` needed a
 - Backups from today (full D1 exports, real student data) are in
   `backend/backups/` — gitignored, keep it that way.
 
-## Tool rewrite + speed (2 Nov 2026) — NOT committed, NOT deployed
+## Tool rewrite + speed (2 Nov 2026) — LIVE (`c841225` worker, `f198a7b` app)
 
 - Demo screens (Practice, Progress, Tutors, Session, AI, Customize, Mobile, onboarding, guest mode,
   all Stoikiometri sample data) moved to `archive/demo-2026-11/` (outside `src/`, never built).
@@ -47,9 +46,11 @@ NOT EXISTS` never repairs an existing table — that is why `users` needed a
   `GET /api/notes/:id/view` (own or visible note), leaderboard drops base64 photos (490 KB → ~10 KB),
   maintenance KV read cached 60 s. Vercel: `/assets` and `/fonts` cached immutable for a year.
 - Verified: 128 vitest, selfcheck, lint 0 errors, 12/12 Playwright against local wrangler + D1.
-- **Deploy order matters: worker first** (`npx wrangler deploy` in `backend/`), then
-  `npx vercel --prod`. The new frontend calls `/api/notes/top` and `/:id/view`; on the old
-  worker Home's community list and every opened note would 404.
+- Worker version `497df613-74e7-49b9-a245-a2379c5b3f17`; **rollback to
+  `6cbb70f7-ce19-44c1-b49a-00148d05a85c`**. Leaderboard live at 8.3 KB; new routes 401 unsigned.
+- **Frontend deploys on `git push origin main`** (Vercel's GitHub hook on machtumens/Notarium).
+  This machine's Vercel CLI (animamonology / AlephOne) cannot see `notarium-site`. Worker first.
+- NOT verified on production: any signed-in screen (needs a real Google sign-in).
 
 ## Worker deployed (28 Oct 2026, 15:27 UTC)
 
