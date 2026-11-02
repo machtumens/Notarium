@@ -6,7 +6,9 @@ export async function getLeaderboard(env: Env) {
     `
     SELECT
       display_name,
-      photo_url,
+      -- ponytail: photos are base64 data URLs (~10 KB each, 470 KB per board) and no client draws
+      -- them here; only a real https URL is worth sending.
+      CASE WHEN photo_url LIKE 'http%' THEN photo_url END AS photo_url,
       class,
       notes_uploaded,
       total_likes,

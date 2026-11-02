@@ -52,6 +52,8 @@ import {
 } from './routes/subjects';
 import {
   getNotesBySubject,
+  getTopNotes,
+  viewNote,
   searchNotes,
   createNote,
   getNote,
@@ -219,7 +221,7 @@ export default {
     if (path.startsWith('/api/')) {
       let maintenanceOn = false;
       try {
-        maintenanceOn = (await env.RATE_LIMIT.get('site:maintenance')) === 'on';
+        maintenanceOn = (await env.RATE_LIMIT.get('site:maintenance', { cacheTtl: 60 })) === 'on';
       } catch {
         // KV unavailable — leave maintenanceOn = false (fail open)
       }
@@ -856,6 +858,12 @@ export default {
           return jsonResponse({ subjects: MOCK_SUBJECTS });
         }
         return await getSubjects(request, env);
+      }
+      if (path === '/api/notes/top' && request.method === 'GET') {
+        return await getTopNotes(request, env);
+      }
+      if (path.match(/^\/api\/notes\/\d+\/view$/) && request.method === 'GET') {
+        return await viewNote(path.split('/')[3], request, env);
       }
       if (path.startsWith('/api/notes/subject/')) {
         const subjectId = path.split('/').pop();

@@ -77,6 +77,72 @@ export async function getNotesBySubject(subjectId: string, request: Request, env
   return jsonResponse({ notes: results });
 }
 
+// The visibility rule getNotesBySubject applies, for a caller in class `?`.
+const VISIBLE_TO_CLASS = `(n.status = 'published' OR n.status IS NULL OR n.status = '')
+      AND (
+        n.visibility = 'everyone'
+        OR n.visibility IS NULL
+        OR n.visibility = ''
+        OR (n.visibility = 'class' AND (u.class = ? OR u.class IS NULL OR u.class = ''))
+      )`;
+
+/**
+ * GET /api/notes/top?limit= — the most-liked visible notes across every subject, as list rows only
+ * (no body, no author photo). Replaces the client asking each subject for its full notes and
+ * ranking them itself, which cost one request per subject and every note body plus a base64
+ * author photo per row.
+ */
+export async function getTopNotes(request: Request, env: Env) {
+  const user = await getAuthedUser(request, env);
+  if (!user) return jsonResponse({ error: 'Unauthorized' }, 401);
+  const params = new URL(request.url).searchParams;
+  const raw = Number(params.get('limit'));
+  const limit = Number.isInteger(raw) && raw > 0 ? Math.min(raw, 60) : 24;
+  const subject = Number(params.get('subject'));
+  const bySubject = Number.isInteger(subject) && subject > 0;
+  const { results } = await env.DB.prepare(
+    `
+    SELECT n.id, n.title, n.subject_id, s.name AS subject_name, n.status, n.likes,
+      n.admin_upvotes, n.created_at, u.display_name AS author_name, u.class AS author_class
+    FROM notes n
+    LEFT JOIN users u ON n.author_id = u.id
+    LEFT JOIN subjects s ON n.subject_id = s.id
+    WHERE ${VISIBLE_TO_CLASS} ${bySubject ? 'AND n.subject_id = ?' : ''}
+    ORDER BY COALESCE(n.likes, 0) + COALESCE(n.admin_upvotes, 0) DESC, n.created_at DESC
+    LIMIT ?
+  `,
+  )
+    .bind(user.class ?? '', ...(bySubject ? [subject] : []), limit)
+    .all();
+  return jsonResponse({ notes: results });
+}
+
+/**
+ * GET /api/notes/:id/view — one note to read: the caller's own (any status), or one the
+ * visibility rule above lets them see. Unlike GET /api/notes/:id, which is owner-only.
+ */
+export async function viewNote(noteId: string, request: Request, env: Env) {
+  const user = await getAuthedUser(request, env);
+  if (!user) return jsonResponse({ error: 'Unauthorized' }, 401);
+  const note = await env.DB.prepare(
+    `
+    SELECT n.id, n.title, n.description, n.subject_id, s.name AS subject_name, n.author_id,
+      n.extracted_text, n.summary, n.content, n.tags, n.status, n.visibility, n.likes,
+      n.admin_upvotes, n.created_at, n.updated_at, u.display_name AS author_name,
+      u.class AS author_class,
+      (SELECT COUNT(*) FROM note_likes WHERE note_id = n.id AND user_id = ?) AS liked_by_me
+    FROM notes n
+    LEFT JOIN users u ON n.author_id = u.id
+    LEFT JOIN subjects s ON n.subject_id = s.id
+    WHERE n.id = ? AND (n.author_id = ? OR (${VISIBLE_TO_CLASS}))
+  `,
+  )
+    .bind(user.id, noteId, user.id, user.class ?? '')
+    .first();
+  if (!note) return jsonResponse({ error: 'Note not found' }, 404);
+  return jsonResponse({ note });
+}
+
 export async function getNote(noteId: string, request: Request, env: Env) {
   try {
     const user = await getOrCreateUser(request, env);
