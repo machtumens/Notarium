@@ -52,7 +52,7 @@ export function Login() {
   return (
     <div
       data-screen-label="Sign in"
-      className="min-h-[100dvh] px-6 md:px-10 py-12 flex items-center justify-center"
+      className="flex-1 px-6 md:px-10 py-12 flex items-center justify-center"
     >
       <div className="w-full max-w-[440px] flex flex-col gap-7">
         <header className="flex flex-col gap-3 border-t-2 border-ink pt-5">

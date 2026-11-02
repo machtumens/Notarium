@@ -94,7 +94,7 @@ function NotFound() {
 
 export function App() {
   return (
-    <div className="relative min-h-screen bg-bg">
+    <div className="relative min-h-screen flex flex-col bg-bg">
       <ControlBar />
       <Routes>
         <Route path="/" element={<Root />} />
