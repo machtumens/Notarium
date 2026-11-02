@@ -9,7 +9,7 @@
 // the attack, and the lookalike-domain cases are kept to show that nothing is
 // pattern-matching the address any more.
 import { describe, it, expect } from 'vitest';
-import { checkIdentity } from '../oauth';
+import { checkIdentity, isOwnerAdmin } from '../oauth';
 
 const account = (over: Record<string, unknown> = {}) => ({
   email: 'siswa@sekolahkristencalvin.org',
@@ -35,8 +35,14 @@ describe('checkIdentity', () => {
     // Kept from the domain-lock suite with the expectation inverted: these were
     // the near-miss attacks when the suffix decided who got in. Nothing reads
     // the address shape now, so they are ordinary accounts.
-    ['the school domain as a prefix, not a suffix', { email: 'a@sekolahkristencalvin.org.evil.com' }],
-    ['the school domain in the local part', { email: 'sekolahkristencalvin.org@gmail.com', hd: undefined }],
+    [
+      'the school domain as a prefix, not a suffix',
+      { email: 'a@sekolahkristencalvin.org.evil.com' },
+    ],
+    [
+      'the school domain in the local part',
+      { email: 'sekolahkristencalvin.org@gmail.com', hd: undefined },
+    ],
     // An hd naming someone else's Workspace used to be a refusal on its own.
     ['an hd claim naming another domain', { hd: 'evil.com' }],
   ])('lets in %s', (_label, over) => {
@@ -66,5 +72,18 @@ describe('checkIdentity', () => {
       ok: false,
       reason: 'email_unverified',
     });
+  });
+});
+
+describe('isOwnerAdmin', () => {
+  const env = { ADMIN_EMAILS: ' Owner@Gmail.com , second@example.org' };
+  it('matches a listed address regardless of case and spacing', () => {
+    expect(isOwnerAdmin(env, 'owner@gmail.com')).toBe(true);
+    expect(isOwnerAdmin(env, 'second@example.org')).toBe(true);
+  });
+  it('refuses anyone not listed, and everyone when unset', () => {
+    expect(isOwnerAdmin(env, 'owner@gmail.co')).toBe(false);
+    expect(isOwnerAdmin({}, 'owner@gmail.com')).toBe(false);
+    expect(isOwnerAdmin({ ADMIN_EMAILS: ',' }, '')).toBe(false);
   });
 });

@@ -22,6 +22,8 @@ export interface OAuthEnv {
   OAUTH_REDIRECT_URI?: string;
   OAUTH_TOKEN_AES_KEY?: string;
   FRONTEND_URL?: string;
+  /** Comma-separated owner addresses that Google sign-in makes a super admin. */
+  ADMIN_EMAILS?: string;
 }
 
 const SIGNUP_SCOPES = ['openid', 'email', 'profile'];
@@ -215,6 +217,18 @@ async function handleStart(url: URL, request: Request, env: OAuthEnv): Promise<R
  *    its only unique key, so a token without one cannot create a user — this is
  *    the check the removed domain test was quietly also performing.
  */
+/**
+ * Owner allowlist: these mailboxes sign in with Google AND get the admin seat.
+ * The general rule below (Google proves a mailbox, not an admin seat) still holds
+ * for everyone else; the seat here comes from the worker config, not from Google.
+ */
+export function isOwnerAdmin(env: Pick<OAuthEnv, 'ADMIN_EMAILS'>, mail: string): boolean {
+  return (env.ADMIN_EMAILS ?? '')
+    .split(',')
+    .map((e) => e.trim().toLowerCase())
+    .some((e) => e !== '' && e === mail.trim().toLowerCase());
+}
+
 export function checkIdentity(
   payload: JWTPayload,
 ): { ok: true } | { ok: false; reason: 'email_unverified' | 'email_missing' } {
@@ -396,9 +410,16 @@ async function handleCallback(url: URL, _request: Request, env: OAuthEnv): Promi
       console.error('[oauth] suspended account tried to sign in:', mail);
       return fail(env, 'suspended');
     }
+    const owner = isOwnerAdmin(env, mail);
+    if (owner && (user.role !== 'admin' || user.admin_role !== 'super')) {
+      await env.DB.prepare(`UPDATE users SET role = 'admin', admin_role = 'super' WHERE id = ?`)
+        .bind(user.id)
+        .run();
+      user = { ...user, role: 'admin', admin_role: 'super' };
+    }
     // Defence in depth for an admin row on any other domain: Google proves the
-    // mailbox, not the right to an admin seat.
-    if (user.role === 'admin') {
+    // mailbox, not the right to an admin seat — unless the config names it.
+    if (user.role === 'admin' && !owner) {
       console.error('[oauth] admin account refused on google sign-in:', mail);
       return fail(env, 'admin_oauth_forbidden');
     }

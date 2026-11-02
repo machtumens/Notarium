@@ -8,6 +8,8 @@ compatibility_flags = ["nodejs_compat"]
 ENVIRONMENT = "production"
 FRONTEND_URL = "https://notarium-site.vercel.app"
 EXTRA_ALLOWED_ORIGINS = "https://notarium-app.pages.dev"
+# Owner accounts: Google sign-in with these makes the row a super admin.
+ADMIN_EMAILS = "animamonology@gmail.com"
 # GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET are provided via `wrangler secret put`
 # (not declared here — declaring an empty var would clobber the secret on deploy).
 
@@ -44,7 +46,7 @@ id = "5d033dba4be2443e98c4782d44e0b777"
 preview_id = "ad6509290e94483f9467a11eb2fff1b8"
 
 [env.production]
-vars = { ENVIRONMENT = "production", FRONTEND_URL = "https://notarium-site.vercel.app", EXTRA_ALLOWED_ORIGINS = "https://notarium-app.pages.dev" }
+vars = { ENVIRONMENT = "production", FRONTEND_URL = "https://notarium-site.vercel.app", EXTRA_ALLOWED_ORIGINS = "https://notarium-app.pages.dev", ADMIN_EMAILS = "animamonology@gmail.com" }
 
 [[env.production.d1_databases]]
 binding = "DB"

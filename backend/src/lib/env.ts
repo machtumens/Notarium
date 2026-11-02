@@ -18,6 +18,7 @@ export interface Env {
   OAUTH_REDIRECT_URI?: string;
   OAUTH_TOKEN_AES_KEY?: string;
   FRONTEND_URL?: string;
+  ADMIN_EMAILS?: string;
   EXTRA_ALLOWED_ORIGINS?: string;
   CF_API_TOKEN?: string;
   CF_ACCOUNT_ID?: string;

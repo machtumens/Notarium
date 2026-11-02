@@ -59,7 +59,10 @@ export function AuthCallback() {
         const { user } = await api.auth.me();
         signIn(user, tok);
         const back = api.auth.takeGoogleReturn();
-        nav(user.class ? (back ?? '/app/home') : '/welcome', { replace: true });
+        // An admin lands on the dashboard; it has no class step to finish.
+        const to =
+          user.role === 'admin' ? '/admin' : user.class ? (back ?? '/app/home') : '/welcome';
+        nav(to, { replace: true });
       } catch (e) {
         setError(e instanceof ApiError ? e.message : fallback(null));
       }
