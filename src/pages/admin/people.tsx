@@ -65,6 +65,7 @@ export function People() {
 
   return (
     <div className="flex flex-col gap-9">
+      <TutorApplications />
       <Panel
         title={`Register · ${rows.length} of ${users.data?.length ?? 0}`}
         note="Newest account first. Pick a row to act on it."
@@ -467,5 +468,60 @@ function Manage({
         />
       </Panel>
     </div>
+  );
+}
+
+/** Tutor applications: approving one lets that student put sessions on the Schedule. */
+function TutorApplications() {
+  const apps = useAsync(() => admin.tutors.pending(), []);
+  const { busy, said, run } = useAction(apps.retry);
+  return (
+    <Panel
+      title={`Tutor applications · ${apps.data?.length ?? 0}`}
+      note="Approve and they can open study sessions on the Schedule."
+    >
+      <Async loading={apps.loading} error={apps.error} retry={apps.retry}>
+        <Table
+          cols={[
+            { key: 'who', label: 'Student' },
+            { key: 'subject', label: 'Subject' },
+            { key: 'blurb', label: 'About' },
+            { key: 'act', label: '' },
+          ]}
+          rows={apps.data ?? []}
+          keyOf={(a) => a.id}
+          empty="No applications waiting."
+          cell={(a, key) =>
+            key === 'who' ? (
+              `${a.display_name ?? a.email}${a.class ? ` · ${a.class}` : ''}`
+            ) : key === 'subject' ? (
+              a.subject_name
+            ) : key === 'blurb' ? (
+              a.blurb
+            ) : (
+              <span className="flex gap-2">
+                <button
+                  type="button"
+                  className={primary}
+                  disabled={busy}
+                  onClick={() => run('Approved.', () => admin.tutors.review(a.id, 'active'))}
+                >
+                  Approve
+                </button>
+                <button
+                  type="button"
+                  className={TINY}
+                  disabled={busy}
+                  onClick={() => run('Declined.', () => admin.tutors.review(a.id, 'revoked'))}
+                >
+                  Decline
+                </button>
+              </span>
+            )
+          }
+        />
+      </Async>
+      <Said said={said} />
+    </Panel>
   );
 }

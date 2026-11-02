@@ -14,6 +14,8 @@ const NAV: NavItem[] = [
   { label: 'Discover', to: 'discover', icon: 'compass' },
   { label: 'My notes', to: 'notes', icon: 'notebook' },
   { label: 'New note', to: 'create', icon: 'pencil' },
+  { label: 'Quiz', to: 'quiz', icon: 'listChecks' },
+  { label: 'Schedule', to: 'schedule', icon: 'users' },
   { label: 'Profile', to: 'profile', icon: 'userRound' },
 ];
 /** Below 900px the rail becomes a bottom tab bar; short labels so five fit a 375px phone. */

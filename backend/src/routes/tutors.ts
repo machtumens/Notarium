@@ -6,6 +6,7 @@ import {
   parseBody,
   rateBookingSchema,
   sessionCreateSchema,
+  studyRequestSchema,
   tutorApplySchema,
   tutorReviewSchema,
 } from '../lib/validation';
@@ -21,8 +22,10 @@ import {
 // may APPLY once they have some demonstrated study record; a moderator then
 // approves. Nothing here self-grants tutor status.
 
-const MIN_POINTS_TO_APPLY = 100;
-const MIN_NOTES_TO_APPLY = 1;
+// Lowered to 0 on 2 Nov 2026: the school is onboarding a fresh cohort and a moderator approves every
+// application anyway, so the points gate only kept real tutors out.
+const MIN_POINTS_TO_APPLY = 0;
+const MIN_NOTES_TO_APPLY = 0;
 
 type Row = Record<string, unknown>;
 
@@ -392,7 +395,8 @@ export async function listSessions(request: Request, env: Env) {
   const url = new URL(request.url);
   const subjectId = Number(url.searchParams.get('subject_id'));
   const params: (string | number)[] = [user.id, user.id];
-  let where = `WHERE ts.status = 'scheduled'`;
+  // Past rooms drop off the board once they end.
+  let where = `WHERE ts.status = 'scheduled' AND ts.ends_at >= strftime('%Y-%m-%dT%H:%M:%SZ','now')`;
   if (Number.isFinite(subjectId) && subjectId > 0) {
     where += ' AND ts.subject_id = ?';
     params.push(subjectId);
@@ -761,4 +765,96 @@ export async function rateBooking(bookingId: string, request: Request, env: Env)
     .first<{ rating_avg: number }>();
 
   return jsonResponse({ success: true, rating, rating_avg: updated?.rating_avg ?? null }, 200, env);
+}
+
+// ---- Study requests: a student asks for a subject on a day; tutors see the demand. ----
+
+const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
+const MAX_REQUEST_DAYS = 14;
+
+/** GET /api/study-requests?from=YYYY-MM-DD&days=7 — demand per day and subject, plus my own asks. */
+export async function listStudyRequests(request: Request, env: Env) {
+  const user = await getAuthedUser(request, env);
+  if (!user) return jsonResponse({ error: 'Unauthorized' }, 401, env);
+
+  const url = new URL(request.url);
+  const from = url.searchParams.get('from') ?? '';
+  const days = Math.min(MAX_REQUEST_DAYS, Math.max(1, Number(url.searchParams.get('days')) || 7));
+  if (!DAY_RE.test(from)) return jsonResponse({ error: 'from must be YYYY-MM-DD' }, 400, env);
+
+  const { results } = await env.DB.prepare(
+    `SELECT r.day, r.subject_id, s.name AS subject_name, COUNT(*) AS count,
+            MAX(CASE WHEN r.student_id = ? THEN r.id END) AS my_request_id,
+            GROUP_CONCAT(CASE WHEN r.note IS NOT NULL AND r.note != '' THEN r.note END, ' · ') AS notes
+       FROM study_requests r
+       LEFT JOIN subjects s ON s.id = r.subject_id
+      WHERE r.day >= ? AND r.day < date(?, '+' || ? || ' days')
+      GROUP BY r.day, r.subject_id
+      ORDER BY r.day ASC, count DESC`,
+  )
+    .bind(user.id, from, from, days)
+    .all();
+
+  return jsonResponse({ requests: results ?? [] }, 200, env);
+}
+
+/** POST /api/study-requests { subject_id, day, note? } — one ask per student, subject and day. */
+export async function createStudyRequest(request: Request, env: Env) {
+  const user = await getAuthedUser(request, env);
+  if (!user) return jsonResponse({ error: 'Unauthorized' }, 401, env);
+
+  const body = await parseBody(request, studyRequestSchema, env);
+  if (body instanceof Response) return body;
+  const subjectId = Number(body.subject_id);
+  const day = String(body.day ?? '');
+  if (!Number.isInteger(subjectId) || subjectId <= 0) {
+    return jsonResponse({ error: 'subject_id is required' }, 400, env);
+  }
+  if (!DAY_RE.test(day)) return jsonResponse({ error: 'day must be YYYY-MM-DD' }, 400, env);
+  // Jakarta date, so "today" matches the student's calendar, not UTC's.
+  const today = new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
+  if (day < today) return jsonResponse({ error: 'That day has passed' }, 400, env);
+  const note = typeof body.note === 'string' ? body.note.trim().slice(0, 140) || null : null;
+
+  const subject = await env.DB.prepare(`SELECT id FROM subjects WHERE id = ?`)
+    .bind(subjectId)
+    .first();
+  if (!subject) return jsonResponse({ error: 'Subject not found' }, 404, env);
+
+  const row = await env.DB.prepare(
+    `INSERT INTO study_requests (student_id, subject_id, day, note) VALUES (?, ?, ?, ?)
+     ON CONFLICT (student_id, subject_id, day) DO UPDATE SET note = excluded.note
+     RETURNING id`,
+  )
+    .bind(user.id, subjectId, day, note)
+    .first<{ id: number }>();
+  return jsonResponse({ success: true, id: row?.id }, 201, env);
+}
+
+/** DELETE /api/study-requests/:id — withdraw my own ask. */
+export async function deleteStudyRequest(requestId: string, request: Request, env: Env) {
+  const user = await getAuthedUser(request, env);
+  if (!user) return jsonResponse({ error: 'Unauthorized' }, 401, env);
+  const res = await env.DB.prepare(`DELETE FROM study_requests WHERE id = ? AND student_id = ?`)
+    .bind(Number(requestId), user.id)
+    .run();
+  if (!(res as any)?.meta?.changes) return jsonResponse({ error: 'Not found' }, 404, env);
+  return jsonResponse({ success: true }, 200, env);
+}
+
+/** GET /api/admin/tutors — tutor applications waiting for a moderator, newest first. */
+export async function listTutorApplications(request: Request, env: Env) {
+  const admin = await requireRole(request, env, ['moderator']);
+  if (admin instanceof Response) return admin;
+  const { results } = await env.DB.prepare(
+    `SELECT tp.id, tp.status, tp.blurb, tp.created_at, s.name AS subject_name,
+            u.display_name, u.email, u.class
+       FROM tutor_profiles tp
+       JOIN users u ON u.id = tp.user_id
+       LEFT JOIN subjects s ON s.id = tp.subject_id
+      WHERE tp.status = 'pending'
+      ORDER BY tp.created_at DESC
+      LIMIT 200`,
+  ).all();
+  return jsonResponse({ applications: results ?? [] }, 200, env);
 }

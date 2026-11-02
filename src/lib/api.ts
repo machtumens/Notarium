@@ -348,6 +348,49 @@ function openSession(res: SessionAnswer): { token: string; refreshToken?: string
   return rememberRefreshToken({ token: res.token, refreshToken: res.refreshToken, user: res.user });
 }
 
+/** One question from POST /api/ai/quiz. `correct_answer` is the 0-based option index (mcq / true_false). */
+export type QuizQuestion = {
+  type: 'mcq' | 'true_false' | 'short_answer';
+  topic?: string;
+  question: string;
+  options?: string[];
+  correct_answer?: number;
+  explanation?: string;
+};
+export type Quiz = { title?: string; questions: QuizQuestion[] };
+export type QuizRequest = {
+  source_type: 'note' | 'subject';
+  source_id: number;
+  count: number;
+  difficulty: 'easy' | 'medium' | 'hard';
+  types: ('mcq' | 'true_false')[];
+};
+/** A group study room from GET /api/sessions (upcoming only). */
+export type TutorSession = {
+  id: number;
+  subject_id: number;
+  subject_name: string | null;
+  topic: string | null;
+  starts_at: string;
+  ends_at: string;
+  location: string | null;
+  tutor_name: string;
+  seat_cap: number;
+  seats_left: number;
+  i_am_in: boolean;
+  i_am_tutor: boolean;
+};
+export type TutorProfile = { id: number; subject_id: number; status: string; subject_name: string };
+/** Demand for one subject on one day, from GET /api/study-requests. */
+export type StudyRequest = {
+  day: string;
+  subject_id: number;
+  subject_name: string | null;
+  count: number;
+  my_request_id: number | null;
+  notes: string | null;
+};
+
 export const api = {
   auth: {
     /** POST /api/auth/login → main: `{ success, token, user }` (no refreshToken; `{ requires_2fa, challenge }` for 2FA accounts). */
@@ -484,5 +527,50 @@ export const api = {
       }),
     /** POST /api/notes/:id/like → `{ liked }` (a toggle). */
     like: (id: number) => request<{ liked: boolean }>(`/api/notes/${id}/like`, { method: 'POST' }),
+  },
+  /** POST /api/ai/quiz — questions from one note, or the best visible notes in a subject. */
+  quiz: (body: QuizRequest) => request<Quiz>('/api/ai/quiz', { method: 'POST', body }),
+  tutors: {
+    /** GET /api/tutors/eligibility → my tutor profiles (pending / active) per subject. */
+    mine: () =>
+      request<{ my_profiles: TutorProfile[] }>('/api/tutors/eligibility').then(
+        (r) => r.my_profiles,
+      ),
+    /** POST /api/tutors/apply — lands as pending until a moderator approves. */
+    apply: (subject_id: number, blurb: string) =>
+      request<{ status: string }>('/api/tutors/apply', {
+        method: 'POST',
+        body: { subject_id, blurb },
+      }),
+  },
+  sessions: {
+    list: () => request<{ sessions: TutorSession[] }>('/api/sessions').then((r) => r.sessions),
+    create: (body: {
+      tutor_profile_id: number;
+      starts_at: string;
+      ends_at: string;
+      seat_cap: number;
+      topic: string;
+      location: string;
+    }) =>
+      request<{ id: number }>('/api/sessions', {
+        method: 'POST',
+        body: { ...body, kind: 'group' },
+      }),
+    book: (id: number) =>
+      request<{ seat_no: number }>(`/api/sessions/${id}/book`, { method: 'POST' }),
+    cancel: (id: number) => request<unknown>(`/api/sessions/${id}/cancel`, { method: 'POST' }),
+  },
+  requests: {
+    list: (from: string, days: number) =>
+      request<{ requests: StudyRequest[] }>(`/api/study-requests?from=${from}&days=${days}`).then(
+        (r) => r.requests,
+      ),
+    create: (subject_id: number, day: string, note: string) =>
+      request<{ id: number }>('/api/study-requests', {
+        method: 'POST',
+        body: { subject_id, day, note },
+      }),
+    remove: (id: number) => request<unknown>(`/api/study-requests/${id}`, { method: 'DELETE' }),
   },
 };

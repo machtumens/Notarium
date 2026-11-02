@@ -749,6 +749,27 @@ export async function initializeDatabase(env: Env) {
       )
     `,
     ).run();
+
+    await env.DB.prepare(
+      `
+      CREATE TABLE IF NOT EXISTS study_requests (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        student_id INTEGER NOT NULL,
+        subject_id INTEGER NOT NULL,
+        day TEXT NOT NULL,
+        note TEXT,
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+        UNIQUE (student_id, subject_id, day),
+        FOREIGN KEY (student_id) REFERENCES users(id),
+        FOREIGN KEY (subject_id) REFERENCES subjects(id)
+      )
+    `,
+    ).run();
+    try {
+      await env.DB.prepare(
+        `CREATE INDEX IF NOT EXISTS idx_study_requests_day ON study_requests(day, subject_id)`,
+      ).run();
+    } catch (e) {}
     try {
       await env.DB.prepare(
         `CREATE INDEX IF NOT EXISTS idx_tutor_profiles_subject ON tutor_profiles(subject_id, status)`,

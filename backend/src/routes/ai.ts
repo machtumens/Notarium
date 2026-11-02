@@ -2,6 +2,7 @@ import type { Env } from '../lib/env';
 import { jsonResponse } from '../lib/response';
 import { getUserFromToken } from '../lib/auth';
 import { SQL_NOW_ISO } from '../lib/time';
+import { hasLlm, llmFetch } from '../lib/llm';
 import {
   aiTitleContentSchema,
   conceptExplainSchema,
@@ -89,16 +90,14 @@ export async function performOCR(imageBase64: string, mimeType: string, env: Env
     }
 
     try {
-      const deepseekApiKey = env.DEEPSEEK_API_KEY;
-      if (!deepseekApiKey) {
+      if (!hasLlm(env)) {
         return rawText;
       }
 
-      const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
+      const response = await llmFetch(env, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${deepseekApiKey}`,
         },
         body: JSON.stringify({
           model: 'deepseek-chat',
@@ -134,16 +133,14 @@ ${rawText}`,
 
 export async function generateNoteSummary(content: string, title: string, env: Env) {
   try {
-    const deepseekApiKey = env.DEEPSEEK_API_KEY;
-    if (!deepseekApiKey) {
+    if (!hasLlm(env)) {
       throw new Error('AI service not configured');
     }
 
-    const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
+    const response = await llmFetch(env, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${deepseekApiKey}`,
       },
       body: JSON.stringify({
         model: 'deepseek-chat',
@@ -178,7 +175,7 @@ IMPORTANT: Your response must be EXACTLY 2 sentences, no more, no less. Write th
     );
 
     if (!summaryOk) {
-      throw new Error(data.error?.message || 'DeepSeek API error');
+      throw new Error(data.error?.message || 'AI provider error');
     }
 
     const summary = data.choices[0].message.content.trim();
@@ -194,16 +191,14 @@ IMPORTANT: Your response must be EXACTLY 2 sentences, no more, no less. Write th
 
 export async function generateQuiz(content: string, title: string, env: Env) {
   try {
-    const deepseekApiKey = env.DEEPSEEK_API_KEY;
-    if (!deepseekApiKey) {
+    if (!hasLlm(env)) {
       throw new Error('AI service not configured');
     }
 
-    const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
+    const response = await llmFetch(env, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${deepseekApiKey}`,
       },
       body: JSON.stringify({
         model: 'deepseek-chat',
@@ -239,7 +234,7 @@ ${content}`,
     const data = (await response.json()) as any;
 
     if (!response.ok || !data.choices || data.choices.length === 0) {
-      throw new Error(data.error?.message || 'DeepSeek API error');
+      throw new Error(data.error?.message || 'AI provider error');
     }
 
     const responseText = data.choices[0].message.content;
@@ -255,16 +250,14 @@ ${content}`,
 
 export async function generateStudyPlan(subject: string, topic: string, env: Env) {
   try {
-    const deepseekApiKey = env.DEEPSEEK_API_KEY;
-    if (!deepseekApiKey) {
+    if (!hasLlm(env)) {
       throw new Error('AI service not configured');
     }
 
-    const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
+    const response = await llmFetch(env, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${deepseekApiKey}`,
       },
       body: JSON.stringify({
         model: 'deepseek-chat',
@@ -291,7 +284,7 @@ Format as a detailed markdown text with clear daily breakdowns. Write the entire
     const data = (await response.json()) as any;
 
     if (!response.ok || !data.choices || data.choices.length === 0) {
-      throw new Error(data.error?.message || 'DeepSeek API error');
+      throw new Error(data.error?.message || 'AI provider error');
     }
 
     return data.choices[0].message.content.trim();
@@ -302,16 +295,14 @@ Format as a detailed markdown text with clear daily breakdowns. Write the entire
 
 export async function explainConcept(concept: string, subject: string, env: Env) {
   try {
-    const deepseekApiKey = env.DEEPSEEK_API_KEY;
-    if (!deepseekApiKey) {
+    if (!hasLlm(env)) {
       throw new Error('AI service not configured');
     }
 
-    const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
+    const response = await llmFetch(env, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${deepseekApiKey}`,
       },
       body: JSON.stringify({
         model: 'deepseek-chat',
@@ -339,7 +330,7 @@ Make it engaging and suitable for high school students. Write the entire explana
     const data = (await response.json()) as any;
 
     if (!response.ok || !data.choices || data.choices.length === 0) {
-      throw new Error(data.error?.message || 'DeepSeek API error');
+      throw new Error(data.error?.message || 'AI provider error');
     }
 
     return data.choices[0].message.content.trim();
@@ -362,16 +353,14 @@ export async function generatePrimer(
   env: Env,
 ): Promise<{ overview: string; key_concepts: string[]; questions: string[] }> {
   try {
-    const deepseekApiKey = env.DEEPSEEK_API_KEY;
-    if (!deepseekApiKey) {
+    if (!hasLlm(env)) {
       throw new Error('AI service not configured');
     }
 
-    const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
+    const response = await llmFetch(env, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${deepseekApiKey}`,
       },
       body: JSON.stringify({
         model: 'deepseek-chat',
@@ -404,7 +393,7 @@ Topic: ${topic}`,
     const data = (await response.json()) as any;
 
     if (!response.ok || !data.choices || data.choices.length === 0) {
-      throw new Error(data.error?.message || 'DeepSeek API error');
+      throw new Error(data.error?.message || 'AI provider error');
     }
 
     const responseText = data.choices[0].message.content;
@@ -502,9 +491,15 @@ export async function generateQuizEndpoint(noteId: string, request: Request, env
 // Structured multi-type quiz generation (POST /api/ai/quiz) — Paperloop Phase 4.
 // Distinct from the MCQ-only generateQuiz above: supports MCQ / True-False /
 // Short-answer, calibrated to a difficulty, sourced from either a single owned
-// note or the caller's OWN notes within a subject (author_id-scoped — never
-// community-scoped, so no other user's note content can leak into a quiz).
+// note the caller may read, or the best visible notes in a subject. Visibility is the same rule the
+// note lists use, so a quiz only ever draws on text the caller could open themselves.
 // ---------------------------------------------------------------------------
+
+// Published and visible to the caller's class. One `?` = the caller's user id.
+const QUIZ_VISIBLE = `(n.status = 'published' OR n.status IS NULL OR n.status = '')
+  AND (n.visibility = 'everyone' OR n.visibility IS NULL OR n.visibility = ''
+       OR (n.visibility = 'class' AND (u.class = (SELECT class FROM users WHERE id = ?)
+                                       OR u.class IS NULL OR u.class = '')))`;
 
 type QuizSourceType = 'note' | 'subject';
 type QuizDifficulty = 'easy' | 'medium' | 'hard';
@@ -536,7 +531,7 @@ function truncateAndJoinNoteContent(
 }
 
 // Resolve the requested source into { title, content }, enforcing ownership.
-// 'forbidden' → a note owned by someone else; null → no owned content exists
+// 'forbidden' → a note the caller may not read; null → nothing to quiz on
 // (missing note, or a subject with zero notes for this user).
 async function resolveQuizSourceContent(
   sourceType: QuizSourceType,
@@ -545,21 +540,27 @@ async function resolveQuizSourceContent(
   env: Env,
 ): Promise<{ title: string; content: string } | 'forbidden' | null> {
   if (sourceType === 'note') {
+    // Own note (any status) or one the caller may read anyway — the same rule as GET /api/notes/:id/view,
+    // so a quiz never reveals a note the reader could not open.
     const row = (await env.DB.prepare(
-      'SELECT extracted_text, title, author_id FROM notes WHERE id = ?',
+      `SELECT n.extracted_text, n.title, n.author_id,
+              (n.author_id = ? OR (${QUIZ_VISIBLE})) AS can_read
+         FROM notes n LEFT JOIN users u ON n.author_id = u.id
+        WHERE n.id = ?`,
     )
-      .bind(sourceId)
-      .first()) as { extracted_text: string | null; title: string; author_id: number } | null;
+      .bind(userId, userId, sourceId)
+      .first()) as { extracted_text: string | null; title: string; can_read: number } | null;
     if (!row) return null;
-    // Ownership gate runs BEFORE any content is used in the AI prompt.
-    if (row.author_id !== userId) return 'forbidden';
+    if (!Number(row.can_read)) return 'forbidden';
     return { title: row.title, content: (row.extracted_text || '').trim() };
   }
 
   // subject: author_id-scoped — personal-only. Do NOT reuse getNotesBySubject
   // (community-scoped, no author filter — using it here would be an IDOR).
   const { results } = await env.DB.prepare(
-    'SELECT extracted_text, title FROM notes WHERE subject_id = ? AND author_id = ?',
+    `SELECT n.extracted_text, n.title FROM notes n LEFT JOIN users u ON n.author_id = u.id
+      WHERE n.subject_id = ? AND ${QUIZ_VISIBLE}
+      ORDER BY (n.likes + n.admin_upvotes) DESC, n.created_at DESC LIMIT 12`,
   )
     .bind(sourceId, userId)
     .all();
@@ -581,17 +582,15 @@ export async function generateStructuredQuiz(
   env: Env,
 ) {
   try {
-    const deepseekApiKey = env.DEEPSEEK_API_KEY;
-    if (!deepseekApiKey) {
+    if (!hasLlm(env)) {
       throw new Error('AI service not configured');
     }
 
     const typeList = types.join(', ');
-    const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
+    const response = await llmFetch(env, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${deepseekApiKey}`,
       },
       body: JSON.stringify({
         model: 'deepseek-chat',
@@ -651,7 +650,7 @@ ${sourceContent.content}`,
     const data = (await response.json()) as any;
 
     if (!response.ok || !data.choices || data.choices.length === 0) {
-      throw new Error(data.error?.message || 'DeepSeek API error');
+      throw new Error(data.error?.message || 'AI provider error');
     }
 
     const responseText = data.choices[0].message.content;
@@ -704,7 +703,7 @@ export async function generateStructuredQuizEndpoint(request: Request, env: Env)
     const source = await resolveQuizSourceContent(sourceType, sourceId, user.id, env);
     if (source === 'forbidden') {
       return jsonResponse(
-        { error: 'Unauthorized - You can only generate quizzes from your own notes' },
+        { error: 'You cannot open this note, so it cannot be quizzed' },
         403,
         env,
       );

@@ -133,6 +133,10 @@ import {
   cancelSession,
   completeSession,
   rateBooking,
+  listStudyRequests,
+  createStudyRequest,
+  deleteStudyRequest,
+  listTutorApplications,
 } from './routes/tutors';
 import {
   healthCheck,
@@ -1057,7 +1061,7 @@ Tags:`,
       if (path === '/api/ai/quiz' && request.method === 'POST') {
         const _aiqUser = await requireUser(request, env);
         if (!_aiqUser) return jsonResponse({ error: 'Unauthorized' }, 401, env);
-        if (!(await checkRateLimit(String(_aiqUser.id), 'ai', env))) {
+        if (!(await checkRateLimit(String(_aiqUser.id), 'ai-quiz', env, 15))) {
           return jsonResponse({ error: 'Too many requests. Try again later.' }, 429, env);
         }
         return await generateStructuredQuizEndpoint(request, env);
@@ -1295,6 +1299,23 @@ Tags:`,
       if (path.match(/^\/api\/sessions\/\d+\/cancel$/) && request.method === 'POST') {
         if (!env.DB) return jsonResponse({ error: 'Database not available' }, 503);
         return await cancelSession(path.split('/')[3], request, env);
+      }
+
+      if (path === '/api/admin/tutors' && request.method === 'GET') {
+        if (!env.DB) return jsonResponse({ error: 'Database not available' }, 503);
+        return await listTutorApplications(request, env);
+      }
+      if (path === '/api/study-requests' && request.method === 'GET') {
+        if (!env.DB) return jsonResponse({ error: 'Database not available' }, 503);
+        return await listStudyRequests(request, env);
+      }
+      if (path === '/api/study-requests' && request.method === 'POST') {
+        if (!env.DB) return jsonResponse({ error: 'Database not available' }, 503);
+        return await createStudyRequest(request, env);
+      }
+      if (path.match(/^\/api\/study-requests\/\d+$/) && request.method === 'DELETE') {
+        if (!env.DB) return jsonResponse({ error: 'Database not available' }, 503);
+        return await deleteStudyRequest(path.split('/')[3], request, env);
       }
 
       if (path.match(/^\/api\/admin\/tutors\/\d+\/approve$/) && request.method === 'POST') {

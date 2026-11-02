@@ -1,9 +1,10 @@
 // POST /api/ai/quiz — subject-source IDOR guard (T2, Paperloop Phase 4).
 //
-// The subject-source query is author_id-scoped (WHERE subject_id = ? AND
-// author_id = ?), so a caller requesting a subject that only holds ANOTHER
-// user's notes gets 404 "No content found" — never that user's note text. The
-// 404 fires from the ownership-scoped SQL BEFORE any AI call, so this suite
+// Since 2 Nov 2026 a subject quiz draws on every note the caller could open
+// (published + visible to their class), so classmates' shared notes feed it.
+// What must still never happen: a note the caller cannot open (a draft, or a
+// class-only note of another class) reaching the prompt. That 404 fires from
+// the visibility-scoped SQL BEFORE any AI call, so this suite
 // needs no provider mocking (and deliberately sets no AI key).
 import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
 import { applySchema, resetData, call, seedUser, seedSubject, seedNote, env } from './helpers';
@@ -12,13 +13,13 @@ beforeAll(applySchema);
 beforeEach(resetData);
 
 describe('POST /api/ai/quiz — subject-source IDOR', () => {
-  it("returns 404 for a non-owner's subject (no cross-user note content leaks)", async () => {
+  it("returns 404 when the subject only holds another user's draft (no hidden content leaks)", async () => {
     const owner = await seedUser();
     const attacker = await seedUser();
     const subjectId = await seedSubject();
     // A note in the subject that belongs ONLY to `owner`, with real content.
     const noteId = await seedNote(owner.id, subjectId, { title: 'Owner private note' });
-    await env.DB.prepare('UPDATE notes SET extracted_text = ? WHERE id = ?')
+    await env.DB.prepare("UPDATE notes SET extracted_text = ?, status = 'draft' WHERE id = ?")
       .bind('Secret owner-only study material that must never reach another user.', noteId)
       .run();
 
@@ -34,7 +35,7 @@ describe('POST /api/ai/quiz — subject-source IDOR', () => {
       },
     });
 
-    // author_id-scoped query returns 0 rows for the attacker → 404, never 200.
+    // visibility-scoped query returns 0 rows for the other user → 404, never 200.
     expect(res.status).toBe(404);
     const json = (await res.json()) as any;
     expect(json.error).toBe('No content found for this source');

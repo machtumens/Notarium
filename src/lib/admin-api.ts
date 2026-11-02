@@ -248,7 +248,27 @@ export type NotePatch = {
 // Calls
 // ---------------------------------------------------------------------------
 
+/** `GET /api/admin/tutors` — pending tutor applications. */
+export type TutorApplication = {
+  id: number;
+  subject_name: string | null;
+  display_name: string | null;
+  email: string;
+  class: string | null;
+  blurb: string | null;
+  created_at: string;
+};
+
 export const admin = {
+  tutors: {
+    pending: () =>
+      apiRequest<{ applications: TutorApplication[] }>('/api/admin/tutors').then(
+        (r) => r.applications,
+      ),
+    /** POST /api/admin/tutors/:id/approve — `active` approves, `revoked` declines. */
+    review: (id: number, status: 'active' | 'revoked') =>
+      apiRequest<unknown>(`/api/admin/tutors/${id}/approve`, { method: 'POST', body: { status } }),
+  },
   /** requireModerator */
   stats: () => apiRequest<UsageStats>('/api/admin/usage-stats'),
   activity: (limit = 50, offset = 0) =>

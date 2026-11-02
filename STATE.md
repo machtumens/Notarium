@@ -1,6 +1,6 @@
 # STATE — Notarium
 
-Updated: 2 Nov 2026 · Session: tool rewrite + speed
+Updated: 2 Nov 2026 (late) · Session: three pillars — notes, AI quiz, schedule
 
 ## Building
 
@@ -18,14 +18,7 @@ tutors. Cloudflare Worker + D1 behind a Vite/React frontend on Vercel.
   Google Cloud Console (verified 12 Sep — Google serves its sign-in page, no
   `redirect_uri_mismatch`). The full round-trip into a session has not been
   done from a browser yet. Before 12 Sep this returned 501.
-- AI is broken in production for a non-code reason: DeepSeek answers
-  "Insufficient Balance" — still, after Richard topped up on 12 Sep. That error
-  means the key is valid and its account has no credit, so the top-up most
-  likely landed on a different DeepSeek account than the one that issued
-  `DEEPSEEK_API_KEY`. Fix: new key from the topped-up account,
-  `npx wrangler secret put DEEPSEEK_API_KEY` in `backend/`. Every LLM feature
-  (summaries, quiz, Primer, study plan, concept explain) 500s until then. OCR
-  goes to Google Vision and was not tested. AI chat was removed on purpose.
+- AI in production: DeepSeek key has no credit (12 Sep). Gemini keys now replace it (see below).
 - Vercel production has no environment variables. `VITE_API_URL` falls back
   to the right default. `VITE_FEATURE_GOOGLE_OAUTH` unset → the "link Google"
   settings card is hidden (that path also needs `OAUTH_TOKEN_AES_KEY`).
@@ -36,6 +29,22 @@ NOT EXISTS` never repairs an existing table — that is why `users` needed a
   rebuild and why any future constraint change will too.
 - Backups from today (full D1 exports, real student data) are in
   `backend/backups/` — gitignored, keep it that way.
+
+## Three pillars (2 Nov 2026, late) — BUILT, NOT DEPLOYED, NOT COMMITTED
+
+- AI: `backend/src/lib/llm.ts` tries GEMINI_API_KEY → \_2 → \_3 → DEEPSEEK_API_KEY on any non-2xx.
+  Model `GEMINI_MODEL` or `gemini-3.8-flash` (from Google's OpenAI-compat docs, 2 Nov). No Gemini
+  key is set yet — Richard creates them in AI Studio, one per Google Cloud project.
+- Quiz (`/app/quiz`, "Quiz me on this" on every note): draws on any note the reader may open, not
+  only their own. Own bucket: 15 quizzes / 15 min / student. MCQ + true/false only.
+- Schedule (`/app/schedule`): 7-day board of group sessions + `study_requests` (new table,
+  migration 0023, also in initializeDatabase). Tutor apply has no points gate now; moderators
+  approve on admin People ("Tutor applications", `GET /api/admin/tutors`).
+- Archive: `backend/scripts/archive-notes-2026-11.sql` sets every live note to `archived`,
+  saving old status in `notes_archive_2026_11`; undo line is in the file. NOT RUN.
+- Verified locally: 672 backend + 128 frontend vitest, both tsc, build, new Playwright spec
+  `e2e/schedule-quiz.spec.ts` (2/2). Not verified: a real Gemini answer (no key).
+- The "context / take a break" switcher only ever lived in the retired V2.0 repo; live has none.
 
 ## Tool rewrite + speed (2 Nov 2026) — LIVE (`c841225` worker, `f198a7b` app)
 
@@ -51,17 +60,6 @@ NOT EXISTS` never repairs an existing table — that is why `users` needed a
 - **Frontend deploys on `git push origin main`** (Vercel's GitHub hook on machtumens/Notarium).
   This machine's Vercel CLI (animamonology / AlephOne) cannot see `notarium-site`. Worker first.
 - NOT verified on production: any signed-in screen (needs a real Google sign-in).
-
-## Worker deployed (28 Oct 2026, 15:27 UTC)
-
-- `npx wrangler deploy` from `backend/` at `7769369`. **Version
-  `4f2d22b1-ab7b-4a7a-b5d5-e991c54f2f04`; rollback to
-  `81356472-b32e-4f9b-9345-b7aa847dea23`** (live before, 28 Oct 12:21 UTC).
-- Shipped 14 backend commits (from ~`fce5092`): open sign-up, off-register classes stored,
-  rotating refresh tokens.
-- Verified after: health, ready, 401s on refresh/logout/admin/ops, CORS preflight 204.
-- **NOT verified:** an admin sign-in reaching a moderator panel — pinned by the
-  five C-bis tests, never watched against production. See Next #4.
 
 ## Decided
 
@@ -114,14 +112,12 @@ Carried from the retired `notarium-v2` repo (28 Oct), still binding on `src/`:
 
 ## Next
 
-1. Put a DeepSeek key from the topped-up account on the worker, then call
-   `POST /api/ai/primer` once with a real login and confirm structured JSON.
-2. Sign in with Google on notarium-site.vercel.app from a browser — the only
-   part of that flow not yet exercised.
-3. Walk the app as a student: upload a note (exercises Vision OCR), check a
-   date reads "Today", book a tutor session.
-4. Sign in on `/admin` and check a panel fills — live 28 Oct (`b15b3fd`),
-   never exercised against production.
+1. Commit; backup D1 (`npx wrangler d1 export notarium-db --remote --output backups/…`).
+2. `npx wrangler deploy` in `backend/` (creates `study_requests` on first request).
+3. Run the archive script; check Discover is empty and My notes shows "Archived".
+4. `git push origin main` (frontend). Then put Gemini keys: `npx wrangler secret put GEMINI_API_KEY`
+   (and `_2`, `_3`), and run one quiz from a real login.
+5. Older: Google sign-in round trip from a browser; `/admin` panel fills.
 
 ## Landmines
 

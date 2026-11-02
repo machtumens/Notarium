@@ -5,6 +5,10 @@ export interface Env {
   // checkRateLimit falls back to the KV sliding-window.
   RATE_LIMITER?: DurableObjectNamespace;
   GEMINI_API_KEY?: string;
+  // Backup Gemini keys, tried in order when the one before fails (see lib/llm.ts).
+  GEMINI_API_KEY_2?: string;
+  GEMINI_API_KEY_3?: string;
+  GEMINI_MODEL?: string;
   JWT_SECRET: string;
   ADMIN_PASSWORD: string;
   MODERATOR_PASSWORD?: string;

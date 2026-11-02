@@ -391,3 +391,17 @@ CREATE TABLE IF NOT EXISTS tutor_bookings (
 CREATE INDEX IF NOT EXISTS idx_tutor_profiles_subject ON tutor_profiles(subject_id, status);
 CREATE INDEX IF NOT EXISTS idx_tutor_sessions_start ON tutor_sessions(starts_at, status);
 CREATE INDEX IF NOT EXISTS idx_tutor_bookings_student ON tutor_bookings(student_id, status);
+
+-- Study requests: a student asks for a subject on a day (2 Nov 2026).
+CREATE TABLE IF NOT EXISTS study_requests (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  student_id INTEGER NOT NULL,
+  subject_id INTEGER NOT NULL,
+  day TEXT NOT NULL,
+  note TEXT,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+  UNIQUE (student_id, subject_id, day),
+  FOREIGN KEY (student_id) REFERENCES users(id),
+  FOREIGN KEY (subject_id) REFERENCES subjects(id)
+);
+CREATE INDEX IF NOT EXISTS idx_study_requests_day ON study_requests(day, subject_id);

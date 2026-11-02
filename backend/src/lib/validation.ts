@@ -335,6 +335,11 @@ export const sessionCreateSchema = z.object({
   location: z.string().optional(),
   availability_id: stringOrNumber.optional(),
 });
+export const studyRequestSchema = z.object({
+  subject_id: stringOrNumber.optional(),
+  day: z.string().optional(),
+  note: z.string().optional(),
+});
 export const rateBookingSchema = z.object({
   rating: stringOrNumber.optional(),
   feedback: z.string().optional(),

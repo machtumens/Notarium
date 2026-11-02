@@ -74,7 +74,7 @@ function Article({ id, mineIds }: { id: number; mineIds: Set<number> }) {
       <div className="flex items-baseline gap-x-5 gap-y-1.5 flex-wrap border-t border-ink pt-3">
         <span className="meta text-ink">{note.subject_name ?? 'Note'}</span>
         <span data-num className="meta">
-          {`${note.status === 'draft' ? 'Draft' : 'Published'} · ${note.created_at.slice(0, 10)}`}
+          {`${note.status === 'draft' ? 'Draft' : note.status === 'archived' ? 'Archived' : 'Published'} · ${note.created_at.slice(0, 10)}`}
         </span>
         {!own && note.author_name && <span className="meta">by {note.author_name}</span>}
       </div>
@@ -110,6 +110,9 @@ function Article({ id, mineIds }: { id: number; mineIds: Set<number> }) {
             {likeState.on ? 'Liked' : 'Like'} · {likeState.n}
           </button>
         )}
+        <Link to={`/app/quiz?note=${note.id}`} className={cn(slot, 'px-5 py-2.5 text-[14px]')}>
+          Quiz me on this
+        </Link>
       </div>
     </>
   );
@@ -211,7 +214,9 @@ export function Notes() {
               )}
             >
               <span className="flex-1 truncate">{n.title}</span>
-              {n.status === 'draft' && <span className="meta flex-none">draft</span>}
+              {(n.status === 'draft' || n.status === 'archived') && (
+                <span className="meta flex-none">{n.status}</span>
+              )}
             </button>
           ))}
         </div>

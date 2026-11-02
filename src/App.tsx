@@ -13,6 +13,8 @@ import { Notes } from '@/pages/notes';
 import { Discover } from '@/pages/discover';
 import { Create } from '@/pages/create';
 import { Profile } from '@/pages/profile';
+import { Quiz } from '@/pages/quiz';
+import { Schedule } from '@/pages/schedule';
 
 /**
  * The admin dashboard is its own chunk: it is seven screens and a second API client, and only an
@@ -128,6 +130,8 @@ export function App() {
             <Route path="discover" element={<Discover />} />
             <Route path="create" element={<Create />} />
             <Route path="profile" element={<Profile />} />
+            <Route path="quiz" element={<Quiz />} />
+            <Route path="schedule" element={<Schedule />} />
             {/* Old bookmarks: Customize became Profile; the demo screens are archived (archive/demo-2026-11). */}
             <Route path="customize" element={<Navigate to="/app/profile" replace />} />
             <Route path="*" element={<Navigate to="/app/home" replace />} />
