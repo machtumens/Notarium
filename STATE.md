@@ -30,7 +30,7 @@ NOT EXISTS` never repairs an existing table — that is why `users` needed a
 - Backups from today (full D1 exports, real student data) are in
   `backend/backups/` — gitignored, keep it that way.
 
-## Three pillars (2 Nov 2026, late) — BUILT, NOT DEPLOYED, NOT COMMITTED
+## Three pillars (2 Nov 2026, late) — LIVE (`b890414`)
 
 - AI: `backend/src/lib/llm.ts` tries GEMINI_API_KEY → \_2 → \_3 → DEEPSEEK_API_KEY on any non-2xx.
   Model `GEMINI_MODEL` or `gemini-3.8-flash` (from Google's OpenAI-compat docs, 2 Nov). No Gemini
@@ -40,11 +40,14 @@ NOT EXISTS` never repairs an existing table — that is why `users` needed a
 - Schedule (`/app/schedule`): 7-day board of group sessions + `study_requests` (new table,
   migration 0023, also in initializeDatabase). Tutor apply has no points gate now; moderators
   approve on admin People ("Tutor applications", `GET /api/admin/tutors`).
-- Archive: `backend/scripts/archive-notes-2026-11.sql` sets every live note to `archived`,
-  saving old status in `notes_archive_2026_11`; undo line is in the file. NOT RUN.
+- Archive: `backend/scripts/archive-notes-2026-11.sql` RUN 2 Nov — 141 notes (139 published, 2 draft)
+  now `archived`, old status in `notes_archive_2026_11`; undo line is in the file. Backup before:
+  `backend/backups/pre-archive-2026-11-02.sql` (40 MB).
+- Worker version `9f521398-f031-4091-b4a2-64a7ffb68498`; **rollback to
+  `c777f343-d504-4135-94ed-1a28345170e4`**. `study_requests` created by running migration 0023
+  directly — initializeDatabase did not run on the first requests.
 - Verified locally: 672 backend + 128 frontend vitest, both tsc, build, new Playwright spec
   `e2e/schedule-quiz.spec.ts` (2/2). Not verified: a real Gemini answer (no key).
-- The "context / take a break" switcher only ever lived in the retired V2.0 repo; live has none.
 
 ## Tool rewrite + speed (2 Nov 2026) — LIVE (`c841225` worker, `f198a7b` app)
 
@@ -112,12 +115,10 @@ Carried from the retired `notarium-v2` repo (28 Oct), still binding on `src/`:
 
 ## Next
 
-1. Commit; backup D1 (`npx wrangler d1 export notarium-db --remote --output backups/…`).
-2. `npx wrangler deploy` in `backend/` (creates `study_requests` on first request).
-3. Run the archive script; check Discover is empty and My notes shows "Archived".
-4. `git push origin main` (frontend). Then put Gemini keys: `npx wrangler secret put GEMINI_API_KEY`
-   (and `_2`, `_3`), and run one quiz from a real login.
-5. Older: Google sign-in round trip from a browser; `/admin` panel fills.
+1. Put Gemini keys on the worker: `npx wrangler secret put GEMINI_API_KEY` (and `_2`, `_3`, each from
+   a different Google Cloud project). Until then quizzes 500 (DeepSeek has no credit).
+2. Run one quiz from a real login; check the questions come back in Bahasa Indonesia.
+3. Approve the first tutors on `/admin` → People → Tutor applications.
 
 ## Landmines
 
