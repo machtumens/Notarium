@@ -68,10 +68,11 @@ const probe = () =>
   };
 
 /** A guest session is sessionStorage, not a button: the sign-in screen is school Google only now. */
-const asGuest = () => sessionStorage.setItem('notarium:guest', '1');
 
-const renderAt = (path: string) =>
-  render(
+// The browser URL follows the router in real life; the store reads it to decide whether to prefetch Home.
+const renderAt = (path: string) => {
+  window.history.replaceState(null, '', path);
+  return render(
     <MemoryRouter initialEntries={[path]}>
       <AppProvider>
         <App />
@@ -79,6 +80,7 @@ const renderAt = (path: string) =>
       </AppProvider>
     </MemoryRouter>,
   );
+};
 
 /**
  * Pick a subject on Create, waiting for the OPTIONS and not just the `<select>`.
@@ -117,25 +119,14 @@ describe('RequireSession', () => {
   });
 });
 
-describe('DemoOnly', () => {
-  it('bounces a signed-in account from /app/practice to /app/home', async () => {
+describe('archived demo routes', () => {
+  it('sends an old /app/practice bookmark to /app/home', async () => {
     localStorage.setItem('token', 'tok');
     stubFetch({ '/api/auth/me': () => json(200, { user: USER }) });
     renderAt('/app/practice');
     await waitFor(() =>
       expect(probe()).toMatchObject({ path: '/app/home', session: 'user', checked: true }),
     );
-  });
-
-  it('lets a guest reach /app/practice', async () => {
-    stubFetch({});
-    const user = userEvent.setup();
-    asGuest();
-    renderAt('/app/home');
-    await waitFor(() => expect(probe()).toMatchObject({ path: '/app/home', session: 'guest' }));
-
-    await user.click(screen.getAllByRole('link', { name: 'Practice' })[0]);
-    await waitFor(() => expect(probe()).toMatchObject({ path: '/app/practice', session: 'guest' }));
   });
 });
 
@@ -171,17 +162,6 @@ describe('session expiry (F1)', () => {
       }),
     );
     expect(localStorage.getItem('token')).toBeNull();
-  });
-
-  it('does not eject a guest when a stray 401 comes back', async () => {
-    stubFetch({ '/api/subjects': () => json(401, { error: 'Unauthorized' }) });
-    asGuest();
-    renderAt('/app/home');
-    await waitFor(() => expect(probe()).toMatchObject({ path: '/app/home', session: 'guest' }));
-
-    localStorage.setItem('token', 'stale');
-    await expect(api.subjects()).rejects.toMatchObject({ status: 401 });
-    await waitFor(() => expect(probe()).toMatchObject({ path: '/app/home', session: 'guest' }));
   });
 });
 
@@ -408,28 +388,31 @@ describe('refresh unavailable (W2.3e)', () => {
   });
 });
 
-describe('guest reload (F2)', () => {
-  it('a guest who reloads on a demo screen is still a guest there', async () => {
-    stubFetch({});
-    asGuest();
-    const page = renderAt('/app/home');
-    await waitFor(() => expect(probe()).toMatchObject({ path: '/app/home', session: 'guest' }));
-    page.unmount();
-
-    renderAt('/app/practice');
-    await waitFor(() =>
-      expect(probe()).toMatchObject({ path: '/app/practice', session: 'guest', checked: true }),
-    );
-  });
-});
-
-describe('AI surface and Notes companion are guest-only (R2)', () => {
+describe('accounts get no AI entry points (R2)', () => {
   // Main has no /api/chat/* (removed on purpose), so accounts get no AI entry points at all.
   const accountApi = {
     '/api/auth/me': () => json(200, { user: USER }),
     '/api/subjects': () =>
       json(200, { subjects: [{ id: 14, name: 'Kimia', icon: '🧪', note_count: 0 }] }),
     '/api/leaderboard': () => json(200, { leaderboard: [] }),
+    '/api/notes/top': () => json(200, { notes: [] }),
+    '/api/notes/3/view': () =>
+      json(200, {
+        note: {
+          id: 3,
+          title: 'Stoikiometri',
+          subject_id: 14,
+          subject_name: 'Kimia',
+          extracted_text: 'Mol adalah satuan jumlah zat.',
+          summary: null,
+          tags: null,
+          likes: 0,
+          admin_upvotes: 0,
+          created_at: '2026-09-20T10:00:00Z',
+          status: 'published',
+          visibility: 'class',
+        },
+      }),
     '/api/notes/my-notes': () =>
       json(200, {
         notes: [
@@ -491,24 +474,7 @@ describe('AI surface and Notes companion are guest-only (R2)', () => {
     expect(screen.getByRole('heading', { level: 2, name: 'Stoikiometri' })).toBeInTheDocument();
     expect(screen.queryByText('AI companion')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Quiz me on this note' })).toBeNull();
-    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Your notes');
-  });
-
-  it('keeps every AI entry point and the companion for a guest', async () => {
-    stubFetch({});
-    const user = userEvent.setup();
-    asGuest();
-    renderAt('/app/home');
-    await waitFor(() => expect(probe()).toMatchObject({ path: '/app/home', session: 'guest' }));
-    expect(screen.getByRole('button', { name: /Ask Notarium AI/ })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'AI' })).toBeInTheDocument();
-
-    await user.click(screen.getAllByRole('link', { name: 'Notes' })[0]);
-    await waitFor(() => expect(probe()).toMatchObject({ path: '/app/notes', session: 'guest' }));
-    expect(screen.getByText('AI companion')).toBeInTheDocument();
-
-    await user.click(screen.getByRole('button', { name: /Ask Notarium AI/ }));
-    await waitFor(() => expect(probe()).toMatchObject({ path: '/app/ai', session: 'guest' }));
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('My notes');
   });
 });
 
@@ -542,7 +508,15 @@ describe("Create posts main's note contract (R3)", () => {
             },
           ],
         }),
-      '/api/notes/subject/14': () => json(200, { notes: [] }),
+      '/api/notes/9/view': () =>
+        json(200, {
+          note: {
+            ...NOTE,
+            subject_name: 'Kimia',
+            extracted_text: 'Mol adalah satuan jumlah zat.\n\n$$ n = m / Mr',
+            summary: 'Mol adalah satuan jumlah zat. n = m / Mr',
+          },
+        }),
     });
     const user = userEvent.setup();
     renderAt('/app/create');
@@ -556,8 +530,7 @@ describe("Create posts main's note contract (R3)", () => {
     await user.type(screen.getByLabelText('Formula'), 'n = m / Mr');
     // W5.5: the draft is in this tab's storage before publishing, and gone after
     await waitFor(() => expect(sessionStorage.getItem('create:1')).not.toBeNull());
-    await user.click(screen.getByRole('button', { name: 'Review and publish' }));
-    await user.click(screen.getByRole('button', { name: 'Publish anyway' }));
+    await user.click(screen.getByRole('button', { name: 'Publish' }));
 
     await waitFor(() => expect(probe()).toMatchObject({ path: '/app/notes', session: 'user' }));
     // Waited, not read once: the waitFor above only settles the ROUTE. The flash
@@ -578,13 +551,13 @@ describe("Create posts main's note contract (R3)", () => {
       extracted_text: text,
       content: text,
       description: 'Mol adalah satuan jumlah zat. n = m / Mr',
-      tags: ['remix-ok'],
+      tags: [],
       status: 'published',
       visibility: 'class',
     });
     // Notes opens the row main just wrote, by id; the body renders from extracted_text and main's summary
     // (= the description = the plain-text summary of the body) is not shown a second time under it
-    expect(probe()).toMatchObject({ path: '/app/notes', search: '?note=9&subject=14' });
+    expect(probe()).toMatchObject({ path: '/app/notes', search: '?note=9' });
     // Re-queried inside waitFor rather than `expect(await findByText(...))`.
     // findByText resolves with a NODE; Notes then re-renders as its second fetch
     // lands, replacing that node, and the matcher is left holding a detached one
@@ -612,8 +585,7 @@ describe("Create posts main's note contract (R3)", () => {
     await selectSubject(user, '14');
     await user.type(screen.getByLabelText('Title'), 'Stoikiometri');
     await user.type(screen.getByLabelText('Paragraph'), 'Mol.');
-    await user.click(screen.getByRole('button', { name: 'Review and publish' }));
-    await user.click(screen.getByRole('button', { name: 'Publish anyway' }));
+    await user.click(screen.getByRole('button', { name: 'Publish' }));
     expect(await screen.findByRole('alert')).toHaveTextContent(/did not save/i);
     expect(probe()).toMatchObject({ path: '/app/create' });
   });
@@ -683,7 +655,6 @@ describe('Create keeps a draft per account in this tab (W5.5, Feature A)', () =>
     expect(screen.getByLabelText('Paragraph')).toHaveValue('Mol adalah satuan jumlah zat.');
     expect(screen.getByLabelText('Formula')).toHaveValue('n = m / Mr');
     expect(screen.getByLabelText('Subject')).toHaveValue('15');
-    await user.click(screen.getByRole('button', { name: 'Review and publish' }));
     expect(screen.getByRole('button', { name: 'All of Notarium' })).toHaveAttribute(
       'aria-pressed',
       'true',
@@ -724,145 +695,11 @@ describe('Create keeps a draft per account in this tab (W5.5, Feature A)', () =>
       audience: 'My class',
     });
 
-    await user.click(screen.getAllByRole('link', { name: 'Create' })[0]);
+    await user.click(screen.getAllByRole('link', { name: 'New note' })[0]);
     expect(await screen.findByRole('status')).toHaveTextContent(
       /^Restore your unsaved draft from \d\d:\d\d\?/,
     );
     expect(screen.getByLabelText('Title')).toHaveValue('');
-  });
-
-  it('does nothing for a guest, even with a draft in storage', async () => {
-    sessionStorage.setItem('create:1', JSON.stringify(saved));
-    stubFetch({});
-    const user = userEvent.setup();
-    asGuest();
-    renderAt('/app/home');
-    await waitFor(() => expect(probe()).toMatchObject({ path: '/app/home', session: 'guest' }));
-    await user.click(screen.getAllByRole('link', { name: 'Create' })[0]);
-    await waitFor(() => expect(probe()).toMatchObject({ path: '/app/create', session: 'guest' }));
-    expect(screen.queryByRole('status')).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Restore' })).toBeNull();
-    expect(sessionStorage.getItem('create:1')).toBe(JSON.stringify(saved));
-    expect(Object.keys(sessionStorage).filter((k) => k.startsWith('create:'))).toEqual([
-      'create:1',
-    ]);
-  });
-});
-
-describe("Onboarding account step follows main's signup rules", () => {
-  const toAccountStep = async (user: ReturnType<typeof userEvent.setup>) => {
-    renderAt('/onboard');
-    await user.click(screen.getByRole('button', { name: 'Skip — I will set it up later' }));
-    expect(screen.getByRole('heading', { name: 'Keep this space' })).toBeInTheDocument();
-  };
-
-  // Was "refuses an email outside the school domain before asking the worker".
-  // Sign-up is open (owner decision, 27 Oct), so this is inverted rather than
-  // deleted: it is what would catch the client-side gate coming back.
-  it('sends an email outside the school domain to the worker like any other', async () => {
-    const fetchMock = stubFetch({
-      '/api/auth/signup': () =>
-        json(201, { token: 'jwt', user: { ...USER, email: 'arga@gmail.com', class: '10.1' } }),
-    });
-    const user = userEvent.setup();
-    await toAccountStep(user);
-    await user.type(screen.getByLabelText('Name'), 'Arga');
-    await user.type(screen.getByLabelText('Email'), 'arga@gmail.com');
-    await user.type(screen.getByLabelText('Password'), 'rahasia123');
-    await user.type(screen.getByLabelText('Class'), '10.1');
-    // Continue only advances the step; the worker is called from the step after it.
-    await user.click(screen.getByRole('button', { name: /^Continue$/ }));
-    expect(
-      screen.getByRole('heading', { name: 'This is what opens tomorrow' }),
-    ).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Enter Notarium' }));
-    await waitFor(() => expect(callsTo(fetchMock, '/api/auth/signup')).toHaveLength(1));
-    const [signup] = callsTo(fetchMock, '/api/auth/signup');
-    expect(JSON.parse(String(signup[1]?.body))).toMatchObject({ email: 'arga@gmail.com' });
-  });
-
-  it('still refuses an address that is not an address at all', async () => {
-    const fetchMock = stubFetch({});
-    const user = userEvent.setup();
-    await toAccountStep(user);
-    await user.type(screen.getByLabelText('Name'), 'Arga');
-    await user.type(screen.getByLabelText('Email'), 'arga@@nope');
-    await user.type(screen.getByLabelText('Password'), 'rahasia123');
-    await user.click(screen.getByRole('button', { name: /^Continue$/ }));
-    expect(screen.getByText('That email does not look right')).toBeInTheDocument();
-    expect(callsTo(fetchMock, '/api/auth/signup')).toHaveLength(0);
-  });
-
-  it("wants the class in main's 10.1 shape, and passes a school email plus a valid class to the worker", async () => {
-    const fetchMock = stubFetch({
-      '/api/auth/signup': () => json(201, { token: 'jwt', user: { ...USER, class: '10.1' } }),
-    });
-    const user = userEvent.setup();
-    await toAccountStep(user);
-    await user.type(screen.getByLabelText('Name'), 'Arga');
-    await user.type(screen.getByLabelText('Email'), 'arga@sekolahkristencalvin.org');
-    await user.type(screen.getByLabelText('Password'), 'rahasia123');
-    const cls = screen.getByLabelText('Class');
-    expect(cls).toHaveAttribute('placeholder', '10.1');
-    await user.type(cls, '10-A');
-    await user.click(screen.getByRole('button', { name: /^Continue$/ }));
-    expect(screen.getByText(/Class looks like 10\.1/)).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Keep this space' })).toBeInTheDocument();
-
-    await user.clear(cls);
-    await user.type(cls, '10.1');
-    await user.click(screen.getByRole('button', { name: /^Continue$/ }));
-    expect(
-      screen.getByRole('heading', { name: 'This is what opens tomorrow' }),
-    ).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Enter Notarium' }));
-    await waitFor(() => expect(probe()).toMatchObject({ path: '/app/home', session: 'user' }));
-    const [signup] = callsTo(fetchMock, '/api/auth/signup');
-    expect(JSON.parse(String(signup[1]?.body))).toEqual({
-      email: 'arga@sekolahkristencalvin.org',
-      password: 'rahasia123',
-      name: 'Arga',
-      class: '10.1',
-    });
-  });
-
-  it("shows the worker's own message when it still refuses the signup", async () => {
-    stubFetch({ '/api/auth/signup': () => json(400, { error: 'Invalid class selection' }) });
-    const user = userEvent.setup();
-    await toAccountStep(user);
-    await user.type(screen.getByLabelText('Name'), 'Arga');
-    await user.type(screen.getByLabelText('Email'), 'arga@sekolahkristencalvin.org');
-    await user.type(screen.getByLabelText('Password'), 'rahasia123');
-    await user.type(screen.getByLabelText('Class'), '10.9');
-    await user.click(screen.getByRole('button', { name: /^Continue$/ }));
-    await user.click(screen.getByRole('button', { name: 'Enter Notarium' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('Invalid class selection');
-    expect(probe()).toMatchObject({ path: '/onboard', session: null });
-  });
-
-  // The class used to be optional here, and the worker still accepts a signup
-  // without one. RequireSession now holds a classless account on /welcome, so an
-  // account made without a class is stranded the moment it exists — ask for it.
-  it('will not create the account without a class', async () => {
-    const fetchMock = stubFetch({
-      '/api/auth/signup': () => json(201, { token: 'jwt', user: USER }),
-    });
-    const user = userEvent.setup();
-    await toAccountStep(user);
-    await user.type(screen.getByLabelText('Name'), 'Arga');
-    await user.type(screen.getByLabelText('Email'), 'arga@sekolahkristencalvin.org');
-    await user.type(screen.getByLabelText('Password'), 'rahasia123');
-    // Continue is disabled while the form is invalid (the pattern this step has
-    // always used), so the account cannot be made; the field says what is missing
-    // once it has been visited.
-    expect(screen.getByRole('button', { name: /^Continue$/ })).toBeDisabled();
-    await user.click(screen.getByLabelText('Class'));
-    await user.tab();
-    expect(screen.getByText('Enter your class')).toBeInTheDocument();
-
-    await user.click(screen.getByRole('button', { name: /^Continue$/ }));
-    expect(callsTo(fetchMock, '/api/auth/signup')).toHaveLength(0);
-    expect(screen.getByRole('heading', { name: 'Keep this space' })).toBeInTheDocument();
   });
 });
 

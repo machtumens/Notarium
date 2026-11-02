@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { buttonVariants } from '@/components/ui/button';
 import { I } from '@/components/ui/icons';
@@ -32,6 +32,13 @@ export function Login() {
   // W5.4: RequireSession lands here with `reason: 'offline'` when the session check got no verdict (network, 429, 5xx).
   // The token was kept, so a retry can pick the page back up; a 401 on the retry drops it and this notice with it.
   const [checking, setChecking] = useState(false);
+  const [leaving, setLeaving] = useState(false);
+  // Back from Google's page via the browser's Back button restores this page from bfcache, button still disabled.
+  useEffect(() => {
+    const reset = (e: PageTransitionEvent) => e.persisted && setLeaving(false);
+    window.addEventListener('pageshow', reset);
+    return () => window.removeEventListener('pageshow', reset);
+  }, []);
   const unreachable = state?.reason === 'offline' && offline;
   const retry = async () => {
     setChecking(true);
@@ -57,15 +64,21 @@ export function Login() {
         {/* ponytail: the school icon, not Google's coloured mark — this system has
             no colour. Swap in the official G if brand compliance is ever asked for. */}
         <div className="flex flex-col gap-2.5">
+          {/* Say something at once: the hop to Google takes a second or two on a phone, and a button
+              that does not react reads as broken (and gets tapped again). */}
           <button
             type="button"
-            onClick={() => api.auth.googleSignIn(from)}
+            disabled={leaving}
+            onClick={() => {
+              setLeaving(true);
+              api.auth.googleSignIn(from);
+            }}
             className={cn(
               buttonVariants({ variant: 'primary' }),
-              'flex items-center justify-center gap-2.5 px-6 py-[14px] text-[15px] min-h-[50px] w-full',
+              'flex items-center justify-center gap-2.5 px-6 py-[14px] text-[15px] min-h-[50px] w-full disabled:opacity-70 disabled:cursor-wait',
             )}
           >
-            <I.school size={18} /> Continue with Google
+            <I.school size={18} /> {leaving ? 'Opening Google…' : 'Continue with Google'}
           </button>
           <p className="text-[12.5px] text-neutral-700">
             Any Google account can sign in. First time is the same button — it makes the account.

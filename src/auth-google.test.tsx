@@ -126,13 +126,6 @@ describe('the profile step is a gate, not a suggestion', () => {
     await waitFor(() => expect(probe()).toMatchObject({ path: '/welcome', session: 'user' }));
   });
 
-  it('lets a guest through — a guest has no class and never needs one', async () => {
-    sessionStorage.setItem('notarium:guest', '1');
-    stubFetch({});
-    renderAt('/app/home');
-    await waitFor(() => expect(probe()).toMatchObject({ path: '/app/home', session: 'guest' }));
-  });
-
   it('sends a visitor with no session at all to /login, not to /welcome', async () => {
     stubFetch({});
     renderAt('/welcome');

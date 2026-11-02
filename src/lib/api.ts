@@ -453,6 +453,13 @@ export const api = {
       request<{ notes: Note[] }>(`/api/notes/search?q=${encodeURIComponent(q)}`).then(
         (r) => r.notes,
       ),
+    /** GET /api/notes/top?limit= → `{ notes }`: the most-liked visible notes across all subjects, list fields only (no body). */
+    top: (limit: number, subjectId?: number) =>
+      request<{ notes: Note[] }>(
+        `/api/notes/top?limit=${limit}${subjectId ? `&subject=${subjectId}` : ''}`,
+      ).then((r) => r.notes),
+    /** GET /api/notes/:id/view → `{ note }`: one note with its body — the caller's own, or one they may see. 404 otherwise. */
+    view: (id: number) => request<{ note: Note }>(`/api/notes/${id}/view`).then((r) => r.note),
     /** GET /api/notes/my-notes → `{ notes }` grouped by subject name; rows have no `content`/`description`. */
     mine: () => request<{ notes: Note[] }>('/api/notes/my-notes').then((r) => r.notes),
     /**
@@ -479,23 +486,3 @@ export const api = {
     like: (id: number) => request<{ liked: boolean }>(`/api/notes/${id}/like`, { method: 'POST' }),
   },
 };
-
-/** Pull the top-liked published notes across every subject (the worker has no cross-subject list). */
-export async function topNotes(subjects: Subject[], limit = 6) {
-  const lists = await Promise.all(
-    subjects
-      .filter((s) => s.note_count > 0)
-      .map((s) =>
-        api.notes
-          .bySubject(s.id)
-          .then((n) => n.map((x) => ({ ...x, subject_name: s.name })))
-          .catch(() => [] as Note[]),
-      ),
-  );
-  return lists
-    .flat()
-    .sort(
-      (a, b) => (b.likes ?? 0) + (b.admin_upvotes ?? 0) - (a.likes ?? 0) - (a.admin_upvotes ?? 0),
-    )
-    .slice(0, limit);
-}

@@ -1,6 +1,6 @@
 # STATE — Notarium
 
-Updated: 12 Sep 2026 (live) · Session: go-live 2
+Updated: 2 Nov 2026 · Session: tool rewrite + speed
 
 ## Building
 
@@ -13,13 +13,8 @@ tutors. Cloudflare Worker + D1 behind a Vite/React frontend on Vercel.
 - Live. Worker and frontend both run `main` (`fd5b4ed`, pushed 12 Sep).
   Deployed from this machine — `npx wrangler deploy` in `backend/`,
   `npx vercel --prod` at the root. `/api/health` returns 200.
-- Production `users` was rebuilt 12 Sep: no CHECK constraints, ISO timestamp
-  defaults, 45 rows verified identical before the old table was dropped.
-  A grade 12 and a grade 11 signup were then made against production and
-  returned 201 (test rows deleted afterwards). Before this, every grade 11/12
-  signup had 500'd since launch — production had 45 users, all grade 10.
-- 706 space-form timestamps across 13 columns were rewritten to ISO-8601 UTC.
-  The audit now reads 0. New rows are covered by 24 AFTER INSERT triggers.
+- 12 Sep: production `users` rebuilt without CHECK constraints (grade 11/12 signups had 500'd);
+  706 space-form timestamps rewritten to ISO-8601 UTC, kept so by 24 AFTER INSERT triggers.
 - Google sign-in: `OAUTH_REDIRECT_URI` set; the callback URI is registered in
   Google Cloud Console (verified 12 Sep — Google serves its sign-in page, no
   `redirect_uri_mismatch`). The full round-trip into a session has not been
@@ -35,8 +30,7 @@ tutors. Cloudflare Worker + D1 behind a Vite/React frontend on Vercel.
 - Vercel production has no environment variables. `VITE_API_URL` falls back
   to the right default. `VITE_FEATURE_GOOGLE_OAUTH` unset → the "link Google"
   settings card is hidden (that path also needs `OAUTH_TOKEN_AES_KEY`).
-- Firebase auth is half-migrated and dormant: `FIREBASE_PROJECT_ID` unset, so
-  the legacy HS256 path serves every request. Fine as is.
+- Firebase auth is half-migrated and dormant (`FIREBASE_PROJECT_ID` unset); legacy HS256 serves all.
 - Schema deploy path is `initializeDatabase()` in `backend/src/lib/db.ts`.
   Production has never had `wrangler d1 migrations apply`. `CREATE TABLE IF
 NOT EXISTS` never repairs an existing table — that is why `users` needed a
@@ -44,18 +38,27 @@ NOT EXISTS` never repairs an existing table — that is why `users` needed a
 - Backups from today (full D1 exports, real student data) are in
   `backend/backups/` — gitignored, keep it that way.
 
+## Tool rewrite + speed (2 Nov 2026) — NOT committed, NOT deployed
+
+- Demo screens (Practice, Progress, Tutors, Session, AI, Customize, Mobile, onboarding, guest mode,
+  all Stoikiometri sample data) moved to `archive/demo-2026-11/` (outside `src/`, never built).
+  App is now Home / Discover / My notes / New note / Profile. Feature notes: `docs/FEATURES-2026-11.md`.
+- Worker: `GET /api/notes/top?limit=&subject=` (list rows, replaces a 12-request fan-out),
+  `GET /api/notes/:id/view` (own or visible note), leaderboard drops base64 photos (490 KB → ~10 KB),
+  maintenance KV read cached 60 s. Vercel: `/assets` and `/fonts` cached immutable for a year.
+- Verified: 128 vitest, selfcheck, lint 0 errors, 12/12 Playwright against local wrangler + D1.
+- **Deploy order matters: worker first** (`npx wrangler deploy` in `backend/`), then
+  `npx vercel --prod`. The new frontend calls `/api/notes/top` and `/:id/view`; on the old
+  worker Home's community list and every opened note would 404.
+
 ## Worker deployed (28 Oct 2026, 15:27 UTC)
 
 - `npx wrangler deploy` from `backend/` at `7769369`. **Version
   `4f2d22b1-ab7b-4a7a-b5d5-e991c54f2f04`; rollback to
   `81356472-b32e-4f9b-9345-b7aa847dea23`** (live before, 28 Oct 12:21 UTC).
-- Production had sat at ~`fce5092` since go-live, so this shipped **14 backend
-  commits**, not just the auth fix (owner approved, two `!` commits included).
-- For real users: sign-up is open (`a6c169a`, the domain lock is gone); an
-  off-register class is stored, not refused (`29f77b4`); rotating refresh
-  tokens are issued (`768f416`), lighting up the client's short-session path.
-- Verified after: `/api/health` ok · `/api/ready` `{db:true,kv:true}` · refresh,
-  logout, admin and ops all 401 · CORS preflight from the Vercel origin 204.
+- Shipped 14 backend commits (from ~`fce5092`): open sign-up, off-register classes stored,
+  rotating refresh tokens.
+- Verified after: health, ready, 401s on refresh/logout/admin/ops, CORS preflight 204.
 - **NOT verified:** an admin sign-in reaching a moderator panel — pinned by the
   five C-bis tests, never watched against production. See Next #4.
 
@@ -77,6 +80,8 @@ NOT EXISTS` never repairs an existing table — that is why `users` needed a
   summary there. (12 Sep)
 
 ## Rejected
+
+- A guest/demo mode with sample data — archived 2 Nov; every screen must have the worker behind it.
 
 - Loosen `"module"` to ES2022 to fix the top-level-await build error — ships
   tests into `dist/`; excluding tests is the fix. (12 Sep)
@@ -135,9 +140,6 @@ Carried from the retired `notarium-v2` repo (28 Oct), still binding on `src/`:
 - `react-hooks/set-state-in-effect` is set to `warn` in `eslint.config.js`,
   over 4 load-on-mount fetch sites the client predates. Deliberate, not a
   statement that the rule is wrong.
-- Customize's Theme and Background pickers are DEAD UI: both are consumed only
-  by `horizon-glow.tsx`, which the Swiss redesign stopped rendering. They show
-  and change nothing. Drop the two sections or rewire them.
 - Playwright (`npm run e2e`, 16 specs) starts its own `wrangler dev` off
   `backend/`. On Windows, a long checkout path blows MAX_PATH, every D1 query
   throws, and the only symptom is `/api/health` 503ing until the 120 s

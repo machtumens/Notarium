@@ -1,17 +1,23 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError, api, type User } from '@/lib/api';
-import { AI_SEED, AppProvider, useApp } from '@/store';
+import { AppProvider, useApp } from '@/store';
 
 // Only the auth calls are faked; `token` (localStorage) and `ApiError` stay real.
 vi.mock('@/lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/api')>();
   return {
     ...actual,
-    api: { ...actual.api, auth: { login: vi.fn(), signup: vi.fn(), me: vi.fn(), logout: vi.fn() } },
+    api: {
+      ...actual.api,
+      auth: { login: vi.fn(), signup: vi.fn(), me: vi.fn(), logout: vi.fn() },
+      // The session check starts Home's lists early; here they only need to answer.
+      notes: { ...actual.api.notes, mine: vi.fn(async () => []), top: vi.fn(async () => []) },
+    },
   };
 });
 const auth = vi.mocked(api.auth);
+const notes = vi.mocked(api.notes);
 
 const USER: User = {
   id: 1,
@@ -156,36 +162,19 @@ describe('store bootstrap', () => {
 });
 
 describe('session transitions', () => {
-  it('signIn opens the account, stores the token and resets the study context', async () => {
+  it('signIn opens the account, stores the token and starts loading Home', async () => {
     const { result } = await settled(mount());
-    act(() => result.current.setCtx('exam'));
-    expect(result.current).toMatchObject({ ctx: 'exam', mode: 'Exam' });
-
+    notes.mine.mockClear();
     act(() => result.current.signIn(USER, 'tok'));
+    expect(notes.mine).toHaveBeenCalledTimes(1);
+    expect(notes.top).toHaveBeenCalled();
     expect(localStorage.getItem('token')).toBe('tok');
     expect(result.current).toMatchObject({
       session: { kind: 'user', user: USER },
       learner: 'Arga',
       isUser: true,
       sessionChecked: true,
-      ctx: 'normal',
-      mode: 'Study',
     });
-  });
-
-  it('continueAsGuest opens the demo without a token', async () => {
-    const { result } = await settled(mount());
-    act(() => result.current.setCtx('exam'));
-    act(() => result.current.continueAsGuest());
-    expect(result.current).toMatchObject({
-      session: { kind: 'guest' },
-      isUser: false,
-      sessionChecked: true,
-      learner: 'Arga',
-      ctx: 'normal',
-      mode: 'Study',
-    });
-    expect(localStorage.getItem('token')).toBeNull();
   });
 
   it('signOut ends the session on screen at once and clears the token once the worker has been told', async () => {
@@ -280,149 +269,16 @@ describe('session transitions', () => {
     expect(localStorage.getItem('refreshToken')).toBeNull();
   });
 
-  it('signOut keeps the visual preferences and resets everything about the session (W2.2b)', async () => {
+  it('signOut resets everything about the session', async () => {
     const { result } = await settled(mount());
     act(() => result.current.signIn(USER, 'tok'));
-    const tray = [{ label: 'Pomodoro', meta: 'core' }];
-    act(() =>
-      result.current.set({
-        theme: 'Cobalt field',
-        bgMode: 'Smooth',
-        grid: ['Mastery', 'Calendar'],
-        tray,
-        density: 'Cockpit',
-        adapt: 'Manual',
-        gamification: false,
-        ctx: 'exam',
-        aiThread: [],
-        createPhase: 'publish',
-        chat: [],
-        learner: 'Someone',
-      }),
-    );
     act(() => result.current.signOut());
-    // preferences survive
-    expect(result.current).toMatchObject({
-      theme: 'Cobalt field',
-      bgMode: 'Smooth',
-      grid: ['Mastery', 'Calendar'],
-      density: 'Cockpit',
-      adapt: 'Manual',
-      gamification: false,
-    });
-    expect(result.current.tray).toEqual(tray);
-    // the session and its working state are back to the start
     expect(result.current).toMatchObject({
       session: null,
       isUser: false,
       sessionChecked: true,
-      learner: 'Arga',
-      ctx: 'normal',
-      mode: 'Study',
-      createPhase: 'write',
+      offline: false,
+      learner: '',
     });
-    expect(result.current.aiThread).toEqual(AI_SEED);
-    expect(result.current.chat).toHaveLength(1);
-  });
-
-  it('a guest signing out never calls the worker', async () => {
-    const { result } = await settled(mount());
-    act(() => result.current.continueAsGuest());
-    act(() => result.current.signOut());
-    expect(auth.logout).not.toHaveBeenCalled();
-    expect(result.current.session).toBeNull();
-  });
-
-  it('signUp creates the account on the worker, then opens it exactly like signIn', async () => {
-    auth.signup.mockResolvedValue({
-      token: 'fresh',
-      user: { ...USER, name: 'Nama Baru', class: '10B' },
-    });
-    const { result } = await settled(mount());
-    await act(async () => {
-      await result.current.signUp('baru@sman4.sch.id', 'rahasia123', 'Nama Baru', '10B');
-    });
-    expect(auth.signup).toHaveBeenCalledWith('baru@sman4.sch.id', 'rahasia123', 'Nama Baru', '10B');
-    expect(localStorage.getItem('token')).toBe('fresh');
-    expect(result.current).toMatchObject({
-      session: { kind: 'user', user: { name: 'Nama Baru' } },
-      learner: 'Nama',
-      isUser: true,
-    });
-  });
-
-  it('signUp passes the worker error through and leaves the visitor signed out', async () => {
-    auth.signup.mockRejectedValue(new ApiError('Email already registered', 409));
-    const { result } = await settled(mount());
-    await expect(
-      result.current.signUp('dup@sman4.sch.id', 'rahasia123', 'Dup'),
-    ).rejects.toMatchObject({ status: 409, message: 'Email already registered' });
-    expect(result.current.session).toBeNull();
-    expect(localStorage.getItem('token')).toBeNull();
-  });
-});
-
-describe('guest persistence (F2)', () => {
-  it('keeps a guest session across a remount without asking the worker', async () => {
-    const first = await settled(mount());
-    act(() => first.result.current.continueAsGuest());
-    first.unmount();
-
-    const { result } = await settled(mount());
-    expect(result.current.session).toEqual({ kind: 'guest' });
-    expect(auth.me).not.toHaveBeenCalled();
-  });
-
-  it('keeps the guest in this tab only: nothing lands in localStorage, a fresh tab starts over', async () => {
-    const first = await settled(mount());
-    act(() => first.result.current.continueAsGuest());
-    first.unmount();
-    expect(localStorage.length).toBe(0);
-
-    sessionStorage.clear();
-    const { result } = await settled(mount());
-    expect(result.current.session).toBeNull();
-  });
-
-  it('signOut ends the guest session for good', async () => {
-    const first = await settled(mount());
-    act(() => first.result.current.continueAsGuest());
-    act(() => first.result.current.signOut());
-    first.unmount();
-
-    const { result } = await settled(mount());
-    expect(result.current.session).toBeNull();
-  });
-
-  it('a stored token wins over a stored guest flag', async () => {
-    const first = await settled(mount());
-    act(() => first.result.current.continueAsGuest());
-    first.unmount();
-    localStorage.setItem('token', 'tok');
-    auth.me.mockResolvedValue({ user: USER });
-
-    const { result } = await settled(mount());
-    expect(result.current.session).toEqual({ kind: 'user', user: USER });
-    expect(auth.me).toHaveBeenCalledTimes(1);
-  });
-
-  it('still opens the guest in memory and finishes the session check when sessionStorage throws', async () => {
-    // jsdom's Storage is a named-property proxy, so spying on the `sessionStorage` instance would just store the mock as an item; the prototype is what the calls hit.
-    const boom = () => {
-      throw new DOMException('blocked', 'SecurityError');
-    };
-    const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(boom);
-    const getItem = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(boom);
-    try {
-      const { result } = await settled(mount());
-      expect(result.current.sessionChecked).toBe(true);
-      expect(() => act(() => result.current.continueAsGuest())).not.toThrow();
-      expect(result.current.session).toEqual({ kind: 'guest' });
-      expect(setItem).toHaveBeenCalled();
-      expect(getItem).toHaveBeenCalled();
-    } finally {
-      setItem.mockRestore();
-      getItem.mockRestore();
-    }
   });
 });

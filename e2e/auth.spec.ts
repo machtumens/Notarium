@@ -1,71 +1,26 @@
-import { test, expect, type Page } from '@playwright/test';
-import {
-  ACCOUNT_CLASS,
-  PASSWORD,
-  loginViaApi,
-  readToken,
-  snap,
-  uniqueEmail,
-  useToken,
-} from './helpers';
+import { test, expect } from '@playwright/test';
+import { loginViaApi, readToken, signUpViaApi, snap, useToken } from './helpers';
 
 /**
- * Signup → Home → sign out → sign in again → duplicate-email signup, all against the real Worker.
- * Serial on purpose: the account created through onboarding is the one that signs back in and then
- * collides on the second signup — main rate-limits logins (5 / 15 min / IP+email), so one account
- * and three sign-ins per journey is the budget. The password path runs on the Worker, not the
- * sign-in screen: that screen is school Google only.
+ * Sign in → Home → sign out → sign in again, against the real Worker. The sign-in screen is Google
+ * only, so the account is made and signed in on the Worker and the token placed the way `signIn`
+ * does; sign-out is the real UI journey. Serial: main rate-limits logins (5 / 15 min / IP+email).
+ * The old /onboard signup journey is in archive/demo-2026-11/e2e.
  */
 test.describe.serial('account journey', () => {
-  const email = uniqueEmail('auth');
-  const name = 'E2E Onboard';
+  let email = '';
 
-  const walkToAccountStep = async (page: Page) => {
-    await page.goto('/onboard');
-    await expect(
-      page.getByRole('heading', { name: 'What are you studying?' }),
-      'onboarding should open on question 1',
-    ).toBeVisible();
-    await page.getByRole('button', { name: 'Continue', exact: true }).click();
-    await expect(page.getByRole('heading', { name: 'How do you usually study?' })).toBeVisible();
-    await page.getByRole('button', { name: 'Continue', exact: true }).click();
-    await expect(page.getByRole('heading', { name: 'How long is a session?' })).toBeVisible();
-    await page.getByRole('button', { name: 'Continue', exact: true }).click();
-    await expect(
-      page.getByRole('heading', { name: 'Keep this space' }),
-      'the account step should follow the three questions',
-    ).toBeVisible();
-  };
-
-  const fillAccount = async (page: Page) => {
-    await page.getByLabel('Name').fill(name);
-    await page.getByLabel('Email').fill(email);
-    await page.getByLabel('Password', { exact: true }).fill(PASSWORD);
-    // RequireSession holds a classless account on /welcome, so a signup that skips the class never
-    // reaches Home — onboarding now requires it, and this fills it so the journey is the real one.
-    await page.getByLabel('Class', { exact: true }).fill(ACCOUNT_CLASS);
-    await page.getByRole('button', { name: 'Continue', exact: true }).click();
-    await expect(
-      page.getByRole('heading', { name: 'This is what opens tomorrow' }),
-      'a valid account form should advance to the result step',
-    ).toBeVisible();
-  };
-
-  test('onboarding signup lands on Home with the greeting', async ({ page }) => {
-    await walkToAccountStep(page);
-    await fillAccount(page);
-    await page.getByRole('button', { name: 'Enter Notarium' }).click();
-
-    await expect(page, 'signup should land on /app/home').toHaveURL(/\/app\/home$/);
-    await expect(
-      page.locator('h1'),
-      'Home headline should greet the new account by first name',
-    ).toContainText('Sore, E2E');
+  test('a new account lands on Home with the greeting', async ({ page, request }) => {
+    const account = await signUpViaApi(request, 'auth', 'E2E Onboard');
+    email = account.email;
+    await useToken(page, account.token);
+    await page.goto('/app/home');
+    await expect(page, 'a stored token should land on /app/home').toHaveURL(/\/app\/home$/);
+    await expect(page.locator('h1'), 'Home should greet the account by first name').toContainText(
+      'Hi, E2E',
+    );
     await expect(page.getByRole('button', { name: 'Sign out' })).toBeVisible();
-    expect(
-      await readToken(page),
-      'signup should store the Worker token under localStorage.token',
-    ).toBeTruthy();
+    expect(await readToken(page)).toBeTruthy();
     await snap(page, 'auth');
   });
 
@@ -73,19 +28,15 @@ test.describe.serial('account journey', () => {
     page,
     request,
   }) => {
-    // The sign-in screen is school Google only now, so the password path is driven on the Worker
-    // and the token is placed the way `signIn` does. Sign-out is still the real UI journey.
     await useToken(page, await loginViaApi(request, email));
     await page.goto('/app/home');
     await expect(page, 'a stored token should land on /app/home').toHaveURL(/\/app\/home$/);
-    await expect(page.locator('h1')).toContainText('Sore, E2E');
+    await expect(page.locator('h1')).toContainText('Hi, E2E');
 
     await page.getByRole('button', { name: 'Sign out' }).click();
     await expect(page, 'sign out should go to /login').toHaveURL(/\/login$/);
     // Polled, not read once: against a worker that issues refresh tokens the store
-    // waits for POST /api/auth/logout to settle before forgetting the keys (its
-    // generation guard needs whatever the logout's own refresh rotated to). The UI
-    // is already signed out by then, so only the key lags, by one round trip.
+    // waits for POST /api/auth/logout to settle before forgetting the keys.
     await expect
       .poll(() => readToken(page), { message: 'sign out should clear localStorage.token' })
       .toBeNull();
@@ -111,25 +62,5 @@ test.describe.serial('account journey', () => {
       page.getByRole('button', { name: 'Continue as guest' }),
       'there should be no guest door on /login',
     ).toHaveCount(0);
-  });
-
-  test('signing up again with the same email points to /login', async ({ page }) => {
-    await walkToAccountStep(page);
-    await fillAccount(page);
-    await page.getByRole('button', { name: 'Enter Notarium' }).click();
-
-    const alert = page.getByRole('alert');
-    await expect(
-      alert,
-      'the Worker 409 should surface as the already-has-an-account message',
-    ).toContainText('That email already has an account.');
-    const signIn = alert.getByRole('link', { name: 'Sign in instead' });
-    await expect(signIn, 'the duplicate-email alert should link to /login').toHaveAttribute(
-      'href',
-      '/login',
-    );
-    await expect(page, 'a failed signup must stay on /onboard').toHaveURL(/\/onboard$/);
-    await signIn.click();
-    await expect(page).toHaveURL(/\/login$/);
   });
 });

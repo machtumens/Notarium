@@ -6,23 +6,13 @@ import { GUTTER, Shell } from '@/components/layout/shell';
 import { buttonVariants } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { Login } from '@/pages/login';
-import { Onboard } from '@/pages/onboard';
 import { AuthCallback } from '@/pages/auth-callback';
 import { Welcome } from '@/pages/welcome';
 import { Home } from '@/pages/home';
-import { Customize } from '@/pages/customize';
 import { Notes } from '@/pages/notes';
 import { Discover } from '@/pages/discover';
-import { Ai } from '@/pages/ai';
 import { Create } from '@/pages/create';
-
-// The demo-only screens are their own chunks, fetched on first use: an account is redirected away from
-// all of them (DemoOnly), so its bundle should not carry them. The pages keep their named exports.
-const Progress = lazy(() => import('@/pages/progress').then((m) => ({ default: m.Progress })));
-const Practice = lazy(() => import('@/pages/practice').then((m) => ({ default: m.Practice })));
-const Tutors = lazy(() => import('@/pages/tutors').then((m) => ({ default: m.Tutors })));
-const Session = lazy(() => import('@/pages/session').then((m) => ({ default: m.Session })));
-const Mobile = lazy(() => import('@/pages/mobile').then((m) => ({ default: m.Mobile })));
+import { Profile } from '@/pages/profile';
 
 /**
  * The admin dashboard is its own chunk: it is seven screens and a second API client, and only an
@@ -45,7 +35,7 @@ function Root() {
 }
 
 /**
- * `/app/*` needs a session (account or guest); wait for the token check before deciding. A check that got no verdict
+ * `/app/*` needs a session (an account); wait for the token check before deciding. A check that got no verdict
  * (`offline`) still goes to /login, with `reason: 'offline'` so the page offers a Retry instead of a fresh sign-in.
  */
 function RequireSession() {
@@ -82,23 +72,6 @@ function RequireAccount() {
   return <Outlet />;
 }
 
-/**
- * Screens with no backend behind them (main has no chat, practice, tutor or progress routes): guests get the demo,
- * accounts land on Home. The one Suspense boundary for the lazy demo chunks lives here, inside the Shell, so
- * only the page slot shows the loading line while a chunk is fetched.
- */
-function DemoOnly() {
-  const { isUser, sessionChecked } = useApp();
-  // ponytail: /mobile sits outside RequireSession, so wait for the token check or an account would flash the demo.
-  if (!sessionChecked) return null;
-  if (isUser) return <Navigate to="/app/home" replace />;
-  return (
-    <Suspense fallback={<div className="p-8 text-sm text-neutral-700">Loading…</div>}>
-      <Outlet />
-    </Suspense>
-  );
-}
-
 function NotFound() {
   return (
     <div className={cn(GUTTER, 'py-16 flex flex-col items-start gap-5')}>
@@ -126,14 +99,11 @@ export function App() {
       <Routes>
         <Route path="/" element={<Root />} />
         <Route path="/login" element={<Login />} />
-        <Route path="/onboard" element={<Onboard />} />
+        <Route path="/onboard" element={<Navigate to="/login" replace />} />
         {/* Where Google sends the browser back; it owns no session of its own. */}
         <Route path="/auth/callback" element={<AuthCallback />} />
         <Route element={<RequireAccount />}>
           <Route path="/welcome" element={<Welcome />} />
-        </Route>
-        <Route element={<DemoOnly />}>
-          <Route path="/mobile" element={<Mobile />} />
         </Route>
         {/* `/admin/*` carries its own guard and its own frame, and one Suspense for its chunk. */}
         <Route
@@ -154,17 +124,13 @@ export function App() {
           <Route path="/app" element={<Shell />}>
             <Route index element={<Navigate to="home" replace />} />
             <Route path="home" element={<Home />} />
-            <Route path="customize" element={<Customize />} />
             <Route path="notes" element={<Notes />} />
             <Route path="discover" element={<Discover />} />
             <Route path="create" element={<Create />} />
-            <Route element={<DemoOnly />}>
-              <Route path="ai" element={<Ai />} />
-              <Route path="progress" element={<Progress />} />
-              <Route path="practice" element={<Practice />} />
-              <Route path="tutors" element={<Tutors />} />
-              <Route path="session" element={<Session />} />
-            </Route>
+            <Route path="profile" element={<Profile />} />
+            {/* Old bookmarks: Customize became Profile; the demo screens are archived (archive/demo-2026-11). */}
+            <Route path="customize" element={<Navigate to="/app/profile" replace />} />
+            <Route path="*" element={<Navigate to="/app/home" replace />} />
           </Route>
         </Route>
         <Route path="*" element={<NotFound />} />

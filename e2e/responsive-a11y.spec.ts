@@ -3,12 +3,11 @@ import AxeBuilder from '@axe-core/playwright';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { ACCOUNT_STATE } from '../playwright.config';
-import { asGuest, settled, snap } from './helpers';
+import { settled } from './helpers';
 
 /**
- * Phone viewport (375×812): no horizontal overflow and the bottom tab bar on guest Home and the
- * four account screens (the AI surface is guest-only — accounts are redirected to Home); axe on
- * the four account screens, failing on serious/critical violations that are not on the known-gap
+ * Phone viewport (375×812): no horizontal overflow and the bottom tab bar on the five account
+ * screens; axe on each, failing on serious/critical violations that are not on the known-gap
  * list below.
  */
 const WIDTH = 375;
@@ -18,10 +17,11 @@ const WIDTH = 375;
 test.use({ viewport: { width: WIDTH, height: 812 }, contextOptions: { reducedMotion: 'reduce' } });
 
 const ACCOUNT_SCREENS: { name: string; path: string; label: string }[] = [
-  { name: 'home', path: '/app/home', label: 'Adaptive Home' },
+  { name: 'home', path: '/app/home', label: 'Home' },
   { name: 'discover', path: '/app/discover', label: 'Discover' },
   { name: 'notes', path: '/app/notes', label: 'Note viewer' },
-  { name: 'create', path: '/app/create', label: 'Create and publish a note' },
+  { name: 'create', path: '/app/create', label: 'Create a note' },
+  { name: 'profile', path: '/app/profile', label: 'Profile' },
 ];
 
 /**
@@ -94,14 +94,6 @@ async function axeGate(page: Page, screen: string) {
     `${screen}: ${fresh.length} serious/critical axe violation node(s) not on the known-gap list:\n${report}`,
   ).toBe(0);
 }
-
-test('guest Home fits a phone and shows the tab bar', async ({ page }) => {
-  await asGuest(page);
-  await expect(page).toHaveURL(/\/app\/home$/);
-  await settled(page);
-  await noOverflowWithTabBar(page, 'guest home');
-  await snap(page, 'responsive-a11y');
-});
 
 test.describe('account screens', () => {
   test.use({ storageState: ACCOUNT_STATE });

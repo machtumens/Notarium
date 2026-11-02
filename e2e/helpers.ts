@@ -73,36 +73,6 @@ export async function loginViaApi(
 }
 
 /**
- * Become a guest through the one door the app still has for it: onboarding's "Continue as guest
- * instead", on the account step after the three questions. The sign-in screen is school Google
- * only, so the old `/login` button is gone — guest mode itself is not.
- */
-export async function asGuest(page: Page) {
-  await page.goto('/onboard');
-  for (const heading of [
-    'What are you studying?',
-    'How do you usually study?',
-    'How long is a session?',
-  ]) {
-    await expect(
-      page.getByRole('heading', { name: heading }),
-      `onboarding should reach "${heading}"`,
-    ).toBeVisible();
-    await page.getByRole('button', { name: 'Continue', exact: true }).click();
-  }
-  await expect(
-    page.getByRole('heading', { name: 'Keep this space' }),
-    'the account step should follow the three questions',
-  ).toBeVisible();
-  // Keyboard, not a click: the account step autofocuses Name, and the blur a mousedown causes marks
-  // it touched, which inserts "Enter your name" above the button row. The layout shifts between
-  // mousedown and mouseup and the click lands next to the button, so the door never opens.
-  const door = page.getByRole('button', { name: 'Continue as guest instead' });
-  await door.focus();
-  await door.press('Enter');
-}
-
-/**
  * A JWT that parses (three base64url parts, HS256 header, unexpired payload) but was never signed
  * with the Worker's secret, so `jwtVerify` rejects it and every authenticated route answers 401.
  */

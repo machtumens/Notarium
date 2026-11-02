@@ -3,7 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { buttonVariants } from '@/components/ui/button';
 import { ApiError, api } from '@/lib/api';
 import { cn } from '@/lib/utils';
-import { useApp } from '@/store';
+import { prefetchHome, useApp } from '@/store';
 
 /** The worker's own `reason=` codes, said in words a student can act on. */
 const REASONS: Record<string, string> = {
@@ -55,6 +55,7 @@ export function AuthCallback() {
         // The exchange answers with a token only; the account itself comes from
         // /me, which is also what tells us whether the profile step is needed.
         const tok = await api.auth.googleExchange(code);
+        prefetchHome(); // rides alongside /me instead of after it
         const { user } = await api.auth.me();
         signIn(user, tok);
         const back = api.auth.takeGoogleReturn();

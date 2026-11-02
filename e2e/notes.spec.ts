@@ -42,27 +42,26 @@ test('create, publish, and read back a note with a paragraph and a formula block
   await expect(formulaBox, '"+ Formula" should add a formula block').toBeVisible();
   await formulaBox.fill(formula);
   await expect(
-    page.getByText('Draft · 2 blocks'),
+    page.getByText('2 blocks · kept in this tab'),
     'two filled blocks should be counted',
   ).toBeVisible();
 
-  await page.getByRole('button', { name: 'Review and publish' }).click();
   await expect(
     page.getByRole('heading', { name: 'Who sees it' }),
-    'the publish phase should open',
+    'the audience picker sits beside the editor',
   ).toBeVisible();
   await expect(
     page.getByRole('button', { name: 'My class', pressed: true }),
     'accounts default to the class audience',
   ).toBeVisible();
-  const publish = page.getByRole('button', { name: 'Publish anyway' });
+  const publish = page.getByRole('button', { name: 'Publish', exact: true });
   await expect(publish, 'with a title and a subject the publish button is enabled').toBeEnabled();
   await publish.click();
 
   await expect(
     page,
     'publishing should hand over to /app/notes, opening the row main wrote',
-  ).toHaveURL(/\/app\/notes\?note=\d+&subject=\d+$/);
+  ).toHaveURL(/\/app\/notes\?note=\d+$/);
   await expect(page.getByRole('status'), 'the one-shot flash should name the audience').toHaveText(
     'Published to my class',
   );
@@ -102,14 +101,14 @@ test('create, publish, and read back a note with a paragraph and a formula block
   await settled(page);
   await expect(
     page.getByRole('heading', { name: 'Your notes' }),
-    'Home should show the live "Your notes" module',
+    'Home should show the "Your notes" list',
   ).toBeVisible();
   await expect(
-    page.getByRole('button', { name: new RegExp(title) }).first(),
+    page.getByRole('link', { name: new RegExp(title) }).first(),
     'Home "Your notes" should list the new note',
   ).toBeVisible();
   await expect(
-    page.getByRole('heading', { name: `Continue ${title}` }),
+    page.getByRole('heading', { name: title, exact: true }),
     'the hero should pick up the latest note',
   ).toBeVisible();
 });
