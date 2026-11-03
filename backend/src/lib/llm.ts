@@ -39,8 +39,10 @@ export async function llmFetch(
   const providers = llmProviders(env);
   if (providers.length === 0) throw new Error('AI service not configured');
   const base = JSON.parse(init.body) as Record<string, unknown>;
-  let last: Response | null = null;
-  let lastError: unknown = null;
+  // Keep the FIRST failure: the primary provider's error says what to fix. Returning the last one
+  // let an empty DeepSeek balance ("402") hide a revoked or over-quota Gemini key.
+  let first: Response | null = null;
+  let firstError: unknown = null;
   for (const p of providers) {
     const body: Record<string, unknown> = { ...base, model: p.model };
     if (p.gemini) {
@@ -54,11 +56,11 @@ export async function llmFetch(
         body: JSON.stringify(body),
       });
       if (res.ok) return res;
-      last = res;
+      first ??= res;
     } catch (e) {
-      lastError = e;
+      firstError ??= e;
     }
   }
-  if (last) return last;
-  throw lastError instanceof Error ? lastError : new Error('AI provider unreachable');
+  if (first) return first;
+  throw firstError instanceof Error ? firstError : new Error('AI provider unreachable');
 }

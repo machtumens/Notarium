@@ -68,3 +68,51 @@ describe('POST /api/ai/quiz — subject-source IDOR', () => {
     expect(res.status).not.toBe(403);
   });
 });
+
+describe('POST /api/ai/quiz — prompt_only (paste into Gemini, no AI key needed)', () => {
+  const body = (subjectId: number) => ({
+    source_type: 'subject',
+    source_id: subjectId,
+    count: 5,
+    difficulty: 'medium',
+    types: ['mcq', 'true_false'],
+    prompt_only: true,
+  });
+
+  it('returns a ready prompt with the note text even though no AI key is set', async () => {
+    const owner = await seedUser();
+    const subjectId = await seedSubject();
+    const noteId = await seedNote(owner.id, subjectId, { title: 'Fotosintesis' });
+    await env.DB.prepare('UPDATE notes SET extracted_text = ? WHERE id = ?')
+      .bind('Klorofil menyerap cahaya.', noteId)
+      .run();
+
+    const res = await call('/api/ai/quiz', {
+      method: 'POST',
+      token: owner.token,
+      body: body(subjectId),
+    });
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as any;
+    expect(json.prompt).toContain('Klorofil menyerap cahaya.');
+    expect(json.prompt).toContain('exactly 5 questions');
+    expect(json.prompt).toContain('multiple choice (A-D), true/false');
+  });
+
+  it("never leaks another user's draft through the prompt", async () => {
+    const owner = await seedUser();
+    const attacker = await seedUser();
+    const subjectId = await seedSubject();
+    const noteId = await seedNote(owner.id, subjectId, { title: 'Private' });
+    await env.DB.prepare("UPDATE notes SET extracted_text = ?, status = 'draft' WHERE id = ?")
+      .bind('Owner-only secret.', noteId)
+      .run();
+
+    const res = await call('/api/ai/quiz', {
+      method: 'POST',
+      token: attacker.token,
+      body: body(subjectId),
+    });
+    expect(res.status).toBe(404);
+  });
+});

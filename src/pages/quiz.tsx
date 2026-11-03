@@ -42,6 +42,38 @@ export function Quiz() {
   ];
   const chosen = subjectId || ordered[0]?.id || 0;
 
+  const request = (): QuizRequest => ({
+    source_type: noteId ? 'note' : 'subject',
+    source_id: noteId || chosen,
+    count,
+    difficulty,
+    types: ['mcq', 'true_false'],
+  });
+
+  // The Gemini route: no AI key on our side, the student runs the quiz in their own Gemini chat.
+  const [prompt, setPrompt] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const openGemini = async () => {
+    setBusy(true);
+    setError(null);
+    setCopied(false);
+    try {
+      setPrompt((await api.quizPrompt(request())).prompt);
+    } catch (e) {
+      setError((e as Error).message || 'Could not prepare the Gemini prompt.');
+    } finally {
+      setBusy(false);
+    }
+  };
+  const copyPrompt = async () => {
+    try {
+      await navigator.clipboard.writeText(prompt ?? '');
+      setCopied(true);
+    } catch {
+      // Clipboard blocked: the textarea is selectable, so the student can copy by hand.
+    }
+  };
+
   const start = async () => {
     setBusy(true);
     setError(null);
@@ -49,13 +81,7 @@ export function Quiz() {
     setPicks({});
     setChecked(false);
     try {
-      const q = await api.quiz({
-        source_type: noteId ? 'note' : 'subject',
-        source_id: noteId || chosen,
-        count,
-        difficulty,
-        types: ['mcq', 'true_false'],
-      });
+      const q = await api.quiz(request());
       // Short answers need grading we do not do yet; the prompt can still slip one in.
       setQuiz({ ...q, questions: (q.questions ?? []).filter((x) => x.options?.length) });
     } catch (e) {
@@ -128,18 +154,61 @@ export function Quiz() {
         </div>
       </div>
 
-      <button
-        type="button"
-        className={cn(primary, 'w-fit')}
-        disabled={busy || (!noteId && !chosen)}
-        onClick={start}
-      >
-        {busy ? 'Writing your quiz…' : quiz ? 'New quiz' : 'Start quiz'}
-      </button>
+      <div className="flex gap-3 flex-wrap">
+        <button
+          type="button"
+          className={primary}
+          disabled={busy || (!noteId && !chosen)}
+          onClick={start}
+        >
+          {busy ? 'Working…' : quiz ? 'New quiz' : 'Start quiz'}
+        </button>
+        <button
+          type="button"
+          className={slot}
+          disabled={busy || (!noteId && !chosen)}
+          onClick={openGemini}
+        >
+          Quiz me in Gemini
+        </button>
+      </div>
       {error && (
         <p role="alert" className="text-ink border-l-[3px] border-ink pl-3">
-          {error}
+          {error} You can still take this quiz in Gemini with the button above.
         </p>
+      )}
+      {prompt && (
+        <div
+          className="flex flex-col gap-2 border border-neutral-300 p-4"
+          data-testid="gemini-panel"
+        >
+          <span className="meta">Your quiz, ready for Gemini</span>
+          <p className="text-neutral-800">
+            1. Copy the prompt. 2. Open Gemini and paste it. Gemini asks the questions one at a time
+            and marks your answers.
+          </p>
+          <textarea
+            readOnly
+            value={prompt}
+            rows={6}
+            onFocus={(e) => e.currentTarget.select()}
+            aria-label="Quiz prompt for Gemini"
+            className="w-full border border-neutral-300 bg-transparent p-2 text-[13px] font-mono"
+          />
+          <div className="flex gap-3 flex-wrap">
+            <button type="button" className={slot} onClick={copyPrompt}>
+              {copied ? 'Copied' : 'Copy prompt'}
+            </button>
+            <a
+              href="https://gemini.google.com/app"
+              target="_blank"
+              rel="noopener noreferrer"
+              className={slot}
+            >
+              Open Gemini
+            </a>
+          </div>
+        </div>
       )}
 
       {questions.length > 0 && (

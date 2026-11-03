@@ -239,6 +239,8 @@ export const structuredQuizSchema = z.object({
   count: stringOrNumber.optional(),
   difficulty: z.string().optional(),
   types: z.array(z.string()).optional(),
+  // Return the paste-into-Gemini prompt instead of calling an AI provider.
+  prompt_only: z.boolean().optional(),
 });
 export const studyPlanSchema = z.object({
   subject: z.string().optional(),

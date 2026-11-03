@@ -574,6 +574,38 @@ async function resolveQuizSourceContent(
   return { title, content };
 }
 
+const TYPE_WORDS: Record<QuizQuestionType, string> = {
+  mcq: 'multiple choice (A-D)',
+  true_false: 'true/false',
+  short_answer: 'short answer',
+};
+
+/**
+ * The same quiz as a prompt a student pastes into Gemini (gemini.google.com): a one-question-at-a-time
+ * quiz master. Needs no API key, so quizzes work even when every worker provider is down.
+ */
+export function buildChatQuizPrompt(
+  source: { title: string; content: string },
+  count: number,
+  difficulty: QuizDifficulty,
+  types: QuizQuestionType[],
+): string {
+  return `You are "Notarium Quiz Master", a patient exam coach for an Indonesian high-school student.
+
+Quiz me on the study material at the bottom. Rules:
+- Write everything in Bahasa Indonesia.
+- Ask exactly ${count} questions, ONE at a time. Wait for my answer before asking the next.
+- Difficulty: ${difficulty}. Question types: ${types.map((t) => TYPE_WORDS[t]).join(', ')}.
+- Start each question with a short topic label, like "[Topik: Mol]". Reuse the same label for the same idea.
+- After each answer: say whether I was right, give the correct answer, and explain in 1-2 sentences.
+- Use ONLY the material below. Do not ask about anything it does not cover.
+- After the last question, show my score as X/${count}, list the topics I got wrong, and offer another round on those.
+- Begin now with question 1. Do not summarise the material first.
+
+Study material: "${source.title}"
+${source.content}`;
+}
+
 export async function generateStructuredQuiz(
   sourceContent: { title: string; content: string },
   count: number,
@@ -650,7 +682,9 @@ ${sourceContent.content}`,
     const data = (await response.json()) as any;
 
     if (!response.ok || !data.choices || data.choices.length === 0) {
-      throw new Error(data.error?.message || 'AI provider error');
+      // Gemini's OpenAI-compat layer sometimes wraps 4xx bodies in an array: [{ error: {...} }].
+      const err = (Array.isArray(data) ? data[0] : data)?.error;
+      throw new Error(`${err?.message || 'AI provider error'} (HTTP ${response.status})`);
     }
 
     const responseText = data.choices[0].message.content;
@@ -712,10 +746,20 @@ export async function generateStructuredQuizEndpoint(request: Request, env: Env)
       return jsonResponse({ error: 'No content found for this source' }, 404, env);
     }
 
+    // After the visibility check above, so the prompt carries only text the caller may open.
+    if (body.prompt_only) {
+      return jsonResponse(
+        { title: source.title, prompt: buildChatQuizPrompt(source, count, difficulty, types) },
+        200,
+        env,
+      );
+    }
+
     const quiz = await generateStructuredQuiz(source, count, difficulty, types, env);
     return jsonResponse(quiz);
   } catch (error: any) {
-    return jsonResponse({ error: error.message }, 500);
+    // env is passed so the 500 carries CORS headers; without it the browser hides the message.
+    return jsonResponse({ error: error.message }, 500, env);
   }
 }
 

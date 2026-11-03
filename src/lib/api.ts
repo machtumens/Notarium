@@ -530,6 +530,12 @@ export const api = {
   },
   /** POST /api/ai/quiz — questions from one note, or the best visible notes in a subject. */
   quiz: (body: QuizRequest) => request<Quiz>('/api/ai/quiz', { method: 'POST', body }),
+  /** Same request, `prompt_only`: a prompt to paste into gemini.google.com. Works with no AI key. */
+  quizPrompt: (body: QuizRequest) =>
+    request<{ title: string; prompt: string }>('/api/ai/quiz', {
+      method: 'POST',
+      body: { ...body, prompt_only: true },
+    }),
   tutors: {
     /** GET /api/tutors/eligibility → my tutor profiles (pending / active) per subject. */
     mine: () =>

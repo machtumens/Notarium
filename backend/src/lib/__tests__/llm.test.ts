@@ -19,6 +19,16 @@ describe('llmFetch failover', () => {
     expect(seen).toEqual(['Bearer k1', 'Bearer k2']);
   });
 
+  it('reports the first provider failure, not the last, when all fail', async () => {
+    const fetcher = (async (url: string) =>
+      new Response('{}', {
+        status: url.includes('deepseek') ? 402 : 429,
+      })) as unknown as typeof fetch;
+    const env = { GEMINI_API_KEY: 'k1', DEEPSEEK_API_KEY: 'd' } as any;
+    const res = await llmFetch(env, { body: JSON.stringify({ model: 'x' }) }, fetcher);
+    expect(res.status).toBe(429);
+  });
+
   it('falls back to DeepSeek with its own model when every Gemini key fails', async () => {
     let lastBody: any = null;
     const fetcher = (async (url: string, init: RequestInit) => {
