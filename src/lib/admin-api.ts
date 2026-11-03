@@ -146,6 +146,8 @@ export type Health = {
   db?: boolean;
   kv?: boolean;
   ai_configured?: boolean;
+  /** Counts only, never keys. Absent on a worker build older than the Gemini failover. */
+  ai_keys?: { gemini: number; deepseek: boolean };
   oauth_configured?: boolean;
   latest_migration?: string | number;
   schema_version?: string | number;

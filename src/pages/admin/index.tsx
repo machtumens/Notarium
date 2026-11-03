@@ -13,6 +13,7 @@ import { GUTTER } from '@/components/layout/shell';
 import { Kicker } from '@/components/ui/kicker';
 import { cn } from '@/lib/utils';
 import { useApp } from '@/store';
+import { Cockpit } from './cockpit';
 import { Content } from './content';
 import { Nodes } from './nodes';
 import { Overview } from './overview';
@@ -21,13 +22,21 @@ import { Publish } from './publish';
 import { School } from './school';
 import { System } from './system';
 
-type Section = { to: string; label: string; head: string; sub: string };
+/** `bleed` sections draw their own full-width frame: no editorial header, no rail, no gutter. */
+type Section = { to: string; label: string; head: string; sub: string; bleed?: boolean };
 const SECTIONS: Section[] = [
   {
     to: '',
     label: 'Overview',
     head: 'The school, today',
     sub: 'Who is here, what they wrote, and where the work is going. Read-only — every number on this page comes straight off the database.',
+  },
+  {
+    to: 'cockpit',
+    label: 'Cockpit',
+    head: 'Mission control',
+    sub: 'Every vital, probe and control on one live screen.',
+    bleed: true,
   },
   {
     to: 'people',
@@ -88,6 +97,8 @@ function AdminShell() {
     .split('/')[0];
   const here = SECTIONS.find((s) => s.to === tail) ?? SECTIONS[0];
   const who = session?.kind === 'user' ? session.user : null;
+
+  if (here.bleed) return <Outlet />;
 
   return (
     <div className="flex items-stretch min-h-[calc(100vh-53px)]">
@@ -185,6 +196,14 @@ export function Admin() {
       <Route element={<RequireAdmin />}>
         <Route element={<AdminShell />}>
           <Route index element={<Overview />} />
+          <Route
+            path="cockpit"
+            element={
+              <Cockpit
+                nav={SECTIONS.filter((s) => !s.bleed).map(({ to, label }) => ({ to, label }))}
+              />
+            }
+          />
           <Route path="people" element={<People />} />
           <Route path="content" element={<Content />} />
           <Route path="publish" element={<Publish />} />

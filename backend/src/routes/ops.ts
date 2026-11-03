@@ -83,7 +83,19 @@ export async function healthCheck(request: Request, env: Env): Promise<Response>
       time,
       db: true,
       kv,
-      ai_configured: !!env.DEEPSEEK_API_KEY,
+      // Any provider counts: llm.ts fails over Gemini 1-3 then DeepSeek, so a DeepSeek-only check
+      // reads "AI down" on a worker whose Gemini keys are all set. Counts only, never the keys.
+      ai_configured: !!(
+        env.GEMINI_API_KEY ||
+        env.GEMINI_API_KEY_2 ||
+        env.GEMINI_API_KEY_3 ||
+        env.DEEPSEEK_API_KEY
+      ),
+      ai_keys: {
+        gemini: [env.GEMINI_API_KEY, env.GEMINI_API_KEY_2, env.GEMINI_API_KEY_3].filter(Boolean)
+          .length,
+        deepseek: !!env.DEEPSEEK_API_KEY,
+      },
       oauth_configured: !!env.GOOGLE_CLIENT_ID,
       latest_migration: LATEST_MIGRATION,
       // What the running worker will apply on its next schema pass. Compare

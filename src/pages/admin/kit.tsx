@@ -336,12 +336,14 @@ export function useAction(onDone?: () => void) {
   const [busy, setBusy] = useState(false);
   const [said, setSaid] = useState<{ ok: boolean; text: string } | null>(null);
   const live = useRef(true);
-  useEffect(
-    () => () => {
+  // Set it true on mount too: StrictMode (dev) runs mount → cleanup → mount, and a cleanup-only flag
+  // stays false for the life of a component that is still on screen, which leaves `busy` stuck on.
+  useEffect(() => {
+    live.current = true;
+    return () => {
       live.current = false;
-    },
-    [],
-  );
+    };
+  }, []);
   const run = async (text: string, fn: () => Promise<unknown>) => {
     setBusy(true);
     try {
