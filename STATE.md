@@ -49,6 +49,19 @@ NOT EXISTS` never repairs an existing table — that is why `users` needed a
 - Verified locally: 672 backend + 128 frontend vitest, both tsc, build, new Playwright spec
   `e2e/schedule-quiz.spec.ts` (2/2). Not verified: a real Gemini answer (no key).
 
+## Admin cockpit (3 Nov 2026) — LIVE (`0b37c08`)
+
+- `/admin/cockpit`: dark mission-control page, GO/NO-GO poll over health/ready/flags/metrics/series/edge.
+  Code in `src/pages/admin/cockpit/` (`stations.ts` holds the rules, with a test). No new routes.
+- Feed is budgeted: 20 s / 60 s / 5 min tiers, paused while the tab is hidden, standby after 30 min.
+  It deletes its own keys from `api.ts`'s 30 s GET cache each tick, or polls would return stale answers.
+- Worker `/api/health` now counts Gemini keys (`ai_configured`, new `ai_keys` counts). Worker version
+  `8ccfccdf-7945-477a-9a2d-60d4f12af1c7`; **rollback to `9f521398-f031-4091-b4a2-64a7ffb68498`**.
+  Deployed from HEAD; the uncommitted one-line CORS fix in `ai.ts` was NOT in that deploy.
+- Verified on production: `/api/health` 200, new bundle holds the cockpit chunk. Not verified: the
+  page itself signed in as admin (needs a real Google sign-in).
+- `useAction` (kit.tsx) set its live flag only in cleanup, so dev StrictMode left `busy` stuck on. Fixed.
+
 ## Tool rewrite + speed (2 Nov 2026) — LIVE (`c841225` worker, `f198a7b` app)
 
 - Demo screens (Practice, Progress, Tutors, Session, AI, Customize, Mobile, onboarding, guest mode,
