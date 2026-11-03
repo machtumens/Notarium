@@ -30,6 +30,18 @@ NOT EXISTS` never repairs an existing table — that is why `users` needed a
 - Backups from today (full D1 exports, real student data) are in
   `backend/backups/` — gitignored, keep it that way.
 
+## Notes restored (3 Nov 2026, evening)
+
+- The 3 Nov account purge (`backend/scripts/purge-accounts-2026-11.sql`) was run, then reversed for
+  users + notes only: 43 purged users and all 141 notes re-inserted from
+  `backups/pre-account-purge-2026-11-03.sql`, ids unchanged, each note back to its pre-archive status
+  (139 published, 2 draft). Built by a node:sqlite script that splits values over 60 KB into
+  `UPDATE … || chunk` appends; output `backups/restore-notes-2026-11-03.sql` (908 statements).
+- NOT restored: likes, quiz attempts, study items, chat, tutor rows, refresh tokens of purged users.
+- Backup taken just before: `backups/pre-note-restore-2026-11-03.sql`. Undo = re-run the purge script.
+- Verified on production: 49 users, 141 notes, 0 orphans, largest image (1.65 MB) intact. Not verified:
+  Discover signed in.
+
 ## Three pillars (2 Nov 2026, late) — LIVE (`b890414`)
 
 - AI: `backend/src/lib/llm.ts` tries GEMINI_API_KEY → \_2 → \_3 → DEEPSEEK_API_KEY on any non-2xx.
@@ -128,8 +140,10 @@ Carried from the retired `notarium-v2` repo (28 Oct), still binding on `src/`:
 
 ## Next
 
-1. Put Gemini keys on the worker: `npx wrangler secret put GEMINI_API_KEY` (and `_2`, `_3`, each from
-   a different Google Cloud project). Until then quizzes 500 (DeepSeek has no credit).
+1. Gemini keys: `wrangler secret list` (3 Nov) shows GEMINI_API_KEY and \_2 ARE set, yet quizzes were
+   reported dead. Not yet known why — llm.ts used to return DeepSeek's "no credit" error and hide the
+   Gemini one. Fixed in the working tree (uncommitted, not deployed): first failure now wins, and the
+   quiz page has "Quiz me in Gemini" (`prompt_only` on POST /api/ai/quiz, no key needed).
 2. Run one quiz from a real login; check the questions come back in Bahasa Indonesia.
 3. Approve the first tutors on `/admin` → People → Tutor applications.
 
